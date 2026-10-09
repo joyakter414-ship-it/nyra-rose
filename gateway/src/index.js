@@ -1,7 +1,7 @@
-// Lady Jane — WhatsApp gateway.
+// Nyra Rose 🌹 — WhatsApp gateway.
 //
 // Links to your WhatsApp as a "Linked device" (like WhatsApp Web), forwards
-// incoming text messages to the Lady Jane brain on Cloudflare, and sends her
+// incoming text messages to the Nyra Rose brain on Cloudflare, and sends her
 // replies back. All decisions (who to answer, what to say) are made by the
 // brain, so you control everything from the dashboard.
 
@@ -278,7 +278,7 @@ setInterval(() => state !== "qr" && sendStatus(), HEARTBEAT_MS).unref();
 const port = Number(process.env.PORT || 8080);
 createServer((req, res) => {
   res.writeHead(state === "open" ? 200 : 503, { "content-type": "application/json" });
-  res.end(JSON.stringify({ name: "lady-jane-gateway", state, connectedAs: me.pn ? `+${jidDecode(me.pn)?.user}` : null }));
+  res.end(JSON.stringify({ name: "nyra-rose-gateway", state, connectedAs: me.pn ? `+${jidDecode(me.pn)?.user}` : null }));
 }).listen(port, () => log.info(`Health check on http://localhost:${port}`));
 
 async function shutdown(signal) {
@@ -304,7 +304,7 @@ if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
         headers: {
           Authorization: `token ${process.env.GH_PAT}`,
           Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Lady-Jane-Gateway",
+          "User-Agent": "Nyra-Rose-Gateway",
         },
         body: JSON.stringify({ ref: "main" }),
       });
@@ -315,6 +315,6 @@ if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
   }, RELAY_AFTER_MS).unref();
 }
 
-log.info("👑 Lady Jane gateway starting…");
+log.info("🌹 Nyra Rose gateway starting…");
 start().catch(fatalRetry);
 

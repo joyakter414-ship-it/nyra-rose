@@ -4,13 +4,13 @@ import { kvGet, kvSet } from "./db";
 export type ReplyMode = "self" | "allowlist" | "everyone";
 
 export interface Settings {
-  /** Master switch. When off, Lady Jane stays silent on WhatsApp (dashboard chat still works). */
+  /** Master switch. When off, Nyra Rose stays silent on WhatsApp (dashboard chat still works). */
   enabled: boolean;
-  /** AI provider id — only "workers-ai" for now; Claude etc. plug in later via providers/. */
+  /** AI provider id — default "workers-ai". */
   provider: string;
   model: string;
   /**
-   * Who Lady Jane answers in private chats:
+   * Who Nyra Rose answers in private chats:
    * - self:      only your own "Message yourself" chat (safest, default)
    * - allowlist: self chat + the phone numbers in `allowlist`
    * - everyone:  every private chat
@@ -35,20 +35,21 @@ export const DEFAULT_SETTINGS: Settings = {
   replyMode: "self",
   allowlist: [],
   groupsEnabled: false,
-  triggerWords: ["jane", "lady jane", "জেন"],
-  historyLimit: 12,
-  maxReplyTokens: 400,
+  triggerWords: ["nyra", "nyra rose", "নাইরা", "rose"],
+  historyLimit: 14,
+  maxReplyTokens: 450,
   temperature: 0.7,
   ownerName: "",
   extraInstructions: "",
 };
 
-/** Models offered in the dashboard. All tested with the chat `messages` format. */
+/** Models offered in the dashboard. All tested with Workers AI chat messages format. */
 export const MODELS = [
-  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B — fast, cheap, good Bangla (recommended)" },
-  { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", label: "Llama 3.3 70B — smarter, ~3–5× more Neurons" },
-  { id: "@cf/mistralai/mistral-small-3.1-24b-instruct", label: "Mistral Small 3.1 24B — balanced" },
-  { id: "@cf/meta/llama-3.1-8b-instruct-fp8", label: "Llama 3.1 8B — cheapest, simplest" },
+  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B — ultra-fast, cheap, exceptional Bangla/English (Recommended 🌹)" },
+  { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", label: "Llama 3.3 70B — highest intelligence & deep reasoning" },
+  { id: "@cf/mistralai/mistral-small-3.1-24b-instruct", label: "Mistral Small 3.1 24B — sharp, concise, balanced" },
+  { id: "@cf/meta/llama-3.1-8b-instruct-fp8", label: "Llama 3.1 8B — ultra-lightweight, 0 latency" },
+  { id: "@cf/qwen/qwen2.5-72b-instruct", label: "Qwen 2.5 72B — multilingual powerhouse" },
 ];
 
 const KEY = "settings";

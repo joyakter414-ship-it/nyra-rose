@@ -1,8 +1,9 @@
 import type { AppEnv } from "./env";
-import { addUsage, getEnabledRules, insertMessage, recentMessages, upsertChat, type Rule } from "./db";
+import { addUsage, getEnabledRules, getNotes, getTodos, insertMessage, recentMessages, upsertChat, type Rule } from "./db";
 import { buildSystemPrompt } from "./persona";
 import { getProvider, type ChatMessage } from "./providers";
 import { getSettings, type Settings } from "./settings";
+import { handleCommand } from "./modules/commands";
 
 /** A WhatsApp message as forwarded by the gateway. */
 export interface IncomingMessage {
@@ -16,7 +17,7 @@ export interface IncomingMessage {
   senderPhone?: string | null;
   senderName?: string | null;
   text: string;
-  /** Lady Jane's number was @mentioned, or the message replies to her. */
+  /** Nyra Rose's number was @mentioned, or the message replies to her. */
   mentioned?: boolean;
   timestamp?: number;
 }
@@ -25,19 +26,13 @@ export type Decision =
   | { action: "reply"; reply: string; model?: string; neurons?: number }
   | { action: "ignore"; reason: string };
 
-const HELP_TEXT =
-  "*Lady Jane* at your service 👑\n\n" +
-  "- Just write to me and I shall answer.\n" +
-  "- */reset* — forget our conversation and start afresh.\n" +
-  "- */help* — show this message.";
-
 function matchesTriggers(text: string, triggers: string): boolean {
   const words = triggers.split(/[,;\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean);
   const lower = text.toLowerCase();
   return words.some((word) => lower.includes(word));
 }
 
-/** Decide whether Lady Jane should answer, without touching the DB or AI. */
+/** Decide whether Nyra Rose should answer, without touching the DB or AI. */
 export function shouldAnswer(s: Settings, m: IncomingMessage): { ok: true } | { ok: false; reason: string } {
   if (!s.enabled) return { ok: false, reason: "disabled" };
   if (!m.text.trim()) return { ok: false, reason: "empty" };
@@ -64,11 +59,10 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
   const { muted } = await upsertChat(env, m.chatId, m.chatName ?? m.senderName ?? null, m.isGroup);
   if (muted) return { action: "ignore", reason: "chat muted" };
 
-  const command = m.text.trim().toLowerCase();
-  if (command === "/help") return { action: "reply", reply: HELP_TEXT };
-  if (command === "/reset" || command === "/new") {
-    await env.DB.prepare("DELETE FROM messages WHERE chat_id = ?").bind(m.chatId).run();
-    return { action: "reply", reply: "Our conversation is forgotten — a fresh page awaits. ✨" };
+  // 1. Built-in command dispatcher (/help, /note, /todo, /status, /reset)
+  const cmdResult = await handleCommand(env, m.chatId, m.text);
+  if (cmdResult.handled && cmdResult.reply) {
+    return { action: "reply", reply: cmdResult.reply, model: "system:command", neurons: 0 };
   }
 
   const msgId = `wa:${m.chatId}:${m.id}`;
@@ -84,7 +78,7 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
   });
   if (!isNew) return { action: "ignore", reason: "duplicate delivery" };
 
-  // Rule Book check: instant reply triggers (free, 0 Neurons)
+  // 2. Rule Book check: instant reply triggers (free, 0 Neurons)
   const rules = await getEnabledRules(env);
   const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(m.text, r.triggers));
   if (instantMatch) {
@@ -94,7 +88,7 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
       chat_id: m.chatId,
       role: "assistant",
       sender: null,
-      sender_name: "Lady Jane",
+      sender_name: "Nyra Rose",
       content: reply,
       source: "whatsapp",
       model: "rulebook:instant",
@@ -114,15 +108,28 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
   });
 }
 
-/** Chat from the dashboard's "Talk to Lady Jane" box. Skips WhatsApp rules. */
+/** Chat from the dashboard's "Talk to Nyra Rose" box. Skips WhatsApp delivery filters. */
 export async function handleDashboardChat(env: AppEnv, text: string): Promise<Decision> {
   const s = await getSettings(env);
   const chatId = "dashboard";
   await upsertChat(env, chatId, "Dashboard", false);
+
+  // Command dispatcher
+  const cmdResult = await handleCommand(env, chatId, text);
+  if (cmdResult.handled && cmdResult.reply) {
+    return { action: "reply", reply: cmdResult.reply, model: "system:command", neurons: 0 };
+  }
+
   const msgId = `dash:${crypto.randomUUID()}`;
   await insertMessage(env, {
-    id: msgId, chat_id: chatId, role: "user", sender: null, sender_name: "You",
-    content: text, source: "dashboard", created_at: Date.now(),
+    id: msgId,
+    chat_id: chatId,
+    role: "user",
+    sender: null,
+    sender_name: "You",
+    content: text,
+    source: "dashboard",
+    created_at: Date.now(),
   });
 
   const rules = await getEnabledRules(env);
@@ -134,7 +141,7 @@ export async function handleDashboardChat(env: AppEnv, text: string): Promise<De
       chat_id: chatId,
       role: "assistant",
       sender: null,
-      sender_name: "Lady Jane",
+      sender_name: "Nyra Rose",
       content: reply,
       source: "dashboard",
       model: "rulebook:instant",
@@ -153,11 +160,28 @@ async function generateReply(
   rules: Rule[],
   c: { chatId: string; chatName?: string; isGroup: boolean; excludeId: string; userContent: string; source: string },
 ): Promise<Decision> {
-  const history = await recentMessages(env, c.chatId, s.historyLimit, c.excludeId);
+  const [history, userNotes, userTodos] = await Promise.all([
+    recentMessages(env, c.chatId, s.historyLimit, c.excludeId),
+    getNotes(env, c.chatId).catch(() => []),
+    getTodos(env, c.chatId, true).catch(() => []),
+  ]);
+
   const guidelines = rules.filter((r) => r.type === "ai_guideline").map((r) => r.response);
+  const notesText = userNotes.slice(0, 10).map((n) => n.content);
+  const todosText = userTodos.slice(0, 10).map((t) => t.task);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(s, { isGroup: c.isGroup, chatName: c.chatName, now: new Date(), guidelines }) },
+    {
+      role: "system",
+      content: buildSystemPrompt(s, {
+        isGroup: c.isGroup,
+        chatName: c.chatName,
+        now: new Date(),
+        guidelines,
+        notes: notesText,
+        todos: todosText,
+      }),
+    },
     ...history.map((h): ChatMessage => ({
       role: h.role,
       content: c.isGroup && h.role === "user" && h.sender_name ? `${h.sender_name}: ${h.content}` : h.content,
@@ -174,15 +198,22 @@ async function generateReply(
     });
     await Promise.all([
       insertMessage(env, {
-        id: `ai:${crypto.randomUUID()}`, chat_id: c.chatId, role: "assistant", sender: null, sender_name: "Lady Jane",
-        content: out.text, source: c.source, model: out.model, neurons: out.neurons ?? null, created_at: Date.now(),
+        id: `ai:${crypto.randomUUID()}`,
+        chat_id: c.chatId,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: out.text,
+        source: c.source,
+        model: out.model,
+        neurons: out.neurons ?? null,
+        created_at: Date.now(),
       }),
       addUsage(env, out.neurons),
     ]);
     return { action: "reply", reply: out.text, model: out.model, neurons: out.neurons };
   } catch (err) {
     console.error("AI generation failed", { model: s.model, error: String(err) });
-    return { action: "reply", reply: "Forgive me — my thoughts are clouded for a moment. Please try again shortly. 🙏" };
+    return { action: "reply", reply: "Forgive me, my thoughts fluttered for a second. Please send that once more. 🌹✨" };
   }
 }
-

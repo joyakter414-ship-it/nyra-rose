@@ -1,8 +1,8 @@
 {
-  "name": "lady-jane-gateway",
+  "name": "nyra-rose-gateway",
   "version": "1.0.0",
   "private": true,
-  "description": "WhatsApp connection for Lady Jane. Holds the linked-device session and relays messages to the Lady Jane brain on Cloudflare.",
+  "description": "WhatsApp connection for Nyra Rose. Holds the linked-device session and relays messages to the Nyra Rose brain on Cloudflare.",
   "type": "module",
   "main": "src/index.js",
   "engines": {

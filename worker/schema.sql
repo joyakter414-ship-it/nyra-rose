@@ -1,9 +1,9 @@
--- Lady Jane — D1 schema. Safe to re-run.
+-- Nyra Rose 🌹 — D1 Schema
+-- Safe to re-run.
 
--- Every message Lady Jane handled (incoming + her replies). Messages she
--- ignores are never stored, so unrelated private chats stay out of the DB.
+-- Messages table (stores processed user and assistant messages)
 CREATE TABLE IF NOT EXISTS messages (
-  id          TEXT PRIMARY KEY,          -- WhatsApp message id (also used for de-duplication)
+  id          TEXT PRIMARY KEY,          -- WhatsApp message id (used for deduplication)
   chat_id     TEXT NOT NULL,
   role        TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   sender      TEXT,                      -- phone digits, when known
@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages (chat_id, created_at);
 
+-- Chats registry
 CREATE TABLE IF NOT EXISTS chats (
   chat_id    TEXT PRIMARY KEY,
   name       TEXT,
@@ -24,16 +25,49 @@ CREATE TABLE IF NOT EXISTS chats (
   last_at    INTEGER NOT NULL
 );
 
--- Daily Neuron usage, so the dashboard can show it against the 10,000/day free allocation.
+-- Daily Neuron usage tracker (Free allocation: 10,000/day)
 CREATE TABLE IF NOT EXISTS usage (
-  day      TEXT PRIMARY KEY,             -- YYYY-MM-DD (UTC, same as Cloudflare's reset)
+  day      TEXT PRIMARY KEY,             -- YYYY-MM-DD (UTC)
   neurons  REAL NOT NULL DEFAULT 0,
   requests INTEGER NOT NULL DEFAULT 0
 );
 
--- Small key/value store: settings, gateway status, pending gateway commands.
+-- Key/Value configuration & gateway state
 CREATE TABLE IF NOT EXISTS kv (
   key        TEXT PRIMARY KEY,
   value      TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- Rule Book (Instant keyword triggers and AI behavior guidelines)
+CREATE TABLE IF NOT EXISTS rules (
+  id         TEXT PRIMARY KEY,
+  type       TEXT NOT NULL CHECK (type IN ('instant', 'ai_guideline')),
+  triggers   TEXT NOT NULL,
+  response   TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rules_enabled ON rules (enabled, created_at);
+
+-- Quick Notes & Facts memory for Nyra Rose
+CREATE TABLE IF NOT EXISTS notes (
+  id         TEXT PRIMARY KEY,
+  chat_id    TEXT NOT NULL,
+  title      TEXT,
+  content    TEXT NOT NULL,
+  tags       TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_chat ON notes (chat_id, created_at);
+
+-- Tasks & To-Dos managed by Nyra Rose
+CREATE TABLE IF NOT EXISTS todos (
+  id         TEXT PRIMARY KEY,
+  chat_id    TEXT NOT NULL,
+  task       TEXT NOT NULL,
+  completed  INTEGER NOT NULL DEFAULT 0,
+  due_date   TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_todos_chat ON todos (chat_id, completed, created_at);

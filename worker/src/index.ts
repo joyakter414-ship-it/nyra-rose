@@ -1,6 +1,21 @@
 import type { AppEnv } from "./env";
 import { handleDashboardChat, handleIncoming, type IncomingMessage } from "./brain";
-import { createRule, deleteRule, getRules, kvDelete, kvGet, kvSet, updateRule } from "./db";
+import {
+  createNote,
+  createRule,
+  createTodo,
+  deleteNote,
+  deleteRule,
+  deleteTodo,
+  getNotes,
+  getRules,
+  getTodos,
+  kvDelete,
+  kvGet,
+  kvSet,
+  toggleTodo,
+  updateRule,
+} from "./db";
 import { getSettings, MODELS, saveSettings, type Settings } from "./settings";
 
 const SESSION_KEY = "whatsapp/session.bin";
@@ -64,7 +79,6 @@ async function gatewayRoutes(request: Request, env: AppEnv, url: URL): Promise<R
       return new Response(obj.body, { headers: { "content-type": "application/octet-stream" } });
     }
     case "PUT /gw/session": {
-      // The gateway encrypts the session before upload; we only store the bytes.
       await env.BUCKET.put(SESSION_KEY, await request.arrayBuffer());
       return json({ ok: true });
     }
@@ -92,6 +106,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const today = new Date().toISOString().slice(0, 10);
       const online = !!gateway && Date.now() - gateway.at < GATEWAY_OFFLINE_AFTER_MS;
       return json({
+        name: "Nyra Rose",
+        symbol: "🌹",
         settings,
         models: MODELS,
         gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
@@ -145,14 +161,14 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       if (!env.GITHUB_PAT) {
         return json({ error: "GITHUB_PAT secret is not configured" }, 400);
       }
-      const repo = env.GITHUB_REPO || "joyakter414-ship-it/lady-jane";
+      const repo = env.GITHUB_REPO || "joyakter414-ship-it/nyra-rose";
       try {
         const ghRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/gateway.yml/dispatches`, {
           method: "POST",
           headers: {
             "Authorization": `token ${env.GITHUB_PAT}`,
             "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Lady-Jane-Brain",
+            "User-Agent": "Nyra-Rose-Brain",
           },
           body: JSON.stringify({ ref: "main" }),
         });
@@ -160,16 +176,14 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           const errText = await ghRes.text();
           return json({ error: `GitHub API error: ${ghRes.status} ${errText}` }, 500);
         }
-        return json({ ok: true, message: "Lady Jane cloud runner dispatched! Connecting within 30-45 seconds." });
+        return json({ ok: true, message: "Nyra Rose cloud runner dispatched! Connecting within 30-45 seconds." });
       } catch (err) {
         return json({ error: `Failed to dispatch runner: ${String(err)}` }, 500);
       }
     }
     case "POST /api/gateway/logout":
     case "POST /api/session/reset": {
-      // 1. Permanently delete WhatsApp session from R2 storage
       await env.BUCKET.delete(SESSION_KEY).catch(() => {});
-      // 2. Clear stored user identity in KV
       await kvSet(env, "gateway", {
         state: "logged_out",
         qr: null,
@@ -177,11 +191,10 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         detail: "WhatsApp unlinked by user. Scan new QR code to connect.",
         at: Date.now(),
       });
-      // 3. Command any running gateway to disconnect and wipe local auth
       await kvSet(env, "gateway_command", { cmd: "logout" });
       return json({
         ok: true,
-        note: "WhatsApp unlinked and session wiped from storage! A fresh QR code will appear to link your WhatsApp.",
+        note: "WhatsApp unlinked and session cleared! A fresh QR code will appear.",
       });
     }
     case "GET /api/rules": {
@@ -210,13 +223,50 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       await deleteRule(env, id);
       return json({ ok: true });
     }
+    case "GET /api/notes": {
+      const chat = url.searchParams.get("chat") || undefined;
+      return json({ notes: await getNotes(env, chat) });
+    }
+    case "POST /api/notes": {
+      const body = (await request.json()) as { chatId?: string; content: string; title?: string; tags?: string };
+      if (!body?.content?.trim()) return json({ error: "Note content required" }, 400);
+      const note = await createNote(env, body.chatId || "dashboard", body.content, body.title, body.tags);
+      return json({ note });
+    }
+    case "DELETE /api/notes": {
+      const id = url.searchParams.get("id");
+      if (!id) return json({ error: "id is required" }, 400);
+      await deleteNote(env, id);
+      return json({ ok: true });
+    }
+    case "GET /api/todos": {
+      const chat = url.searchParams.get("chat") || undefined;
+      return json({ todos: await getTodos(env, chat) });
+    }
+    case "POST /api/todos": {
+      const body = (await request.json()) as { chatId?: string; task: string; dueDate?: string };
+      if (!body?.task?.trim()) return json({ error: "Task content required" }, 400);
+      const todo = await createTodo(env, body.chatId || "dashboard", body.task, body.dueDate);
+      return json({ todo });
+    }
+    case "PATCH /api/todos": {
+      const body = (await request.json()) as { id: string; completed?: boolean };
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const todo = await toggleTodo(env, body.id, body.completed);
+      return json({ todo });
+    }
+    case "DELETE /api/todos": {
+      const id = url.searchParams.get("id");
+      if (!id) return json({ error: "id is required" }, 400);
+      await deleteTodo(env, id);
+      return json({ ok: true });
+    }
   }
   return json({ error: "Not found" }, 404);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Constant-time check of `Authorization: Bearer <secret>`. */
 async function authorized(request: Request, secret: string | undefined): Promise<boolean> {
   if (!secret) return false;
   const header = request.headers.get("authorization") ?? "";

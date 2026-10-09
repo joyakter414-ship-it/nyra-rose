@@ -4,19 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
-  <title>Lady Jane 👑</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>" />
+  <title>Nyra Rose 🌹</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌹</text></svg>" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <!-- Login -->
   <main id="login" class="login hidden">
     <form id="login-form" class="card login-card">
-      <div class="crest">👑</div>
-      <h1>Lady Jane</h1>
-      <p class="muted">Your WhatsApp AI, powered by Cloudflare Neurons</p>
+      <div class="crest">🌹</div>
+      <h1>Nyra Rose</h1>
+      <p class="muted">Intelligent WhatsApp AI, powered by Cloudflare Neurons</p>
       <input id="password" type="password" placeholder="Dashboard password" autocomplete="current-password" required />
-      <button type="submit">Enter the court</button>
+      <button type="submit">Enter Sanctuary</button>
       <p id="login-error" class="error"></p>
     </form>
   </main>
@@ -24,12 +24,14 @@
   <!-- App -->
   <div id="app" class="hidden">
     <header class="topbar">
-      <div class="brand"><span>👑</span> Lady Jane</div>
+      <div class="brand"><span>🌹</span> Nyra Rose</div>
       <nav>
         <button data-tab="home" class="tab active">Home</button>
         <button data-tab="chat" class="tab">Talk to her</button>
         <button data-tab="chats" class="tab">Conversations</button>
         <button data-tab="rules" class="tab">Rule Book 📜</button>
+        <button data-tab="notes" class="tab">Notes 📝</button>
+        <button data-tab="todos" class="tab">Tasks ✅</button>
         <button data-tab="settings" class="tab">Settings</button>
       </nav>
       <button id="logout" class="ghost small">Sign out</button>
@@ -54,7 +56,7 @@
           <div class="actions" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
             <button id="wa-logout" class="danger small hidden">Sign Out WhatsApp</button>
             <button id="wa-reset" class="ghost small danger hidden">Unlink & Reset QR</button>
-            <button id="wa-wake" class="small hidden" style="background: var(--gold-2); color: #111; font-weight: 600;">▶ Wake Up Cloud Gateway</button>
+            <button id="wa-wake" class="small hidden" style="background: var(--rose); color: #fff; font-weight: 600;">▶ Wake Up Cloud Gateway</button>
           </div>
         </div>
         <div class="card">
@@ -66,7 +68,7 @@
         </div>
         <div class="card">
           <h2>Quick switches</h2>
-          <label class="switch"><input type="checkbox" id="quick-enabled" /> <span>Lady Jane answers on WhatsApp</span></label>
+          <label class="switch"><input type="checkbox" id="quick-enabled" /> <span>Nyra Rose answers on WhatsApp</span></label>
           <p class="muted">Reply mode: <b id="quick-mode"></b></p>
           <p class="muted">Model: <b id="quick-model"></b></p>
         </div>
@@ -77,7 +79,7 @@
     <section id="tab-chat" class="page hidden">
       <div class="card chat-card">
         <div class="chat-head">
-          <h2>Talk to Lady Jane</h2>
+          <h2>Talk to Nyra Rose 🌹</h2>
           <button id="chat-reset" class="ghost small">Start afresh</button>
         </div>
         <div id="chat-log" class="chat-log"></div>
@@ -114,13 +116,13 @@
         <div class="chat-head">
           <div>
             <h2>Rule Book 📜</h2>
-            <p class="muted small-text">Define what Lady Jane says when certain words appear, or give strict behavioral instructions to her AI brain.</p>
+            <p class="muted small-text">Define what Nyra Rose says when specific keywords appear, or set behavioral guidelines for her AI model.</p>
           </div>
           <button id="add-rule-toggle" class="small">+ Add New Rule</button>
         </div>
 
         <form id="new-rule-form" class="rule-form hidden" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px;">
-          <h3 style="margin-top: 0; color: var(--gold-2); font-size: 16px;">Create a Rule</h3>
+          <h3 style="margin-top: 0; color: var(--rose-light); font-size: 16px;">Create a Rule</h3>
           <label>Rule Type
             <select id="rule-type" name="type">
               <option value="instant">⚡ Instant Auto-Reply (0 Neurons · Instant keyword match)</option>
@@ -149,12 +151,54 @@
       </div>
     </section>
 
+    <!-- Notes & Memory -->
+    <section id="tab-notes" class="page hidden">
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="chat-head">
+          <div>
+            <h2>Quick Notes & Memory 📝</h2>
+            <p class="muted small-text">Notes stored via WhatsApp with <code>/note &lt;text&gt;</code> or created here. Nyra Rose can reference these when answering.</p>
+          </div>
+        </div>
+        <form id="new-note-form" style="display: flex; gap: 8px; margin-top: 12px;">
+          <input id="note-input" placeholder="Type a new note or fact to remember..." required />
+          <button type="submit" style="white-space: nowrap;">Save Note</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Saved Notes</h2>
+        <div id="notes-list" class="rules-list"></div>
+      </div>
+    </section>
+
+    <!-- Tasks & To-Dos -->
+    <section id="tab-todos" class="page hidden">
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="chat-head">
+          <div>
+            <h2>Tasks & To-Dos ✅</h2>
+            <p class="muted small-text">Track your to-dos on WhatsApp using <code>/todo &lt;task&gt;</code>, <code>/todos</code>, and <code>/done &lt;id&gt;</code>.</p>
+          </div>
+        </div>
+        <form id="new-todo-form" style="display: flex; gap: 8px; margin-top: 12px;">
+          <input id="todo-input" placeholder="What do you need to get done?" required />
+          <button type="submit" style="white-space: nowrap;">Add Task</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Task List</h2>
+        <div id="todos-list" class="rules-list"></div>
+      </div>
+    </section>
+
     <!-- Settings -->
     <section id="tab-settings" class="page hidden">
       <form id="settings-form" class="card settings">
         <h2>Settings</h2>
 
-        <label class="switch"><input type="checkbox" name="enabled" /> <span>Lady Jane answers on WhatsApp</span></label>
+        <label class="switch"><input type="checkbox" name="enabled" /> <span>Nyra Rose answers on WhatsApp</span></label>
 
         <label>Your name <span class="muted">(she serves you)</span>
           <input name="ownerName" placeholder="e.g. Akter" />
@@ -188,13 +232,13 @@
             <label>Max reply length (tokens)<input name="maxReplyTokens" type="number" min="50" max="2000" /></label>
             <label>Creativity (0–1.5)<input name="temperature" type="number" min="0" max="1.5" step="0.1" /></label>
           </div>
-          <label>Extra instructions for Lady Jane
-            <textarea name="extraInstructions" rows="5" placeholder="e.g. I'm a motion designer in Dhaka. If clients ask about prices, say I'll reply personally."></textarea>
+          <label>Extra instructions for Nyra Rose
+            <textarea name="extraInstructions" rows="5" placeholder="e.g. I am a creative motion designer in Dhaka. Speak warmly with high precision."></textarea>
           </label>
         </fieldset>
 
         <div class="actions">
-          <button type="submit">Save</button>
+          <button type="submit">Save Settings</button>
           <span id="settings-saved" class="muted"></span>
         </div>
       </form>

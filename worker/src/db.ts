@@ -34,7 +34,10 @@ export interface StoredMessage {
  * Insert a message. Returns false if a message with the same id already
  * exists — that's how duplicate WhatsApp deliveries are ignored.
  */
-export async function insertMessage(env: AppEnv, m: Omit<StoredMessage, "model" | "neurons"> & Partial<StoredMessage>): Promise<boolean> {
+export async function insertMessage(
+  env: AppEnv,
+  m: Omit<StoredMessage, "model" | "neurons"> & Partial<StoredMessage>
+): Promise<boolean> {
   const res = await env.DB.prepare(
     `INSERT OR IGNORE INTO messages (id, chat_id, role, sender, sender_name, content, source, model, neurons, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -141,3 +144,117 @@ export async function deleteRule(env: AppEnv, id: string): Promise<boolean> {
   return (res.meta.changes ?? 0) > 0;
 }
 
+// ─── Notes & Memory ─────────────────────────────────────────────────────────
+
+export interface Note {
+  id: string;
+  chat_id: string;
+  title: string | null;
+  content: string;
+  tags: string | null;
+  created_at: number;
+}
+
+export async function getNotes(env: AppEnv, chatId?: string): Promise<Note[]> {
+  if (chatId) {
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM notes WHERE chat_id = ? ORDER BY created_at DESC LIMIT 50"
+    ).bind(chatId).all<Note>();
+    return results;
+  }
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM notes ORDER BY created_at DESC LIMIT 100"
+  ).all<Note>();
+  return results;
+}
+
+export async function createNote(
+  env: AppEnv,
+  chatId: string,
+  content: string,
+  title?: string,
+  tags?: string
+): Promise<Note> {
+  const id = `note_${crypto.randomUUID().slice(0, 8)}`;
+  const created_at = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO notes (id, chat_id, title, content, tags, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, chatId, title ?? null, content.trim(), tags ?? null, created_at)
+    .run();
+  return { id, chat_id: chatId, title: title ?? null, content: content.trim(), tags: tags ?? null, created_at };
+}
+
+export async function deleteNote(env: AppEnv, id: string): Promise<boolean> {
+  const res = await env.DB.prepare("DELETE FROM notes WHERE id = ?").bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+export async function clearNotes(env: AppEnv, chatId: string): Promise<boolean> {
+  const res = await env.DB.prepare("DELETE FROM notes WHERE chat_id = ?").bind(chatId).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+// ─── Tasks & To-Dos ────────────────────────────────────────────────────────
+
+export interface Todo {
+  id: string;
+  chat_id: string;
+  task: string;
+  completed: number;
+  due_date: string | null;
+  created_at: number;
+}
+
+export async function getTodos(env: AppEnv, chatId?: string, onlyPending = false): Promise<Todo[]> {
+  let query = "SELECT * FROM todos";
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+
+  if (chatId) {
+    clauses.push("chat_id = ?");
+    params.push(chatId);
+  }
+  if (onlyPending) {
+    clauses.push("completed = 0");
+  }
+
+  if (clauses.length > 0) {
+    query += " WHERE " + clauses.join(" AND ");
+  }
+  query += " ORDER BY completed ASC, created_at DESC LIMIT 100";
+
+  const { results } = await env.DB.prepare(query).bind(...params).all<Todo>();
+  return results;
+}
+
+export async function createTodo(
+  env: AppEnv,
+  chatId: string,
+  task: string,
+  dueDate?: string
+): Promise<Todo> {
+  const id = `todo_${crypto.randomUUID().slice(0, 8)}`;
+  const created_at = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO todos (id, chat_id, task, completed, due_date, created_at)
+     VALUES (?, ?, ?, 0, ?, ?)`
+  )
+    .bind(id, chatId, task.trim(), dueDate ?? null, created_at)
+    .run();
+  return { id, chat_id: chatId, task: task.trim(), completed: 0, due_date: dueDate ?? null, created_at };
+}
+
+export async function toggleTodo(env: AppEnv, id: string, completed?: boolean): Promise<Todo | null> {
+  const existing = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(id).first<Todo>();
+  if (!existing) return null;
+  const nextCompleted = completed !== undefined ? (completed ? 1 : 0) : (existing.completed ? 0 : 1);
+  await env.DB.prepare("UPDATE todos SET completed = ? WHERE id = ?").bind(nextCompleted, id).run();
+  return { ...existing, completed: nextCompleted };
+}
+
+export async function deleteTodo(env: AppEnv, id: string): Promise<boolean> {
+  const res = await env.DB.prepare("DELETE FROM todos WHERE id = ?").bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
+}

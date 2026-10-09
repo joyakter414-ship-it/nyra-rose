@@ -1,4 +1,4 @@
-name: Lady Jane WhatsApp Gateway 24/7
+name: Nyra Rose WhatsApp Gateway 24/7
 
 on:
   push:
@@ -9,12 +9,12 @@ on:
     - cron: '0 */5 * * *'
 
 concurrency:
-  group: lady-jane-gateway
+  group: nyra-rose-gateway
   cancel-in-progress: true
 
 jobs:
   run-gateway:
-    name: Run Lady Jane in GitHub Cloud
+    name: Run Nyra Rose in GitHub Cloud
     runs-on: ubuntu-latest
     timeout-minutes: 340 # 5 hours 40 minutes
 
@@ -34,7 +34,7 @@ jobs:
           cd gateway
           npm ci --omit=dev
 
-      - name: Start Lady Jane Gateway
+      - name: Start Nyra Rose Gateway
         env:
           BRAIN_URL: ${{ secrets.BRAIN_URL }}
           GATEWAY_TOKEN: ${{ secrets.GATEWAY_TOKEN }}
@@ -45,7 +45,7 @@ jobs:
         run: |
           date +%s > /tmp/runner_start_epoch
           cd gateway
-          echo "👑 Starting Lady Jane Gateway in GitHub Cloud..."
+          echo "🌹 Starting Nyra Rose Gateway in GitHub Cloud..."
           node src/index.js
 
       - name: Auto-Relay to Next Runner (24/7 Continuous Loop)
@@ -68,4 +68,3 @@ jobs:
           else
             echo "⚠️ Runner terminated too quickly ($DIFF s). Skipping auto-relay to prevent infinite crash loop."
           fi
-

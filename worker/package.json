@@ -1,13 +1,13 @@
 {
-  "name": "lady-jane-brain",
+  "name": "nyra-rose-brain",
   "version": "1.0.0",
   "private": true,
-  "description": "Lady Jane's brain: Cloudflare Worker using Workers AI (Neurons), D1 and R2, plus the dashboard.",
+  "description": "Nyra Rose's brain: Cloudflare Worker using Workers AI (Neurons), D1 and R2, plus the dashboard.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:init": "wrangler d1 execute lady-jane-db --remote --file=./schema.sql",
+    "db:init": "wrangler d1 execute nyra-rose-db --remote --file=./schema.sql",
     "types": "wrangler types",
     "check": "tsc --noEmit"
   },

@@ -1,4 +1,4 @@
-// Lady Jane dashboard. Plain JS, no build step.
+// Nyra Rose 🌹 Dashboard. Plain JS, no build step.
 // All user/WhatsApp content is inserted with textContent (never innerHTML).
 
 const $ = (sel) => document.querySelector(sel);
@@ -11,7 +11,7 @@ const el = (tag, cls, text) => {
 const fmtTime = (ms) => new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 const fmtNum = (n) => Math.round(n).toLocaleString();
 
-let password = localStorage.getItem("lj_password") || "";
+let password = localStorage.getItem("nr_password") || localStorage.getItem("lj_password") || "";
 let overview = null;
 let pollTimer = null;
 let currentChat = null;
@@ -35,6 +35,7 @@ async function api(method, path, body) {
 
 function signOut() {
   password = "";
+  localStorage.removeItem("nr_password");
   localStorage.removeItem("lj_password");
   clearInterval(pollTimer);
   $("#app").classList.add("hidden");
@@ -43,11 +44,11 @@ function signOut() {
 
 $("#login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  password = $("#password").value;
+  password = $("#password").value.trim();
   $("#login-error").textContent = "";
   try {
     await enterApp();
-    localStorage.setItem("lj_password", password);
+    localStorage.setItem("nr_password", password);
   } catch {
     $("#login-error").textContent = "That password is not recognised.";
   }
@@ -75,6 +76,8 @@ document.querySelectorAll(".tab").forEach((btn) =>
     if (btn.dataset.tab === "chat") loadDashboardChat();
     if (btn.dataset.tab === "chats") loadChats();
     if (btn.dataset.tab === "rules") loadRules();
+    if (btn.dataset.tab === "notes") loadNotes();
+    if (btn.dataset.tab === "todos") loadTodos();
     if (btn.dataset.tab === "settings") fillSettings();
   }),
 );
@@ -87,8 +90,8 @@ const STATES = {
   connecting: ["warn", "Connecting…"],
   starting: ["warn", "Starting…"],
   closed: ["off", "Disconnected"],
-  logged_out: ["off", "Logged out — new QR coming"],
-  never_connected: ["off", "Gateway has never connected"],
+  logged_out: ["off", "Logged out — fresh QR coming"],
+  never_connected: ["off", "Gateway has not connected yet"],
 };
 
 async function refreshOverview() {
@@ -99,119 +102,129 @@ async function refreshOverview() {
   const isOpen = isOnline && gateway.state === "open";
   const isQr = isOnline && gateway.state === "qr" && Boolean(gateway.qr);
 
-  let [dot, label] = STATES[gateway.state] || ["off", gateway.state];
-  if (!isOnline && gateway.state !== "never_connected") {
-    [dot, label] = ["off", "Gateway offline (runner sleeping)"];
-  }
-  const status = $("#wa-status");
-  status.replaceChildren(el("span", `dot ${dot}`), el("span", null, label));
-  if (isOpen && gateway.me?.phone) {
-    status.append(el("span", "muted", ` as +${gateway.me.phone}${gateway.me.name ? ` (${gateway.me.name})` : ""}`));
-  } else if (!isOnline && gateway.me?.phone) {
-    status.append(el("span", "muted", ` (last linked: +${gateway.me.phone}${gateway.me.name ? ` - ${gateway.me.name}` : ""})`));
-  }
+  const [cls, label] = STATES[gateway.state] || ["off", gateway.state];
+  const me = gateway.me?.phone ? `+${gateway.me.phone}` : gateway.me?.name || "";
 
-  // QR Code display
-  $("#wa-qr").classList.toggle("hidden", !isQr);
-  if (isQr && $("#wa-qr-img").src !== gateway.qr) {
+  $("#wa-status").replaceChildren(
+    el("div", `dot ${isOnline ? cls : "off"}`),
+    el("span", null, isOnline ? `${label}${me ? ` (${me})` : ""}` : "Cloud Gateway is offline"),
+  );
+
+  const qrBox = $("#wa-qr");
+  if (isQr) {
+    qrBox.classList.remove("hidden");
     $("#wa-qr-img").src = gateway.qr;
+  } else {
+    qrBox.classList.add("hidden");
   }
 
-  // Status help / details
-  $("#wa-help").textContent = !isOnline
-    ? "Cloud runner is resting. Click 'Wake Up Cloud Gateway' below to start her instantly."
-    : gateway.detail || (gateway.at ? `Last heartbeat ${fmtTime(gateway.at)}` : "");
+  const help = $("#wa-help");
+  const wakeBtn = $("#wa-wake");
+  const wakeHead = $("#wa-wake-head");
+  const logoutBtn = $("#wa-logout");
+  const resetBtn = $("#wa-reset");
 
-  // Action buttons
-  $("#wa-logout").classList.toggle("hidden", !isOpen);
-  // Show reset if an account is linked or gateway previously connected
-  const hasLinkedAccount = Boolean(gateway.me?.phone || gateway.state === "open");
-  $("#wa-reset").classList.toggle("hidden", !hasLinkedAccount);
-  $("#wa-wake").classList.toggle("hidden", isOnline);
-  if ($("#wa-wake-head")) $("#wa-wake-head").classList.toggle("hidden", isOnline);
+  if (isOpen) {
+    help.textContent = `Nyra Rose is actively linked to WhatsApp. She answers automatically.`;
+    logoutBtn.classList.remove("hidden");
+    resetBtn.classList.remove("hidden");
+    wakeBtn.classList.add("hidden");
+    wakeHead.classList.add("hidden");
+  } else if (isQr) {
+    help.textContent = "Open WhatsApp on your phone → Linked Devices → Link a Device and scan the QR code.";
+    logoutBtn.classList.add("hidden");
+    resetBtn.classList.add("hidden");
+    wakeBtn.classList.add("hidden");
+    wakeHead.classList.add("hidden");
+  } else if (!isOnline) {
+    help.textContent = "Gateway runner is sleeping. Click below to wake her up.";
+    logoutBtn.classList.add("hidden");
+    resetBtn.classList.add("hidden");
+    wakeBtn.classList.remove("hidden");
+    wakeHead.classList.remove("hidden");
+  } else {
+    help.textContent = gateway.detail || "Connecting…";
+    logoutBtn.classList.add("hidden");
+    resetBtn.classList.add("hidden");
+    wakeBtn.classList.add("hidden");
+    wakeHead.classList.add("hidden");
+  }
 
-  $("#neurons-today").textContent = fmtNum(usage.today.neurons);
-  $("#neurons-free").textContent = fmtNum(usage.freePerDay);
-  $("#requests-today").textContent = usage.today.requests;
-  $("#neurons-bar").style.width = `${Math.min(100, (usage.today.neurons / usage.freePerDay) * 100)}%`;
-  $("#usage-rows").replaceChildren(
-    ...usage.recent.map((u) => {
+  // Neurons
+  const todayUsed = usage.today?.neurons ?? 0;
+  const free = usage.freePerDay ?? 10000;
+  $("#neurons-today").textContent = fmtNum(todayUsed);
+  $("#neurons-free").textContent = fmtNum(free);
+  $("#neurons-bar").style.width = `${Math.min(100, (todayUsed / free) * 100)}%`;
+  $("#requests-today").textContent = fmtNum(usage.today?.requests ?? 0);
+
+  const rows = $("#usage-rows");
+  rows.replaceChildren(
+    ...(usage.recent || []).map((u) => {
       const tr = el("tr");
-      tr.append(el("td", null, u.day), el("td", null, `${u.requests} replies`), el("td", null, `${fmtNum(u.neurons)} neurons`));
+      tr.append(el("td", null, u.day), el("td", null, `${fmtNum(u.neurons)} neurons · ${fmtNum(u.requests)} replies`));
       return tr;
     }),
   );
 
+  // Quick switches
   $("#quick-enabled").checked = settings.enabled;
-  $("#quick-mode").textContent = { self: "Only me", allowlist: "Me + chosen numbers", everyone: "Everyone" }[settings.replyMode];
-  $("#quick-model").textContent = (models.find((m) => m.id === settings.model)?.label || settings.model).split(" — ")[0];
+  $("#quick-mode").textContent = settings.replyMode;
+  const m = models.find((x) => x.id === settings.model);
+  $("#quick-model").textContent = m ? m.label.split("—")[0].trim() : settings.model;
 }
 
 $("#quick-enabled").addEventListener("change", async (e) => {
-  await api("PUT", "/api/settings", { enabled: e.target.checked });
-  refreshOverview();
+  const enabled = e.target.checked;
+  await api("PUT", "/api/settings", { enabled });
+  overview.settings.enabled = enabled;
 });
 
-async function wakeGateway() {
-  const btn = $("#wa-wake");
-  const headBtn = $("#wa-wake-head");
-  if (btn) { btn.disabled = true; btn.textContent = "Waking up runner…"; }
-  if (headBtn) { headBtn.disabled = true; headBtn.textContent = "Waking up…"; }
+async function wakeGateway(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Waking cloud runner…";
   try {
-    const r = await api("POST", "/api/gateway/start");
-    alert(r.message || "Lady Jane cloud runner dispatched! Connecting within 30-45 seconds.");
+    const res = await api("POST", "/api/gateway/start");
+    alert(res.message || "Cloud runner dispatched!");
+    setTimeout(refreshOverview, 3000);
   } catch (err) {
-    alert("Could not start cloud runner: " + err.message);
+    alert(`Could not start runner: ${err.message}`);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "▶ Wake Up Cloud Gateway"; }
-    if (headBtn) { headBtn.disabled = false; headBtn.textContent = "▶ Wake Runner"; }
-    await refreshOverview().catch(() => {});
+    btn.disabled = false;
+    btn.textContent = orig;
   }
 }
-
-$("#wa-wake")?.addEventListener("click", wakeGateway);
-$("#wa-wake-head")?.addEventListener("click", wakeGateway);
+$("#wa-wake").addEventListener("click", (e) => wakeGateway(e.target));
+$("#wa-wake-head").addEventListener("click", (e) => wakeGateway(e.target));
 
 $("#wa-logout").addEventListener("click", async () => {
-  if (!confirm("Sign out of WhatsApp? Lady Jane will disconnect and stop replying until you scan a new QR code.")) return;
-  try {
-    const r = await api("POST", "/api/gateway/logout");
-    alert(r.note || "WhatsApp unlinked.");
-    await refreshOverview();
-  } catch (err) {
-    alert("Error: " + err.message);
-  }
+  if (!confirm("Sign out Nyra Rose from WhatsApp? The session will be unlinked.")) return;
+  await api("POST", "/api/gateway/logout");
+  await refreshOverview();
 });
 
 $("#wa-reset").addEventListener("click", async () => {
-  if (!confirm("Unlink and delete saved WhatsApp session from Cloud storage?\n\nUse this to connect a different WhatsApp account or reset your connection.")) return;
-  try {
-    const r = await api("POST", "/api/session/reset");
-    alert(r.note || "Session deleted. Starting cloud runner for a new QR code...");
-    await api("POST", "/api/gateway/start").catch(() => {});
-    await refreshOverview();
-  } catch (err) {
-    alert("Error: " + err.message);
-  }
+  if (!confirm("Permanently wipe stored session from Cloudflare storage and reset QR code?")) return;
+  await api("POST", "/api/session/reset");
+  await refreshOverview();
 });
 
-// ─── Talk to her ─────────────────────────────────────────────────────────────
-
-function bubble(m) {
-  const b = el("div", `msg ${m.role}`, m.content);
-  const meta = [m.role === "user" ? m.sender_name || "Them" : "Lady Jane", m.created_at ? fmtTime(m.created_at) : ""];
-  if (m.neurons) meta.push(`${m.neurons.toFixed(1)} neurons`);
-  b.append(el("span", "meta", meta.filter(Boolean).join(" · ")));
-  return b;
-}
+// ─── Talk to Nyra Rose ───────────────────────────────────────────────────────
 
 async function loadDashboardChat() {
   const { messages } = await api("GET", "/api/messages?chat=dashboard");
   const log = $("#chat-log");
-  log.replaceChildren(...messages.map(bubble));
-  if (!messages.length) log.append(el("div", "msg assistant", "Good day! I am Lady Jane. Write to me here to test how I'll answer on WhatsApp. 👑"));
+  log.replaceChildren(...messages.map(renderBubble));
   log.scrollTop = log.scrollHeight;
-  $("#chat-input").focus();
+}
+
+function renderBubble(m) {
+  const b = el("div", `bubble ${m.role}`);
+  b.append(el("div", "text", m.content));
+  const meta = el("div", "meta", `${m.sender_name || (m.role === "user" ? "You" : "Nyra Rose")} · ${fmtTime(m.created_at)}${m.neurons ? ` · ${m.neurons.toFixed(1)} neurons` : ""}`);
+  b.append(meta);
+  return b;
 }
 
 $("#chat-form").addEventListener("submit", async (e) => {
@@ -221,22 +234,29 @@ $("#chat-form").addEventListener("submit", async (e) => {
   if (!text) return;
   input.value = "";
   const log = $("#chat-log");
-  log.append(bubble({ role: "user", content: text, sender_name: "You", created_at: Date.now() }));
-  const typing = el("div", "msg assistant typing", "Lady Jane is writing…");
-  log.append(typing);
+  log.append(renderBubble({ role: "user", content: text, created_at: Date.now(), sender_name: "You" }));
   log.scrollTop = log.scrollHeight;
+
+  const thinking = el("div", "bubble assistant", "Thinking…");
+  log.append(thinking);
+  log.scrollTop = log.scrollHeight;
+
   try {
-    const r = await api("POST", "/api/chat", { text });
-    typing.replaceWith(bubble({ role: "assistant", content: r.reply, created_at: Date.now(), neurons: r.neurons }));
+    const res = await api("POST", "/api/chat", { text });
+    thinking.remove();
+    if (res.reply) {
+      log.append(renderBubble({ role: "assistant", content: res.reply, created_at: Date.now(), sender_name: "Nyra Rose", neurons: res.neurons }));
+    }
   } catch (err) {
-    typing.replaceWith(el("div", "msg assistant", `⚠️ ${err.message}`));
+    thinking.textContent = `Error: ${err.message}`;
   }
   log.scrollTop = log.scrollHeight;
 });
 
 $("#chat-reset").addEventListener("click", async () => {
+  if (!confirm("Clear your test chat with Nyra Rose?")) return;
   await api("DELETE", "/api/messages?chat=dashboard");
-  loadDashboardChat();
+  $("#chat-log").replaceChildren();
 });
 
 // ─── Conversations ───────────────────────────────────────────────────────────
@@ -244,112 +264,93 @@ $("#chat-reset").addEventListener("click", async () => {
 async function loadChats() {
   const { chats } = await api("GET", "/api/chats");
   const list = $("#chat-list");
-  if (!chats.length) {
-    list.replaceChildren(el("p", "muted", "No conversations yet. Once Lady Jane answers someone on WhatsApp, it appears here."));
-    return;
-  }
   list.replaceChildren(
     ...chats.map((c) => {
-      const item = el("div", `chat-item${currentChat?.chat_id === c.chat_id ? " active" : ""}`);
-      const name = c.name || c.chat_id.split("@")[0];
-      item.append(
-        el("div", "name", `${c.is_group ? "👥 " : ""}${name}${c.muted ? " 🔇" : ""}`),
-        el("div", "sub", `${c.message_count} messages · ${fmtTime(c.last_at)}`),
-      );
-      item.addEventListener("click", () => openChat(c));
+      const item = el("div", `chat-item ${currentChat === c.chat_id ? "active" : ""}`);
+      const info = el("div");
+      info.append(el("div", "title", c.name || c.chat_id), el("div", "sub", `${c.message_count} messages · ${fmtTime(c.last_at)}`));
+      item.append(info);
+      item.addEventListener("click", () => selectChat(c));
       return item;
     }),
   );
+  if (!currentChat && chats[0]) selectChat(chats[0]);
 }
 
-async function openChat(c) {
-  currentChat = c;
+async function selectChat(c) {
+  currentChat = c.chat_id;
   $("#conv-title").textContent = c.name || c.chat_id;
-  $("#conv-clear").classList.remove("hidden");
-  $("#conv-mute").classList.toggle("hidden", c.chat_id === "dashboard");
-  $("#conv-mute").textContent = c.muted ? "Unmute" : "Mute";
+  const muteBtn = $("#conv-mute");
+  muteBtn.classList.remove("hidden");
+  muteBtn.textContent = c.muted ? "Unmute" : "Mute";
+  muteBtn.onclick = async () => {
+    await api("PATCH", "/api/chats", { chat: c.chat_id, muted: !c.muted });
+    c.muted = !c.muted;
+    selectChat(c);
+  };
+  const clearBtn = $("#conv-clear");
+  clearBtn.classList.remove("hidden");
+  clearBtn.onclick = async () => {
+    if (!confirm(`Delete all stored messages for ${c.name || c.chat_id}?`)) return;
+    await api("DELETE", `/api/messages?chat=${encodeURIComponent(c.chat_id)}`);
+    selectChat(c);
+  };
+
   const { messages } = await api("GET", `/api/messages?chat=${encodeURIComponent(c.chat_id)}`);
   const log = $("#conv-log");
-  log.replaceChildren(...messages.map(bubble));
+  log.replaceChildren(...messages.map(renderBubble));
   log.scrollTop = log.scrollHeight;
-  loadChats();
+  document.querySelectorAll(".chat-item").forEach((it, i) => it.classList.toggle("active", overview?.chats?.[i]?.chat_id === c.chat_id));
 }
 
-$("#conv-clear").addEventListener("click", async () => {
-  if (!currentChat || !confirm("Delete Lady Jane's memory of this conversation?")) return;
-  await api("DELETE", `/api/messages?chat=${encodeURIComponent(currentChat.chat_id)}`);
-  openChat(currentChat);
-});
-
-$("#conv-mute").addEventListener("click", async () => {
-  if (!currentChat) return;
-  currentChat.muted = currentChat.muted ? 0 : 1;
-  await api("PATCH", "/api/chats", { chat: currentChat.chat_id, muted: !!currentChat.muted });
-  openChat(currentChat);
-});
-
-// ─── Rule Book ────────────────────────────────────────────────────────────────
+// ─── Rule Book ───────────────────────────────────────────────────────────────
 
 let rules = [];
-
 async function loadRules() {
-  const data = await api("GET", "/api/rules");
-  rules = data.rules || [];
+  const res = await api("GET", "/api/rules");
+  rules = res.rules || [];
   renderRules();
 }
 
 function renderRules() {
-  const list = $("#rules-list");
-  if (!rules.length) {
-    list.replaceChildren(el("p", "muted", "No custom rules yet. Click '+ Add New Rule' to create an instant keyword reply or an AI guideline."));
+  const container = $("#rules-list");
+  if (rules.length === 0) {
+    container.replaceChildren(el("div", "muted", "No rules created yet. Add one above!"));
     return;
   }
-  list.replaceChildren(...rules.map((r) => {
-    const card = el("div", `rule-card${r.enabled ? "" : " disabled"}`);
 
-    const head = el("div", "rule-card-header");
-    const badges = el("div", "rule-badges");
-    if (r.type === "instant") {
-      badges.append(el("span", "badge instant", "⚡ Instant Reply (0 Neurons)"));
-    } else {
-      badges.append(el("span", "badge guideline", "🧠 AI Guideline"));
-    }
+  container.replaceChildren(
+    ...rules.map((r) => {
+      const card = el("div", `rule-item ${r.enabled ? "" : "disabled"}`);
+      const info = el("div", "rule-content");
+      const meta = el("div", "rule-meta");
+      const badge = el("span", `badge ${r.type === "instant" ? "badge-instant" : "badge-ai"}`, r.type === "instant" ? "⚡ Instant Auto-Reply" : "🧠 AI Guideline");
+      meta.append(badge);
 
-    const controls = el("div", "rule-controls");
-    const toggle = el("label", "switch");
-    const chk = el("input");
-    chk.type = "checkbox";
-    chk.checked = !!r.enabled;
-    chk.addEventListener("change", async () => {
-      await api("PATCH", "/api/rules", { id: r.id, enabled: chk.checked ? 1 : 0 });
-      r.enabled = chk.checked ? 1 : 0;
-      card.classList.toggle("disabled", !r.enabled);
-    });
-    toggle.append(chk, el("span", "small-text", r.enabled ? "Active" : "Paused"));
+      const triggers = el("div", "rule-triggers", r.triggers);
+      const resp = el("div", "rule-resp", r.response);
+      info.append(meta, triggers, resp);
 
-    const del = el("button", "danger small", "Delete");
-    del.addEventListener("click", async () => {
-      if (!confirm("Delete this rule?")) return;
-      await api("DELETE", `/api/rules?id=${encodeURIComponent(r.id)}`);
-      rules = rules.filter((x) => x.id !== r.id);
-      renderRules();
-    });
-
-    controls.append(toggle, del);
-    head.append(badges, controls);
-
-    const triggers = el("div", "rule-triggers-preview");
-    if (r.type === "instant") {
-      triggers.textContent = `🎯 Trigger keywords: "${r.triggers}"`;
-    } else {
-      triggers.textContent = `📌 Topic / Label: "${r.triggers}"`;
-    }
-
-    const resp = el("div", "rule-response-preview", r.response);
-
-    card.append(head, triggers, resp);
-    return card;
-  }));
+      const ctrls = el("div", "rule-ctrls");
+      const tog = el("button", "ghost small", r.enabled ? "Disable" : "Enable");
+      tog.addEventListener("click", async () => {
+        const next = r.enabled ? 0 : 1;
+        await api("PATCH", "/api/rules", { id: r.id, enabled: next });
+        r.enabled = next;
+        renderRules();
+      });
+      const del = el("button", "danger small", "Delete");
+      del.addEventListener("click", async () => {
+        if (!confirm("Delete this rule?")) return;
+        await api("DELETE", `/api/rules?id=${r.id}`);
+        rules = rules.filter((x) => x.id !== r.id);
+        renderRules();
+      });
+      ctrls.append(tog, del);
+      card.append(info, ctrls);
+      return card;
+    }),
+  );
 }
 
 $("#add-rule-toggle").addEventListener("click", () => {
@@ -369,7 +370,7 @@ $("#rule-type").addEventListener("change", (e) => {
     : 'Topic / Guideline Label <span class="muted">(e.g. Tone, Pricing, Discounts, Policies)</span>';
   $("#rule-response-label").innerHTML = isInstant
     ? 'Instant Reply Message <span class="muted">(Sent word-for-word, 0 Neurons)</span>'
-    : 'AI Instruction <span class="muted">(How Lady Jane should behave)</span>';
+    : 'AI Instruction <span class="muted">(How Nyra Rose should behave)</span>';
 });
 
 $("#new-rule-form").addEventListener("submit", async (e) => {
@@ -396,6 +397,106 @@ $("#new-rule-form").addEventListener("submit", async (e) => {
   }
 });
 
+// ─── Notes & Memory ─────────────────────────────────────────────────────────
+
+let notes = [];
+async function loadNotes() {
+  const res = await api("GET", "/api/notes");
+  notes = res.notes || [];
+  renderNotes();
+}
+
+function renderNotes() {
+  const container = $("#notes-list");
+  if (notes.length === 0) {
+    container.replaceChildren(el("div", "muted", "No notes stored yet. Use /note <text> on WhatsApp or add one above."));
+    return;
+  }
+  container.replaceChildren(
+    ...notes.map((n) => {
+      const item = el("div", "rule-item");
+      const info = el("div", "rule-content");
+      info.append(el("div", "rule-triggers", n.content), el("div", "rule-resp", `${fmtTime(n.created_at)} · Chat: ${n.chat_id}`));
+      const del = el("button", "danger small", "Delete");
+      del.addEventListener("click", async () => {
+        if (!confirm("Delete this note?")) return;
+        await api("DELETE", `/api/notes?id=${n.id}`);
+        notes = notes.filter((x) => x.id !== n.id);
+        renderNotes();
+      });
+      item.append(info, del);
+      return item;
+    }),
+  );
+}
+
+$("#new-note-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#note-input");
+  const content = input.value.trim();
+  if (!content) return;
+  const res = await api("POST", "/api/notes", { content, chatId: "dashboard" });
+  notes.unshift(res.note);
+  renderNotes();
+  input.value = "";
+});
+
+// ─── Tasks & To-Dos ────────────────────────────────────────────────────────
+
+let todos = [];
+async function loadTodos() {
+  const res = await api("GET", "/api/todos");
+  todos = res.todos || [];
+  renderTodos();
+}
+
+function renderTodos() {
+  const container = $("#todos-list");
+  if (todos.length === 0) {
+    container.replaceChildren(el("div", "muted", "No tasks in your list. Use /todo <task> on WhatsApp or add one above."));
+    return;
+  }
+  container.replaceChildren(
+    ...todos.map((t) => {
+      const item = el("div", `rule-item ${t.completed ? "disabled" : ""}`);
+      const info = el("div", "rule-content");
+      const title = el("div", "rule-triggers", `${t.completed ? "✓ " : "○ "} ${t.task}`);
+      if (t.completed) title.style.textDecoration = "line-through";
+      info.append(title, el("div", "rule-resp", `${fmtTime(t.created_at)} · Chat: ${t.chat_id}`));
+
+      const ctrls = el("div", "rule-ctrls");
+      const tog = el("button", "ghost small", t.completed ? "Mark Pending" : "Mark Done");
+      tog.addEventListener("click", async () => {
+        const next = !t.completed;
+        await api("PATCH", "/api/todos", { id: t.id, completed: next });
+        t.completed = next ? 1 : 0;
+        renderTodos();
+      });
+      const del = el("button", "danger small", "Delete");
+      del.addEventListener("click", async () => {
+        if (!confirm("Delete this task?")) return;
+        await api("DELETE", `/api/todos?id=${t.id}`);
+        todos = todos.filter((x) => x.id !== t.id);
+        renderTodos();
+      });
+      ctrls.append(tog, del);
+      item.append(info, ctrls);
+      return item;
+    }),
+  );
+}
+
+$("#new-todo-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#todo-input");
+  const task = input.value.trim();
+  if (!task) return;
+  const res = await api("POST", "/api/todos", { task, chatId: "dashboard" });
+  todos.unshift(res.todo);
+  renderTodos();
+  input.value = "";
+});
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 async function fillSettings() {
@@ -419,8 +520,12 @@ async function fillSettings() {
 $("#settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.target;
-  if (f.replyMode.value === "everyone" && overview.settings.replyMode !== "everyone" &&
-      !confirm("Lady Jane will answer EVERYONE who messages you privately. Are you sure?")) return;
+  if (
+    f.replyMode.value === "everyone" &&
+    overview.settings.replyMode !== "everyone" &&
+    !confirm("Nyra Rose will answer EVERYONE who messages you privately. Are you sure?")
+  )
+    return;
   const btn = f.querySelector("button[type=submit]");
   btn.disabled = true;
   try {

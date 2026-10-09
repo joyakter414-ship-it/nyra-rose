@@ -1,7 +1,7 @@
-# Lady Jane 👑
-> Intelligent 24/7 WhatsApp AI Assistant powered by Cloudflare Workers AI (Neurons), D1 Database, and R2 Object Storage.
+# Nyra Rose 🌹
+> Intelligent 24/7 WhatsApp AI Assistant powered by Cloudflare Workers AI (Neurons), D1 Database, R2 Object Storage, and GitHub Cloud Runner.
 
-Named after **Lady Jane Grey**, the "Nine Days' Queen" of England (1553), renowned for her wit, intellect, and grace.
+An exquisite personal AI companion and secretary on WhatsApp: witty, warm, sharp, and remarkably capable.
 
 ---
 
@@ -11,20 +11,24 @@ Named after **Lady Jane Grey**, the "Nine Days' Queen" of England (1553), renown
 [ WhatsApp User ]
        │
        ▼ (WebSocket / Multi-device)
-[ Lady Jane Gateway (24/7 on GitHub Cloud / Container) ]
+[ Nyra Rose Gateway (24/7 on GitHub Cloud / Container) ]
        │
        ▼ (Encrypted HTTPS REST Relay)
-[ Lady Jane Brain (Cloudflare Pages Functions / Worker) ]
+[ Nyra Rose Brain (Cloudflare Workers / Pages) ]
   ├── 📜 Rule Book Engine (Instant Triggers & AI Guidelines)
+  ├── 📝 Quick Notes & Memory Store (D1 Database)
+  ├── ✅ Task & To-Do Tracker (D1 Database)
   ├── 🧠 Cloudflare Workers AI (Llama 4 Scout / Meta Neurons)
   ├── 🗄️ Cloudflare D1 Database (Chat History & Deduplication)
   └── 📦 Cloudflare R2 Bucket (Encrypted Session Backup)
        │
        ▼
 [ Web Dashboard ]
-  ├── 👑 Live Status & WhatsApp QR Scanner
-  ├── 📜 Dedicated Rule Book (Instant Triggers & Guidelines)
-  ├── 💬 Live Test Chat
+  ├── 🌹 Live WhatsApp Status & QR Scanner
+  ├── 💬 Interactive Test Chat
+  ├── 📜 Dedicated Rule Book (Instant Auto-replies & Guidelines)
+  ├── 📝 Notes & Context Memory Manager
+  ├── ✅ Task & To-Do List Manager
   ├── 👥 Chat Histories & Management
   └── ⚙️ Model, Persona & Safety Settings
 ```
@@ -33,12 +37,14 @@ Named after **Lady Jane Grey**, the "Nine Days' Queen" of England (1553), renown
 
 ## 🚀 Key Features
 
-* **100% Free Edge Compute:** Runs on Cloudflare's 10,000 free daily Neurons.
+* **100% Free Edge Compute:** Runs on Cloudflare's 10,000 free daily Neurons (Llama 4 Scout, Llama 3.3 70B, etc.).
 * **Instant Auto-Replies:** Keyword triggers respond in ~50ms with 0 Neurons consumed.
 * **Smart AI Rules:** Behavioral rules strictly followed by the AI model.
+* **Notes & Memory Store:** Save notes on WhatsApp with `/note <text>`, view with `/notes`, or manage in dashboard.
+* **Tasks & To-Do Tracker:** Create tasks with `/todo <task>`, view with `/todos`, mark done with `/done <num>`.
 * **Encrypted Cloud Persistence:** WhatsApp multi-device authentication is encrypted with AES-256-GCM and mirrored to Cloudflare R2, enabling seamless restarts without re-scanning QR codes.
 * **Multi-Language:** Fluent in English, Bengali (বাংলা), and Banglish.
-* **24/7 Cloud Operation:** Runs continuously in the cloud without requiring a local PC.
+* **24/7 Cloud Operation:** Runs continuously in GitHub Actions Cloud with auto-relay dispatch.
 
 ---
 
