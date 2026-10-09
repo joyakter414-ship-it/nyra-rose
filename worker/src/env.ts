@@ -1,4 +1,4 @@
-/** Bindings + secrets available to the Worker. */
+/** Bindings + secrets available to the Worker / Pages function. */
 export interface AppEnv {
   AI: Ai;
   DB: D1Database;
@@ -12,5 +12,8 @@ export interface AppEnv {
   GITHUB_PAT?: string;
   /** GitHub repository owner/name (secret or var). */
   GITHUB_REPO?: string;
+  /** Cloudflare Account ID for live GraphQL analytics. */
+  CF_ACCOUNT_ID?: string;
+  /** Cloudflare OAuth refresh token for live account-level Neuron usage. */
+  CF_REFRESH_TOKEN?: string;
 }
-

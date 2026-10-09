@@ -1,4 +1,5 @@
 import type { AppEnv } from "./env";
+import { getLiveNeuronUsage } from "./analytics";
 import { handleDashboardChat, handleIncoming, type IncomingMessage } from "./brain";
 import {
   createNote,
@@ -101,9 +102,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const [settings, gateway, usage] = await Promise.all([
         getSettings(env),
         kvGet<GatewayStatus>(env, "gateway"),
-        env.DB.prepare("SELECT day, neurons, requests FROM usage ORDER BY day DESC LIMIT 7").all<{ day: string; neurons: number; requests: number }>(),
+        getLiveNeuronUsage(env),
       ]);
-      const today = new Date().toISOString().slice(0, 10);
       const online = !!gateway && Date.now() - gateway.at < GATEWAY_OFFLINE_AFTER_MS;
       return json({
         name: "Nyra Rose",
@@ -111,11 +111,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         settings,
         models: MODELS,
         gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
-        usage: {
-          freePerDay: FREE_NEURONS_PER_DAY,
-          today: usage.results.find((u) => u.day === today) ?? { day: today, neurons: 0, requests: 0 },
-          recent: usage.results,
-        },
+        usage,
       });
     }
     case "PUT /api/settings": {

@@ -158,11 +158,32 @@ async function refreshOverview() {
   $("#neurons-bar").style.width = `${Math.min(100, (todayUsed / free) * 100)}%`;
   $("#requests-today").textContent = fmtNum(usage.today?.requests ?? 0);
 
+  const badge = $("#neurons-badge");
+  const source = $("#neurons-source");
+  if (badge) {
+    if (usage.isLive) {
+      badge.textContent = "🟢 Live Cloudflare";
+      badge.style.background = "#10b98122";
+      badge.style.color = "#34d399";
+      badge.style.border = "1px solid #059669";
+    } else {
+      badge.textContent = "Local D1";
+      badge.style.background = "var(--panel-2)";
+      badge.style.color = "var(--muted)";
+      badge.style.border = "1px solid var(--line)";
+    }
+  }
+  if (source) {
+    source.textContent = usage.accountWide
+      ? "⚡ Live account total (Shared across Lady Jane, Nyra Rose & all Workers AI)"
+      : "Local estimate from Nyra Rose";
+  }
+
   const rows = $("#usage-rows");
   rows.replaceChildren(
     ...(usage.recent || []).map((u) => {
       const tr = el("tr");
-      tr.append(el("td", null, u.day), el("td", null, `${fmtNum(u.neurons)} neurons · ${fmtNum(u.requests)} replies`));
+      tr.append(el("td", null, u.day), el("td", null, `${fmtNum(u.neurons)} neurons · ${fmtNum(u.requests)} inferences`));
       return tr;
     }),
   );

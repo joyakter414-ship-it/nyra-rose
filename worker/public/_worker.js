@@ -149,6 +149,110 @@ async function deleteTodo(env, id) {
   return (res.meta.changes ?? 0) > 0;
 }
 
+// src/analytics.ts
+var CLIENT_ID = "54d11594-84e4-41aa-b438-e81b8fa78ee7";
+var FREE_NEURONS_PER_DAY = 1e4;
+async function getCloudflareAccessToken(env) {
+  if (!env.CF_REFRESH_TOKEN) return null;
+  const cached = await kvGet(env, "cf_token_cache");
+  if (cached && cached.expiresAt > Date.now() + 6e4) {
+    return cached.accessToken;
+  }
+  try {
+    const params = new URLSearchParams();
+    params.set("grant_type", "refresh_token");
+    params.set("client_id", CLIENT_ID);
+    params.set("refresh_token", env.CF_REFRESH_TOKEN);
+    const res = await fetch("https://dash.cloudflare.com/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString()
+    });
+    if (!res.ok) {
+      console.warn("Could not refresh Cloudflare token:", res.status);
+      return null;
+    }
+    const data = await res.json();
+    if (!data.access_token) return null;
+    const expiresAt = Date.now() + (data.expires_in ?? 3600) * 1e3;
+    await kvSet(env, "cf_token_cache", { accessToken: data.access_token, expiresAt });
+    return data.access_token;
+  } catch (err) {
+    console.warn("Error refreshing Cloudflare access token:", err);
+    return null;
+  }
+}
+async function getLiveNeuronUsage(env) {
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const accountId = env.CF_ACCOUNT_ID || "b1063110432e3589537a148bd49d57ee";
+  try {
+    const accessToken = await getCloudflareAccessToken(env);
+    if (accessToken) {
+      const startDate = new Date(Date.now() - 7 * 24 * 3600 * 1e3).toISOString().slice(0, 10);
+      const query = `query {
+        viewer {
+          accounts(filter: { accountTag: "${accountId}" }) {
+            aiInferenceAdaptiveGroups(
+              limit: 10
+              filter: { date_geq: "${startDate}" }
+              orderBy: [date_DESC]
+            ) {
+              count
+              sum {
+                totalNeurons
+              }
+              dimensions {
+                date
+              }
+            }
+          }
+        }
+      }`;
+      const res = await fetch("https://api.cloudflare.com/client/v4/graphql", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ query })
+      });
+      if (res.ok) {
+        const json2 = await res.json();
+        const groups = json2.data?.viewer?.accounts?.[0]?.aiInferenceAdaptiveGroups ?? [];
+        const todayGroup = groups.find((g) => g.dimensions?.date === today);
+        const recent = groups.map((g) => ({
+          day: g.dimensions?.date,
+          neurons: Math.round((g.sum?.totalNeurons || 0) * 10) / 10,
+          requests: g.count || 0
+        }));
+        return {
+          isLive: true,
+          accountWide: true,
+          freePerDay: FREE_NEURONS_PER_DAY,
+          today: {
+            day: today,
+            neurons: Math.round((todayGroup?.sum?.totalNeurons || 0) * 10) / 10,
+            requests: todayGroup?.count || 0
+          },
+          recent
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Failed fetching live Cloudflare Neuron analytics, falling back to local D1:", err);
+  }
+  const localUsage = await env.DB.prepare(
+    "SELECT day, neurons, requests FROM usage ORDER BY day DESC LIMIT 7"
+  ).all();
+  return {
+    isLive: false,
+    accountWide: false,
+    freePerDay: FREE_NEURONS_PER_DAY,
+    today: localUsage.results.find((u) => u.day === today) ?? { day: today, neurons: 0, requests: 0 },
+    recent: localUsage.results
+  };
+}
+
 // src/persona.ts
 function buildSystemPrompt(s, ctx) {
   const owner = s.ownerName?.trim() || "my creator";
@@ -546,7 +650,6 @@ async function generateReply(env, s, rules, c) {
 
 // src/index.ts
 var SESSION_KEY = "whatsapp/session.bin";
-var FREE_NEURONS_PER_DAY = 1e4;
 var GATEWAY_OFFLINE_AFTER_MS = 9e4;
 var index_default = {
   async fetch(request, env) {
@@ -609,9 +712,8 @@ async function dashboardRoutes(request, env, url) {
       const [settings, gateway, usage] = await Promise.all([
         getSettings(env),
         kvGet(env, "gateway"),
-        env.DB.prepare("SELECT day, neurons, requests FROM usage ORDER BY day DESC LIMIT 7").all()
+        getLiveNeuronUsage(env)
       ]);
-      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       const online = !!gateway && Date.now() - gateway.at < GATEWAY_OFFLINE_AFTER_MS;
       return json({
         name: "Nyra Rose",
@@ -619,11 +721,7 @@ async function dashboardRoutes(request, env, url) {
         settings,
         models: MODELS,
         gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
-        usage: {
-          freePerDay: FREE_NEURONS_PER_DAY,
-          today: usage.results.find((u) => u.day === today) ?? { day: today, neurons: 0, requests: 0 },
-          recent: usage.results
-        }
+        usage
       });
     }
     case "PUT /api/settings": {
