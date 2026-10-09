@@ -14,7 +14,7 @@ An exquisite personal AI companion and secretary on WhatsApp: witty, warm, sharp
 [ Nyra Rose Gateway (24/7 on GitHub Cloud / Container) ]
        │
        ▼ (Encrypted HTTPS REST Relay)
-[ Nyra Rose Brain (Cloudflare Workers / Pages) ]
+[ Nyra Rose Brain (Cloudflare Pages Functions) ]
   ├── 📜 Rule Book Engine (Instant Triggers & AI Guidelines)
   ├── 📝 Quick Notes & Memory Store (D1 Database)
   ├── ✅ Task & To-Do Tracker (D1 Database)

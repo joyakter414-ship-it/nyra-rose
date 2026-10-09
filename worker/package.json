@@ -2,16 +2,17 @@
   "name": "nyra-rose-brain",
   "version": "1.0.0",
   "private": true,
-  "description": "Nyra Rose's brain: Cloudflare Worker using Workers AI (Neurons), D1 and R2, plus the dashboard.",
+  "description": "Nyra Rose's brain: Cloudflare Pages using Workers AI (Neurons), D1 and R2, plus the dashboard.",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=neutral --outfile=public/_worker.js",
+    "deploy": "npm run build && wrangler pages deploy public --project-name nyra-rose --branch main",
     "db:init": "wrangler d1 execute nyra-rose-db --remote --file=./schema.sql",
     "types": "wrangler types",
     "check": "tsc --noEmit"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "typescript": "^5.9.0",
     "wrangler": "^4.148.0"
   }
