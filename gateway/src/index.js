@@ -39,7 +39,7 @@ let state = "starting";
 let me = { pn: null, lid: null, name: null };
 let reconnectAttempts = 0;
 let restartTimer = null;
-const sentIds = new Set(); // ids of messages Lady Jane sent, so she never answers herself
+const sentIds = new Set(); // ids of messages Nyra Rose sent, so she never answers herself
 const replyLog = new Map(); // chatJid -> timestamps of recent replies
 const groupNames = new Map();
 
@@ -104,7 +104,7 @@ async function start() {
         scheduleRestart(2_000);
       } else if (code === DisconnectReason.connectionReplaced) {
         // Another gateway instance is using the same session. Don't fight it.
-        log.error("Connection replaced: another Lady Jane gateway is running with this session. Retrying in 2 min.");
+        log.error("Connection replaced: another Nyra Rose gateway is running with this session. Retrying in 2 min.");
         await setState("closed", { detail: "Another gateway took over this session" });
         scheduleRestart(120_000);
       } else {
@@ -209,7 +209,7 @@ async function onMessage(msg) {
   const ctx = contextInfoOf(msg.message);
   const mentioned = isGroup && (
     (ctx?.mentionedJid || []).some(isMe) ||
-    isMe(ctx?.participant) // replying to one of Lady Jane's messages
+    isMe(ctx?.participant) // replying to one of Nyra Rose's messages
   );
 
   const payload = {

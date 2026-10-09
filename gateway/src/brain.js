@@ -1,4 +1,4 @@
-// Talks to the Lady Jane brain (Cloudflare Worker).
+// Talks to the Nyra Rose brain (Cloudflare Pages Functions).
 
 const BRAIN_URL = (process.env.BRAIN_URL || "").replace(/\/+$/, "");
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || "";
