@@ -20,9 +20,10 @@ import {
 import { getSettings, MODELS, saveSettings, type Settings } from "./settings";
 
 const SESSION_KEY = "whatsapp/session.bin";
-const FREE_NEURONS_PER_DAY = 10_000;
 /** Gateway sends a heartbeat every 30s; after this long without one it's shown offline. */
 const GATEWAY_OFFLINE_AFTER_MS = 90_000;
+
+export type UserRole = "admin" | "client";
 
 interface GatewayStatus {
   state: "starting" | "connecting" | "qr" | "open" | "closed" | "logged_out";
@@ -49,7 +50,7 @@ export default {
 // ─── Gateway (WhatsApp connector) ────────────────────────────────────────────
 
 async function gatewayRoutes(request: Request, env: AppEnv, url: URL): Promise<Response> {
-  if (!(await authorized(request, env.GATEWAY_TOKEN))) return json({ error: "Unauthorized" }, 401);
+  if (!(await checkSecret(request, env.GATEWAY_TOKEN))) return json({ error: "Unauthorized" }, 401);
   const route = `${request.method} ${url.pathname}`;
 
   switch (route) {
@@ -69,7 +70,6 @@ async function gatewayRoutes(request: Request, env: AppEnv, url: URL): Promise<R
         at: Date.now(),
       };
       await kvSet(env, "gateway", next);
-      // Hand any pending dashboard command (e.g. logout) back to the gateway.
       const command = await kvGet<{ cmd: string }>(env, "gateway_command");
       if (command) await kvDelete(env, "gateway_command");
       return json({ ok: true, command: command?.cmd ?? null });
@@ -94,7 +94,9 @@ async function gatewayRoutes(request: Request, env: AppEnv, url: URL): Promise<R
 // ─── Dashboard API ───────────────────────────────────────────────────────────
 
 async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise<Response> {
-  if (!(await authorized(request, env.DASHBOARD_PASSWORD))) return json({ error: "Unauthorized" }, 401);
+  const role = await getAuthRole(request, env);
+  if (!role) return json({ error: "Unauthorized" }, 401);
+
   const route = `${request.method} ${url.pathname}`;
 
   switch (route) {
@@ -105,24 +107,108 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         getLiveNeuronUsage(env),
       ]);
       const online = !!gateway && Date.now() - gateway.at < GATEWAY_OFFLINE_AFTER_MS;
+
+      if (role === "client") {
+        // Client panel:
+        // - Cannot see raw model name (sees only publicModelName configured by admin)
+        // - Cannot see raw models dropdown
+        // - Cannot see live Cloudflare Neuron numbers/quotas
+        // - Cannot see client password
+        const clientSettings: Partial<Settings> & { modelLabel: string } = {
+          enabled: settings.enabled,
+          provider: "workers-ai",
+          model: settings.publicModelName || "Nyra Rose Intelligence 🌹",
+          modelLabel: settings.publicModelName || "Nyra Rose Intelligence 🌹",
+          publicModelName: settings.publicModelName,
+          clientPassword: "",
+          replyMode: settings.replyMode,
+          allowlist: settings.allowlist,
+          groupsEnabled: settings.groupsEnabled,
+          triggerWords: settings.triggerWords,
+          historyLimit: settings.historyLimit,
+          maxReplyTokens: settings.maxReplyTokens,
+          temperature: settings.temperature,
+          ownerName: settings.ownerName,
+          extraInstructions: settings.extraInstructions,
+        };
+
+        return json({
+          name: "Nyra Rose",
+          symbol: "🌹",
+          role: "client",
+          settings: clientSettings,
+          models: [],
+          gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
+          usage: {
+            isLive: false,
+            accountWide: false,
+            freePerDay: 0,
+            today: {
+              day: usage.today?.day || new Date().toISOString().slice(0, 10),
+              neurons: 0,
+              requests: usage.today?.requests || 0,
+            },
+            recent: [],
+          },
+        });
+      }
+
+      // Admin panel: full access to raw model selection, live neurons, and client password
+      const activeModel = MODELS.find((m) => m.id === settings.model);
       return json({
         name: "Nyra Rose",
         symbol: "🌹",
-        settings,
+        role: "admin",
+        settings: {
+          ...settings,
+          modelLabel: activeModel ? activeModel.label.split("—")[0].trim() : settings.model,
+        },
         models: MODELS,
         gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
         usage,
       });
     }
+
     case "PUT /api/settings": {
       const patch = (await request.json()) as Partial<Settings>;
-      return json({ settings: await saveSettings(env, patch) });
+      if (role === "client") {
+        // Prevent client from changing underlying model, public model name, or client password
+        delete patch.model;
+        delete patch.provider;
+        delete patch.publicModelName;
+        delete patch.clientPassword;
+      }
+      const saved = await saveSettings(env, patch);
+      if (role === "client") {
+        return json({
+          settings: {
+            ...saved,
+            model: saved.publicModelName || "Nyra Rose Intelligence 🌹",
+            modelLabel: saved.publicModelName || "Nyra Rose Intelligence 🌹",
+            clientPassword: "",
+          },
+        });
+      }
+      const activeModel = MODELS.find((m) => m.id === saved.model);
+      return json({
+        settings: {
+          ...saved,
+          modelLabel: activeModel ? activeModel.label.split("—")[0].trim() : saved.model,
+        },
+      });
     }
+
     case "POST /api/chat": {
       const { text } = (await request.json()) as { text?: string };
       if (!text?.trim()) return json({ error: "Empty message" }, 400);
-      return json(await handleDashboardChat(env, text.trim().slice(0, 4000)));
+      const res = await handleDashboardChat(env, text.trim().slice(0, 4000));
+      if (role === "client" && "neurons" in res) {
+        delete (res as Record<string, unknown>).neurons;
+        delete (res as Record<string, unknown>).model;
+      }
+      return json(res);
     }
+
     case "GET /api/chats": {
       const { results } = await env.DB.prepare(
         `SELECT c.chat_id, c.name, c.is_group, c.muted, c.last_at,
@@ -131,6 +217,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       ).all();
       return json({ chats: results });
     }
+
     case "GET /api/messages": {
       const chat = url.searchParams.get("chat");
       if (!chat) return json({ error: "chat is required" }, 400);
@@ -139,20 +226,31 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       )
         .bind(chat)
         .all();
+
+      if (role === "client") {
+        // Sanitize neuron and model fields for client
+        for (const row of results as Array<Record<string, unknown>>) {
+          delete row.neurons;
+          delete row.model;
+        }
+      }
       return json({ messages: results });
     }
+
     case "DELETE /api/messages": {
       const chat = url.searchParams.get("chat");
       if (!chat) return json({ error: "chat is required" }, 400);
       await env.DB.prepare("DELETE FROM messages WHERE chat_id = ?").bind(chat).run();
       return json({ ok: true });
     }
+
     case "PATCH /api/chats": {
       const { chat, muted } = (await request.json()) as { chat?: string; muted?: boolean };
       if (!chat) return json({ error: "chat is required" }, 400);
       await env.DB.prepare("UPDATE chats SET muted = ? WHERE chat_id = ?").bind(muted ? 1 : 0, chat).run();
       return json({ ok: true });
     }
+
     case "POST /api/gateway/start": {
       if (!env.GITHUB_PAT) {
         return json({ error: "GITHUB_PAT secret is not configured" }, 400);
@@ -177,6 +275,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         return json({ error: `Failed to dispatch runner: ${String(err)}` }, 500);
       }
     }
+
     case "POST /api/gateway/logout":
     case "POST /api/session/reset": {
       await env.BUCKET.delete(SESSION_KEY).catch(() => {});
@@ -193,15 +292,18 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         note: "WhatsApp unlinked and session cleared! A fresh QR code will appear.",
       });
     }
+
     case "GET /api/rules": {
       return json({ rules: await getRules(env) });
     }
+
     case "POST /api/rules": {
       const body = (await request.json()) as { type: "instant" | "ai_guideline"; triggers: string; response: string; enabled?: boolean };
       if (!body?.triggers?.trim() || !body?.response?.trim()) return json({ error: "Triggers and response are required" }, 400);
       const rule = await createRule(env, body);
       return json({ rule });
     }
+
     case "PATCH /api/rules": {
       const body = (await request.json()) as { id: string; enabled?: number; triggers?: string; response?: string; type?: "instant" | "ai_guideline" };
       if (!body?.id) return json({ error: "id is required" }, 400);
@@ -213,44 +315,52 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       });
       return json({ rule });
     }
+
     case "DELETE /api/rules": {
       const id = url.searchParams.get("id");
       if (!id) return json({ error: "id is required" }, 400);
       await deleteRule(env, id);
       return json({ ok: true });
     }
+
     case "GET /api/notes": {
       const chat = url.searchParams.get("chat") || undefined;
       return json({ notes: await getNotes(env, chat) });
     }
+
     case "POST /api/notes": {
       const body = (await request.json()) as { chatId?: string; content: string; title?: string; tags?: string };
       if (!body?.content?.trim()) return json({ error: "Note content required" }, 400);
       const note = await createNote(env, body.chatId || "dashboard", body.content, body.title, body.tags);
       return json({ note });
     }
+
     case "DELETE /api/notes": {
       const id = url.searchParams.get("id");
       if (!id) return json({ error: "id is required" }, 400);
       await deleteNote(env, id);
       return json({ ok: true });
     }
+
     case "GET /api/todos": {
       const chat = url.searchParams.get("chat") || undefined;
       return json({ todos: await getTodos(env, chat) });
     }
+
     case "POST /api/todos": {
       const body = (await request.json()) as { chatId?: string; task: string; dueDate?: string };
       if (!body?.task?.trim()) return json({ error: "Task content required" }, 400);
       const todo = await createTodo(env, body.chatId || "dashboard", body.task, body.dueDate);
       return json({ todo });
     }
+
     case "PATCH /api/todos": {
       const body = (await request.json()) as { id: string; completed?: boolean };
       if (!body?.id) return json({ error: "id is required" }, 400);
       const todo = await toggleTodo(env, body.id, body.completed);
       return json({ todo });
     }
+
     case "DELETE /api/todos": {
       const id = url.searchParams.get("id");
       if (!id) return json({ error: "id is required" }, 400);
@@ -263,16 +373,40 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function authorized(request: Request, secret: string | undefined): Promise<boolean> {
+async function getAuthRole(request: Request, env: AppEnv): Promise<UserRole | null> {
+  const header = request.headers.get("authorization") ?? "";
+  const given = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!given) return null;
+
+  // 1. Admin authentication (full access)
+  if (env.DASHBOARD_PASSWORD && (await safeEqual(given, env.DASHBOARD_PASSWORD))) {
+    return "admin";
+  }
+
+  // 2. Client authentication (restricted panel)
+  const settings = await getSettings(env);
+  const clientSecret = settings.clientPassword || "rose2026";
+  if (clientSecret && (await safeEqual(given, clientSecret))) {
+    return "client";
+  }
+
+  return null;
+}
+
+async function checkSecret(request: Request, secret: string | undefined): Promise<boolean> {
   if (!secret) return false;
   const header = request.headers.get("authorization") ?? "";
   const given = header.startsWith("Bearer ") ? header.slice(7) : "";
+  return safeEqual(given, secret);
+}
+
+async function safeEqual(a: string, b: string): Promise<boolean> {
   const enc = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", enc.encode(given)),
-    crypto.subtle.digest("SHA-256", enc.encode(secret)),
+  const [digestA, digestB] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(a)),
+    crypto.subtle.digest("SHA-256", enc.encode(b)),
   ]);
-  return crypto.subtle.timingSafeEqual(a, b);
+  return crypto.subtle.timingSafeEqual(digestA, digestB);
 }
 
 function json(data: unknown, status = 200): Response {

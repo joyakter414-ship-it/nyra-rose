@@ -320,6 +320,8 @@ var DEFAULT_SETTINGS = {
   enabled: true,
   provider: "workers-ai",
   model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+  publicModelName: "Nyra Rose Intelligence \u{1F339}",
+  clientPassword: "rose2026",
   replyMode: "self",
   allowlist: [],
   groupsEnabled: false,
@@ -357,6 +359,8 @@ function sanitize(s) {
     enabled: Boolean(s.enabled),
     provider: s.provider === "workers-ai" ? s.provider : "workers-ai",
     model: MODELS.some((m) => m.id === s.model) ? s.model : DEFAULT_SETTINGS.model,
+    publicModelName: String(s.publicModelName ?? "").trim().slice(0, 80) || DEFAULT_SETTINGS.publicModelName,
+    clientPassword: String(s.clientPassword ?? "").trim().slice(0, 100) || DEFAULT_SETTINGS.clientPassword,
     replyMode: ["self", "allowlist", "everyone"].includes(s.replyMode) ? s.replyMode : "self",
     allowlist: [...new Set((Array.isArray(s.allowlist) ? s.allowlist : []).map((p) => String(p).replace(/\D/g, "")).filter((p) => p.length >= 6))],
     groupsEnabled: Boolean(s.groupsEnabled),
@@ -464,16 +468,15 @@ ${list}` };
       return { handled: true, reply: `Completed task: ~${target.task}~ \u{1F389}` };
     }
     case "status": {
+      const settings = await getSettings(env);
       const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       const row = await env.DB.prepare("SELECT neurons, requests FROM usage WHERE day = ?").bind(today).first();
-      const usedNeurons = (row?.neurons ?? 0).toFixed(1);
       const reqCount = row?.requests ?? 0;
       return {
         handled: true,
         reply: `*Nyra Rose Status* \u{1F339}
 
-\u2022 *Brain:* Online on Cloudflare Workers AI
-\u2022 *Today's Neurons:* ${usedNeurons} / 10,000 free
+\u2022 *Brain:* ${settings.publicModelName || "Nyra Rose Intelligence \u{1F339}"}
 \u2022 *Replies today:* ${reqCount}
 \u2022 *Uptime:* Continuous 24/7 Cloud Relay \u26A1`
       };
@@ -665,7 +668,7 @@ var index_default = {
   }
 };
 async function gatewayRoutes(request, env, url) {
-  if (!await authorized(request, env.GATEWAY_TOKEN)) return json({ error: "Unauthorized" }, 401);
+  if (!await checkSecret(request, env.GATEWAY_TOKEN)) return json({ error: "Unauthorized" }, 401);
   const route = `${request.method} ${url.pathname}`;
   switch (route) {
     case "POST /gw/message": {
@@ -705,7 +708,8 @@ async function gatewayRoutes(request, env, url) {
   return json({ error: "Not found" }, 404);
 }
 async function dashboardRoutes(request, env, url) {
-  if (!await authorized(request, env.DASHBOARD_PASSWORD)) return json({ error: "Unauthorized" }, 401);
+  const role = await getAuthRole(request, env);
+  if (!role) return json({ error: "Unauthorized" }, 401);
   const route = `${request.method} ${url.pathname}`;
   switch (route) {
     case "GET /api/overview": {
@@ -715,10 +719,53 @@ async function dashboardRoutes(request, env, url) {
         getLiveNeuronUsage(env)
       ]);
       const online = !!gateway && Date.now() - gateway.at < GATEWAY_OFFLINE_AFTER_MS;
+      if (role === "client") {
+        const clientSettings = {
+          enabled: settings.enabled,
+          provider: "workers-ai",
+          model: settings.publicModelName || "Nyra Rose Intelligence \u{1F339}",
+          modelLabel: settings.publicModelName || "Nyra Rose Intelligence \u{1F339}",
+          publicModelName: settings.publicModelName,
+          clientPassword: "",
+          replyMode: settings.replyMode,
+          allowlist: settings.allowlist,
+          groupsEnabled: settings.groupsEnabled,
+          triggerWords: settings.triggerWords,
+          historyLimit: settings.historyLimit,
+          maxReplyTokens: settings.maxReplyTokens,
+          temperature: settings.temperature,
+          ownerName: settings.ownerName,
+          extraInstructions: settings.extraInstructions
+        };
+        return json({
+          name: "Nyra Rose",
+          symbol: "\u{1F339}",
+          role: "client",
+          settings: clientSettings,
+          models: [],
+          gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
+          usage: {
+            isLive: false,
+            accountWide: false,
+            freePerDay: 0,
+            today: {
+              day: usage.today?.day || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+              neurons: 0,
+              requests: usage.today?.requests || 0
+            },
+            recent: []
+          }
+        });
+      }
+      const activeModel = MODELS.find((m) => m.id === settings.model);
       return json({
         name: "Nyra Rose",
         symbol: "\u{1F339}",
-        settings,
+        role: "admin",
+        settings: {
+          ...settings,
+          modelLabel: activeModel ? activeModel.label.split("\u2014")[0].trim() : settings.model
+        },
         models: MODELS,
         gateway: gateway ? { ...gateway, online } : { state: "never_connected", online: false },
         usage
@@ -726,12 +773,40 @@ async function dashboardRoutes(request, env, url) {
     }
     case "PUT /api/settings": {
       const patch = await request.json();
-      return json({ settings: await saveSettings(env, patch) });
+      if (role === "client") {
+        delete patch.model;
+        delete patch.provider;
+        delete patch.publicModelName;
+        delete patch.clientPassword;
+      }
+      const saved = await saveSettings(env, patch);
+      if (role === "client") {
+        return json({
+          settings: {
+            ...saved,
+            model: saved.publicModelName || "Nyra Rose Intelligence \u{1F339}",
+            modelLabel: saved.publicModelName || "Nyra Rose Intelligence \u{1F339}",
+            clientPassword: ""
+          }
+        });
+      }
+      const activeModel = MODELS.find((m) => m.id === saved.model);
+      return json({
+        settings: {
+          ...saved,
+          modelLabel: activeModel ? activeModel.label.split("\u2014")[0].trim() : saved.model
+        }
+      });
     }
     case "POST /api/chat": {
       const { text } = await request.json();
       if (!text?.trim()) return json({ error: "Empty message" }, 400);
-      return json(await handleDashboardChat(env, text.trim().slice(0, 4e3)));
+      const res = await handleDashboardChat(env, text.trim().slice(0, 4e3));
+      if (role === "client" && "neurons" in res) {
+        delete res.neurons;
+        delete res.model;
+      }
+      return json(res);
     }
     case "GET /api/chats": {
       const { results } = await env.DB.prepare(
@@ -747,6 +822,12 @@ async function dashboardRoutes(request, env, url) {
       const { results } = await env.DB.prepare(
         "SELECT * FROM (SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 200) ORDER BY created_at ASC"
       ).bind(chat).all();
+      if (role === "client") {
+        for (const row of results) {
+          delete row.neurons;
+          delete row.model;
+        }
+      }
       return json({ messages: results });
     }
     case "DELETE /api/messages": {
@@ -869,16 +950,33 @@ async function dashboardRoutes(request, env, url) {
   }
   return json({ error: "Not found" }, 404);
 }
-async function authorized(request, secret) {
+async function getAuthRole(request, env) {
+  const header = request.headers.get("authorization") ?? "";
+  const given = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!given) return null;
+  if (env.DASHBOARD_PASSWORD && await safeEqual(given, env.DASHBOARD_PASSWORD)) {
+    return "admin";
+  }
+  const settings = await getSettings(env);
+  const clientSecret = settings.clientPassword || "rose2026";
+  if (clientSecret && await safeEqual(given, clientSecret)) {
+    return "client";
+  }
+  return null;
+}
+async function checkSecret(request, secret) {
   if (!secret) return false;
   const header = request.headers.get("authorization") ?? "";
   const given = header.startsWith("Bearer ") ? header.slice(7) : "";
+  return safeEqual(given, secret);
+}
+async function safeEqual(a, b) {
   const enc = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", enc.encode(given)),
-    crypto.subtle.digest("SHA-256", enc.encode(secret))
+  const [digestA, digestB] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(a)),
+    crypto.subtle.digest("SHA-256", enc.encode(b))
   ]);
-  return crypto.subtle.timingSafeEqual(a, b);
+  return crypto.subtle.timingSafeEqual(digestA, digestB);
 }
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {

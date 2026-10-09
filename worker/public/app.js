@@ -96,7 +96,24 @@ const STATES = {
 
 async function refreshOverview() {
   overview = await api("GET", "/api/overview");
-  const { gateway, usage, settings, models } = overview;
+  const { gateway, usage, settings, models, role } = overview;
+  const isClient = role === "client";
+
+  // Role Badge in Topbar
+  const roleBadge = $("#role-badge");
+  if (roleBadge) {
+    if (isClient) {
+      roleBadge.textContent = "🌹 Manager Panel";
+      roleBadge.style.background = "#be185d22";
+      roleBadge.style.color = "#fb7185";
+      roleBadge.style.border = "1px solid #be185d";
+    } else {
+      roleBadge.textContent = "👑 Admin";
+      roleBadge.style.background = "#eab30822";
+      roleBadge.style.color = "#facc15";
+      roleBadge.style.border = "1px solid #ca8a04";
+    }
+  }
 
   const isOnline = Boolean(gateway.online);
   const isOpen = isOnline && gateway.state === "open";
@@ -150,49 +167,85 @@ async function refreshOverview() {
     wakeHead.classList.add("hidden");
   }
 
-  // Neurons
-  const todayUsed = usage.today?.neurons ?? 0;
-  const free = usage.freePerDay ?? 10000;
-  $("#neurons-today").textContent = fmtNum(todayUsed);
-  $("#neurons-free").textContent = fmtNum(free);
-  $("#neurons-bar").style.width = `${Math.min(100, (todayUsed / free) * 100)}%`;
-  $("#requests-today").textContent = fmtNum(usage.today?.requests ?? 0);
-
-  const badge = $("#neurons-badge");
+  // Neurons / AI Activity Card
+  const neuronsTitle = $("#neurons-card-title");
+  const neuronsBadge = $("#neurons-badge");
+  const quotaWrap = $("#neurons-quota-wrap");
+  const barWrap = $("#neurons-bar-wrap");
+  const usageTable = $("#usage-table");
   const source = $("#neurons-source");
-  if (badge) {
-    if (usage.isLive) {
-      badge.textContent = "🟢 Live Cloudflare";
-      badge.style.background = "#10b98122";
-      badge.style.color = "#34d399";
-      badge.style.border = "1px solid #059669";
-    } else {
-      badge.textContent = "Local D1";
-      badge.style.background = "var(--panel-2)";
-      badge.style.color = "var(--muted)";
-      badge.style.border = "1px solid var(--line)";
-    }
-  }
-  if (source) {
-    source.textContent = usage.accountWide
-      ? "⚡ Live account total (Shared across Lady Jane, Nyra Rose & all Workers AI)"
-      : "Local estimate from Nyra Rose";
-  }
+  const reqCaption = $("#requests-caption");
 
-  const rows = $("#usage-rows");
-  rows.replaceChildren(
-    ...(usage.recent || []).map((u) => {
-      const tr = el("tr");
-      tr.append(el("td", null, u.day), el("td", null, `${fmtNum(u.neurons)} neurons · ${fmtNum(u.requests)} inferences`));
-      return tr;
-    }),
-  );
+  if (isClient) {
+    if (neuronsTitle) neuronsTitle.textContent = "AI Activity Today";
+    if (neuronsBadge) neuronsBadge.classList.add("hidden");
+    if (quotaWrap) quotaWrap.classList.add("hidden");
+    if (barWrap) barWrap.classList.add("hidden");
+    if (usageTable) usageTable.classList.add("hidden");
+
+    const reqCount = fmtNum(usage?.today?.requests ?? 0);
+    $("#neurons-today").textContent = reqCount;
+    if (reqCaption) {
+      reqCaption.innerHTML = `<span id="requests-today">${reqCount}</span> AI replies generated today · Always active 🌹`;
+    }
+    if (source) {
+      source.textContent = "Powered by Nyra Rose Brain";
+    }
+  } else {
+    if (neuronsTitle) neuronsTitle.textContent = "Neurons today";
+    if (neuronsBadge) neuronsBadge.classList.remove("hidden");
+    if (quotaWrap) quotaWrap.classList.remove("hidden");
+    if (barWrap) barWrap.classList.remove("hidden");
+    if (usageTable) usageTable.classList.remove("hidden");
+
+    const todayUsed = usage?.today?.neurons ?? 0;
+    const free = usage?.freePerDay ?? 10000;
+    $("#neurons-today").textContent = fmtNum(todayUsed);
+    $("#neurons-free").textContent = fmtNum(free);
+    $("#neurons-bar").style.width = `${Math.min(100, (todayUsed / free) * 100)}%`;
+    const reqCount = fmtNum(usage?.today?.requests ?? 0);
+    if (reqCaption) {
+      reqCaption.innerHTML = `<span id="requests-today">${reqCount}</span> inferences today · resets 00:00 UTC (6:00 AM Dhaka)`;
+    }
+
+    if (neuronsBadge) {
+      if (usage?.isLive) {
+        neuronsBadge.textContent = "🟢 Live Cloudflare";
+        neuronsBadge.style.background = "#10b98122";
+        neuronsBadge.style.color = "#34d399";
+        neuronsBadge.style.border = "1px solid #059669";
+      } else {
+        neuronsBadge.textContent = "Local D1";
+        neuronsBadge.style.background = "var(--panel-2)";
+        neuronsBadge.style.color = "var(--muted)";
+        neuronsBadge.style.border = "1px solid var(--line)";
+      }
+    }
+    if (source) {
+      source.textContent = usage?.accountWide
+        ? "⚡ Live account total (Shared across Lady Jane, Nyra Rose & all Workers AI)"
+        : "Local estimate from Nyra Rose";
+    }
+
+    const rows = $("#usage-rows");
+    rows.replaceChildren(
+      ...(usage?.recent || []).map((u) => {
+        const tr = el("tr");
+        tr.append(el("td", null, u.day), el("td", null, `${fmtNum(u.neurons)} neurons · ${fmtNum(u.requests)} inferences`));
+        return tr;
+      }),
+    );
+  }
 
   // Quick switches
-  $("#quick-enabled").checked = settings.enabled;
+  $("#quick-enabled").checked = Boolean(settings.enabled);
   $("#quick-mode").textContent = settings.replyMode;
-  const m = models.find((x) => x.id === settings.model);
-  $("#quick-model").textContent = m ? m.label.split("—")[0].trim() : settings.model;
+  if (isClient) {
+    $("#quick-model").textContent = settings.modelLabel || settings.model || "Nyra Rose Intelligence 🌹";
+  } else {
+    const m = (models || []).find((x) => x.id === settings.model);
+    $("#quick-model").textContent = m ? m.label.split("—")[0].trim() : settings.model;
+  }
 }
 
 $("#quick-enabled").addEventListener("change", async (e) => {
@@ -243,7 +296,8 @@ async function loadDashboardChat() {
 function renderBubble(m) {
   const b = el("div", `bubble ${m.role}`);
   b.append(el("div", "text", m.content));
-  const meta = el("div", "meta", `${m.sender_name || (m.role === "user" ? "You" : "Nyra Rose")} · ${fmtTime(m.created_at)}${m.neurons ? ` · ${m.neurons.toFixed(1)} neurons` : ""}`);
+  const showNeurons = overview?.role !== "client" && Boolean(m.neurons);
+  const meta = el("div", "meta", `${m.sender_name || (m.role === "user" ? "You" : "Nyra Rose")} · ${fmtTime(m.created_at)}${showNeurons ? ` · ${m.neurons.toFixed(1)} neurons` : ""}`);
   b.append(meta);
   return b;
 }
@@ -390,7 +444,7 @@ $("#rule-type").addEventListener("change", (e) => {
     ? 'Trigger Keywords <span class="muted">(comma-separated, e.g. price, cost, দাম, রেট)</span>'
     : 'Topic / Guideline Label <span class="muted">(e.g. Tone, Pricing, Discounts, Policies)</span>';
   $("#rule-response-label").innerHTML = isInstant
-    ? 'Instant Reply Message <span class="muted">(Sent word-for-word, 0 Neurons)</span>'
+    ? 'Instant Reply Message <span class="muted">(Sent word-for-word instantly)</span>'
     : 'AI Instruction <span class="muted">(How Nyra Rose should behave)</span>';
 });
 
@@ -522,20 +576,41 @@ $("#new-todo-form").addEventListener("submit", async (e) => {
 
 async function fillSettings() {
   if (!overview) await refreshOverview();
-  const { settings: s, models } = overview;
+  const { settings: s, models, role } = overview;
+  const isClient = role === "client";
   const f = $("#settings-form");
-  $("#model-select").replaceChildren(...models.map((m) => Object.assign(el("option", null, m.label), { value: m.id })));
-  f.enabled.checked = s.enabled;
-  f.ownerName.value = s.ownerName;
-  f.replyMode.value = s.replyMode;
-  f.allowlist.value = s.allowlist.join("\n");
-  f.groupsEnabled.checked = s.groupsEnabled;
-  f.triggerWords.value = s.triggerWords.join(", ");
-  f.model.value = s.model;
-  f.historyLimit.value = s.historyLimit;
-  f.maxReplyTokens.value = s.maxReplyTokens;
-  f.temperature.value = s.temperature;
-  f.extraInstructions.value = s.extraInstructions;
+
+  const adminModelGroup = $("#admin-model-group");
+  const clientModelGroup = $("#client-model-group");
+  const clientModelDisplay = $("#client-model-display");
+  const adminOnlyFieldset = $("#admin-only-fieldset");
+
+  if (isClient) {
+    if (adminModelGroup) adminModelGroup.classList.add("hidden");
+    if (clientModelGroup) clientModelGroup.classList.remove("hidden");
+    if (clientModelDisplay) clientModelDisplay.value = s.modelLabel || s.model || "Nyra Rose Intelligence 🌹";
+    if (adminOnlyFieldset) adminOnlyFieldset.classList.add("hidden");
+  } else {
+    if (adminModelGroup) adminModelGroup.classList.remove("hidden");
+    if (clientModelGroup) clientModelGroup.classList.add("hidden");
+    if (adminOnlyFieldset) adminOnlyFieldset.classList.remove("hidden");
+
+    $("#model-select").replaceChildren(...(models || []).map((m) => Object.assign(el("option", null, m.label), { value: m.id })));
+    if (f.model) f.model.value = s.model;
+    if (f.publicModelName) f.publicModelName.value = s.publicModelName || "";
+    if (f.clientPassword) f.clientPassword.value = s.clientPassword || "";
+  }
+
+  f.enabled.checked = Boolean(s.enabled);
+  f.ownerName.value = s.ownerName || "";
+  f.replyMode.value = s.replyMode || "self";
+  f.allowlist.value = (s.allowlist || []).join("\n");
+  f.groupsEnabled.checked = Boolean(s.groupsEnabled);
+  f.triggerWords.value = (s.triggerWords || []).join(", ");
+  f.historyLimit.value = s.historyLimit ?? 10;
+  f.maxReplyTokens.value = s.maxReplyTokens ?? 350;
+  f.temperature.value = s.temperature ?? 0.7;
+  f.extraInstructions.value = s.extraInstructions || "";
 }
 
 $("#settings-form").addEventListener("submit", async (e) => {
@@ -543,27 +618,35 @@ $("#settings-form").addEventListener("submit", async (e) => {
   const f = e.target;
   if (
     f.replyMode.value === "everyone" &&
-    overview.settings.replyMode !== "everyone" &&
+    overview?.settings?.replyMode !== "everyone" &&
     !confirm("Nyra Rose will answer EVERYONE who messages you privately. Are you sure?")
   )
     return;
   const btn = f.querySelector("button[type=submit]");
   btn.disabled = true;
   try {
-    const { settings } = await api("PUT", "/api/settings", {
+    const isClient = overview?.role === "client";
+    const payload = {
       enabled: f.enabled.checked,
       ownerName: f.ownerName.value,
       replyMode: f.replyMode.value,
       allowlist: f.allowlist.value.split(/[\n,]/).map((x) => x.trim()).filter(Boolean),
       groupsEnabled: f.groupsEnabled.checked,
       triggerWords: f.triggerWords.value.split(",").map((x) => x.trim()).filter(Boolean),
-      model: f.model.value,
       historyLimit: Number(f.historyLimit.value),
       maxReplyTokens: Number(f.maxReplyTokens.value),
       temperature: Number(f.temperature.value),
       extraInstructions: f.extraInstructions.value,
-    });
-    overview.settings = settings;
+    };
+
+    if (!isClient) {
+      if (f.model) payload.model = f.model.value;
+      if (f.publicModelName) payload.publicModelName = f.publicModelName.value;
+      if (f.clientPassword) payload.clientPassword = f.clientPassword.value;
+    }
+
+    const { settings } = await api("PUT", "/api/settings", payload);
+    overview.settings = { ...overview.settings, ...settings };
     fillSettings();
     $("#settings-saved").textContent = "Saved ✓";
     setTimeout(() => ($("#settings-saved").textContent = ""), 2500);

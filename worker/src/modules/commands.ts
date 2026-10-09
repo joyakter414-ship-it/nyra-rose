@@ -1,5 +1,6 @@
 import type { AppEnv } from "../env";
 import { clearNotes, createNote, createTodo, getNotes, getTodos, toggleTodo } from "../db";
+import { getSettings } from "../settings";
 
 export interface CommandResult {
   handled: boolean;
@@ -112,16 +113,15 @@ export async function handleCommand(
     }
 
     case "status": {
+      const settings = await getSettings(env);
       const today = new Date().toISOString().slice(0, 10);
       const row = await env.DB.prepare("SELECT neurons, requests FROM usage WHERE day = ?").bind(today).first<{ neurons: number; requests: number }>();
-      const usedNeurons = (row?.neurons ?? 0).toFixed(1);
       const reqCount = row?.requests ?? 0;
       return {
         handled: true,
         reply:
           `*Nyra Rose Status* 🌹\n\n` +
-          `• *Brain:* Online on Cloudflare Workers AI\n` +
-          `• *Today's Neurons:* ${usedNeurons} / 10,000 free\n` +
+          `• *Brain:* ${settings.publicModelName || "Nyra Rose Intelligence 🌹"}\n` +
           `• *Replies today:* ${reqCount}\n` +
           `• *Uptime:* Continuous 24/7 Cloud Relay ⚡`,
       };

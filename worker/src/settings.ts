@@ -9,6 +9,10 @@ export interface Settings {
   /** AI provider id — default "workers-ai". */
   provider: string;
   model: string;
+  /** Friendly model name shown to the client/other person in their dashboard. */
+  publicModelName: string;
+  /** Password for the other person / client to log into their panel. */
+  clientPassword: string;
   /**
    * Who Nyra Rose answers in private chats:
    * - self:      only your own "Message yourself" chat (safest, default)
@@ -32,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   provider: "workers-ai",
   model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+  publicModelName: "Nyra Rose Intelligence 🌹",
+  clientPassword: "rose2026",
   replyMode: "self",
   allowlist: [],
   groupsEnabled: false,
@@ -43,7 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   extraInstructions: "",
 };
 
-/** Models offered in the dashboard. All tested with Workers AI chat messages format. */
+/** Models offered in the admin dashboard. All tested with Workers AI chat messages format. */
 export const MODELS = [
   { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B — ultra-fast, cheap, exceptional Bangla/English (Recommended 🌹)" },
   { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", label: "Llama 3.3 70B — highest intelligence & deep reasoning" },
@@ -75,6 +81,8 @@ function sanitize(s: Settings): Settings {
     enabled: Boolean(s.enabled),
     provider: s.provider === "workers-ai" ? s.provider : "workers-ai",
     model: MODELS.some((m) => m.id === s.model) ? s.model : DEFAULT_SETTINGS.model,
+    publicModelName: String(s.publicModelName ?? "").trim().slice(0, 80) || DEFAULT_SETTINGS.publicModelName,
+    clientPassword: String(s.clientPassword ?? "").trim().slice(0, 100) || DEFAULT_SETTINGS.clientPassword,
     replyMode: (["self", "allowlist", "everyone"] as const).includes(s.replyMode) ? s.replyMode : "self",
     allowlist: [...new Set((Array.isArray(s.allowlist) ? s.allowlist : []).map((p) => String(p).replace(/\D/g, "")).filter((p) => p.length >= 6))],
     groupsEnabled: Boolean(s.groupsEnabled),
