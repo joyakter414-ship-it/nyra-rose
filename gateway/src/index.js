@@ -266,6 +266,21 @@ async function sendStatus(extra = {}) {
       log.warn("Logout requested from the dashboard.");
       await sock.logout().catch((err) => log.error({ err: String(err) }, "Logout failed"));
     }
+    if (Array.isArray(res?.outbound) && res.outbound.length > 0 && sock && state === "open") {
+      for (const item of res.outbound) {
+        if (!item?.jid || !item?.text) continue;
+        try {
+          await sock.sendPresenceUpdate("composing", item.jid).catch(() => {});
+          await new Promise((r) => setTimeout(r, 800));
+          const sent = await sock.sendMessage(item.jid, { text: item.text });
+          rememberSent(sent?.key?.id);
+          await sock.sendPresenceUpdate("paused", item.jid).catch(() => {});
+          log.info(`📤 Sent scheduled follow-up/reminder to ${item.jid}`);
+        } catch (sendErr) {
+          log.warn({ err: String(sendErr), jid: item.jid }, "Failed to send scheduled follow-up");
+        }
+      }
+    }
   } catch (err) {
     log.warn({ err: String(err) }, "Could not reach the brain");
   }

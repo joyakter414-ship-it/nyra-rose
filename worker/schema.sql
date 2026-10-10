@@ -82,15 +82,20 @@ CREATE TABLE IF NOT EXISTS bookings (
   scheduled_at       TEXT,
   timezone           TEXT,
   company_or_website TEXT,
-  requirements       TEXT,
-  status             TEXT NOT NULL DEFAULT 'booked', -- 'booked', 'confirmed', 'not_attended', 'buy_soon', 'not_interested', 'completed', 'cancelled'
-  followup_type      TEXT NOT NULL DEFAULT 'auto',   -- 'auto', 'rejected', 'on_hold', 'not_attended', 'buy_soon', 'nurture', 'custom'
-  source             TEXT NOT NULL DEFAULT 'whatsapp',
-  notes              TEXT,
-  last_followup_at   INTEGER,
-  followup_count     INTEGER NOT NULL DEFAULT 0,
-  created_at         INTEGER NOT NULL
+  requirements            TEXT,
+  status                  TEXT NOT NULL DEFAULT 'booked', -- 'lead', 'booked', 'confirmed', 'not_attended', 'buy_soon', 'not_interested', 'fake_lead', 'completed', 'cancelled'
+  followup_type           TEXT NOT NULL DEFAULT 'auto',   -- 'auto', 'auto_day1', 'no_reply_3d', 'long_term_30d', 'client_date', 'custom_timer', 'call_reminder', 'rejected', 'on_hold', 'not_attended', 'buy_soon', 'nurture', 'custom'
+  next_followup_at        INTEGER,
+  call_time_ms            INTEGER,
+  last_client_reply_at    INTEGER,
+  followup_interval_hours REAL DEFAULT 3.5,
+  source                  TEXT NOT NULL DEFAULT 'whatsapp',
+  notes                   TEXT,
+  last_followup_at        INTEGER,
+  followup_count          INTEGER NOT NULL DEFAULT 0,
+  created_at              INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_chat ON bookings (chat_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_bookings_next_followup ON bookings (next_followup_at);
 

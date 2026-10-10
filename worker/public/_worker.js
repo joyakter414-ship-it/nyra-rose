@@ -173,9 +173,15 @@ async function createBooking(env, b) {
   const status = b.status || "booked";
   const followup_type = b.followup_type || "auto";
   const source = b.source || "whatsapp";
+  const followup_interval_hours = b.followup_interval_hours ?? 3.5;
+  const last_client_reply_at = b.last_client_reply_at ?? created_at;
   await env.DB.prepare(
-    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, followup_type, source, notes, last_followup_at, followup_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
+    `INSERT INTO bookings (
+       id, chat_id, client_name, phone, email, scheduled_at, timezone,
+       company_or_website, requirements, status, followup_type,
+       next_followup_at, call_time_ms, last_client_reply_at, followup_interval_hours,
+       source, notes, last_followup_at, followup_count, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   ).bind(
     id,
     b.chat_id,
@@ -188,6 +194,10 @@ async function createBooking(env, b) {
     b.requirements?.trim() ?? null,
     status,
     followup_type,
+    b.next_followup_at ?? null,
+    b.call_time_ms ?? null,
+    last_client_reply_at,
+    followup_interval_hours,
     source,
     b.notes?.trim() ?? null,
     created_at
@@ -204,6 +214,10 @@ async function createBooking(env, b) {
     requirements: b.requirements?.trim() ?? null,
     status,
     followup_type,
+    next_followup_at: b.next_followup_at ?? null,
+    call_time_ms: b.call_time_ms ?? null,
+    last_client_reply_at,
+    followup_interval_hours,
     source,
     notes: b.notes?.trim() ?? null,
     last_followup_at: null,
@@ -229,6 +243,10 @@ async function updateBooking(env, id, patch) {
        requirements = ?,
        status = ?,
        followup_type = ?,
+       next_followup_at = ?,
+       call_time_ms = ?,
+       last_client_reply_at = ?,
+       followup_interval_hours = ?,
        notes = ?,
        last_followup_at = ?,
        followup_count = ?
@@ -243,12 +261,28 @@ async function updateBooking(env, id, patch) {
     next.requirements,
     next.status,
     next.followup_type ?? "auto",
+    next.next_followup_at ?? null,
+    next.call_time_ms ?? null,
+    next.last_client_reply_at ?? null,
+    next.followup_interval_hours ?? 3.5,
     next.notes,
     next.last_followup_at,
     next.followup_count,
     id
   ).run();
   return next;
+}
+async function getDueFollowups(env, now) {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM bookings
+     WHERE next_followup_at IS NOT NULL
+       AND next_followup_at <= ?
+       AND status NOT IN ('fake_lead', 'not_interested', 'completed', 'cancelled')
+       AND followup_type != 'rejected'
+     ORDER BY next_followup_at ASC
+     LIMIT 5`
+  ).bind(now).all();
+  return results;
 }
 async function deleteBooking(env, id) {
   const res = await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(id).run();
@@ -822,6 +856,166 @@ async function handleDashboardChat(env, text) {
     source: "dashboard"
   });
 }
+function getTimezoneOffsetHours(tz) {
+  const u = (tz || "").toUpperCase().trim();
+  if (u === "EST" || u === "EDT") return -4;
+  if (u === "CST" || u === "CDT") return -5;
+  if (u === "MST" || u === "MDT") return -6;
+  if (u === "PST" || u === "PDT") return -7;
+  if (u === "GMT" || u === "UTC") return 0;
+  if (u === "CET") return 1;
+  if (u === "AEST") return 10;
+  return 6;
+}
+function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now()) {
+  if (!phrase || !phrase.trim()) return null;
+  const p = phrase.toLowerCase().trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(p)) {
+    const parsed = Date.parse(phrase);
+    if (!Number.isNaN(parsed) && parsed > nowMs - 864e5) return parsed;
+  }
+  const relMatch = p.match(/(?:in|after)?\s*(\d+(?:\.\d+)?)\s*(hour|hr|minute|min|day|week)s?(?:\s+later)?/i);
+  if (relMatch && (p.includes("in ") || p.includes("after ") || p.includes("later"))) {
+    const val = parseFloat(relMatch[1]);
+    const unit = relMatch[2].toLowerCase();
+    if (unit.startsWith("min")) return Math.round(nowMs + val * 60 * 1e3);
+    if (unit.startsWith("hour") || unit.startsWith("hr")) return Math.round(nowMs + val * 3600 * 1e3);
+    if (unit.startsWith("day")) return Math.round(nowMs + val * 24 * 3600 * 1e3);
+    if (unit.startsWith("week")) return Math.round(nowMs + val * 7 * 24 * 3600 * 1e3);
+  }
+  const tzOffsetHours = getTimezoneOffsetHours(timezone);
+  const localNowMs = nowMs + tzOffsetHours * 3600 * 1e3;
+  const localDate = new Date(localNowMs);
+  let dayOffset = 0;
+  if (p.includes("day after tomorrow")) {
+    dayOffset = 2;
+  } else if (p.includes("tomorrow")) {
+    dayOffset = 1;
+  } else if (p.includes("next week")) {
+    dayOffset = 7;
+  } else {
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    for (let i = 0; i < 7; i++) {
+      if (p.includes(days[i])) {
+        const curDay = localDate.getUTCDay();
+        dayOffset = (i - curDay + 7) % 7;
+        if (dayOffset === 0 && (p.includes("next") || localDate.getUTCHours() >= 18)) {
+          dayOffset = 7;
+        }
+        break;
+      }
+    }
+  }
+  let hour = 15;
+  let minute = 0;
+  const timeMatch = p.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) || p.match(/(?:at\s+)(\d{1,2})(?::(\d{2}))?\b/i);
+  if (timeMatch) {
+    let h = parseInt(timeMatch[1], 10);
+    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const mer = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+    if (mer === "pm" && h < 12) h += 12;
+    if (mer === "am" && h === 12) h = 0;
+    if (!mer && h >= 1 && h <= 7) h += 12;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  } else if (p.includes("morning")) {
+    hour = 10;
+  } else if (p.includes("noon") || p.includes("afternoon")) {
+    hour = 15;
+  } else if (p.includes("evening")) {
+    hour = 19;
+  } else if (p.includes("night") || p.includes("tonight")) {
+    hour = 20;
+  }
+  const targetLocal = new Date(localNowMs);
+  targetLocal.setUTCDate(targetLocal.getUTCDate() + dayOffset);
+  targetLocal.setUTCHours(hour, minute, 0, 0);
+  let targetUtcMs = targetLocal.getTime() - tzOffsetHours * 3600 * 1e3;
+  if (dayOffset === 0 && targetUtcMs <= nowMs) {
+    targetUtcMs += 24 * 3600 * 1e3;
+  }
+  return targetUtcMs;
+}
+function computeNextFollowupState(b, nowMs = Date.now()) {
+  const curStatus = b.status || "lead";
+  const curType = b.followup_type || "auto_day1";
+  if (curType === "rejected" || curStatus === "not_interested" || curStatus === "fake_lead" || curStatus === "completed" || curStatus === "cancelled") {
+    return {
+      status: curStatus,
+      followup_type: curType === "rejected" ? "rejected" : curType,
+      next_followup_at: null,
+      followup_interval_hours: 0
+    };
+  }
+  if (curStatus === "booked" || curStatus === "confirmed") {
+    const callMs = b.call_time_ms || parseScheduledTimeToMs(b.scheduled_at, b.timezone, nowMs);
+    let reminderAt = null;
+    if (callMs) {
+      const thirtyMinBefore = callMs - 30 * 60 * 1e3;
+      if (thirtyMinBefore > nowMs) {
+        reminderAt = thirtyMinBefore;
+      } else if (callMs > nowMs && (!b.last_followup_at || b.last_followup_at < thirtyMinBefore)) {
+        reminderAt = nowMs + 15e3;
+      }
+    }
+    return {
+      status: curStatus,
+      followup_type: "call_reminder",
+      next_followup_at: reminderAt,
+      followup_interval_hours: 0
+    };
+  }
+  if (curType === "client_date" && b.next_followup_at && b.next_followup_at > nowMs) {
+    return {
+      status: curStatus,
+      followup_type: "client_date",
+      next_followup_at: b.next_followup_at,
+      followup_interval_hours: b.followup_interval_hours ?? 24
+    };
+  }
+  if (curType === "custom_timer" && b.next_followup_at && b.next_followup_at > nowMs) {
+    return {
+      status: curStatus,
+      followup_type: "custom_timer",
+      next_followup_at: b.next_followup_at,
+      followup_interval_hours: b.followup_interval_hours ?? 2
+    };
+  }
+  const lastReplyMs = b.last_client_reply_at || b.created_at || nowMs;
+  const elapsedHours = (nowMs - lastReplyMs) / (3600 * 1e3);
+  if (elapsedHours >= 24 * 30) {
+    return {
+      status: "fake_lead",
+      followup_type: "rejected",
+      next_followup_at: null,
+      followup_interval_hours: 0
+    };
+  }
+  if (elapsedHours >= 24 * 4) {
+    return {
+      status: curStatus,
+      followup_type: "long_term_30d",
+      next_followup_at: nowMs + 24 * 3600 * 1e3,
+      followup_interval_hours: 24
+    };
+  }
+  if (elapsedHours >= 24) {
+    return {
+      status: curStatus,
+      followup_type: "no_reply_3d",
+      next_followup_at: nowMs + 8 * 3600 * 1e3,
+      followup_interval_hours: 8
+    };
+  }
+  return {
+    status: curStatus,
+    followup_type: "auto_day1",
+    next_followup_at: nowMs + 3.5 * 3600 * 1e3,
+    followup_interval_hours: 3.5
+  };
+}
 function extractBookingDetails(text, history) {
   const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
   const emailMatch = text.match(emailRegex);
@@ -843,13 +1037,13 @@ function extractBookingDetails(text, history) {
   const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+(?!from|at|with|the|and|here|of\b)[A-Z][a-z]+)?)/i;
   const nameMatch = text.match(nameRegex);
   const clientName = nameMatch ? nameMatch[1].trim() : null;
-  const timePhraseRegex = /(?:(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|morning|evening|afternoon|noon|night))?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b(?:\s*[A-Z]{2,4})?|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+  const timePhraseRegex = /(?:(?:in|after)\s+\d+\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|morning|evening|afternoon|noon|night))?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b(?:\s*[A-Z]{2,4})?|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
   const timePhraseMatch = text.match(timePhraseRegex);
   let time = null;
   if (timePhraseMatch) {
     time = timePhraseMatch[0].trim();
   } else {
-    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning)/i;
+    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning|next week)/i;
     const looseMatch = text.match(looseTime);
     if (looseMatch) {
       const sentence = text.split(/[.?!,\n]/).find((s) => looseTime.test(s));
@@ -862,6 +1056,9 @@ function extractBookingDetails(text, history) {
   const siteRegex = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|io|net|co|app|agency|tv)|youtube\.com\/@[a-zA-Z0-9_.-]+|instagram\.com\/[a-zA-Z0-9_.-]+)/i;
   const siteMatch = text.match(siteRegex);
   const companyOrWebsite = siteMatch ? siteMatch[0] : null;
+  const lower = text.toLowerCase();
+  const isRescheduleRequest = Boolean(time) && (lower.includes("change") || lower.includes("reschedule") || lower.includes("move") || lower.includes("shift") || lower.includes("instead") || lower.includes("postpone") || lower.includes("another time") || lower.includes("new time"));
+  const isClientChoiceFollowup = Boolean(time) && !isRescheduleRequest && (lower.includes("follow up") || lower.includes("followup") || lower.includes("message me") || lower.includes("text me") || lower.includes("contact me") || lower.includes("reach out") || lower.includes("ping me") || lower.includes("remind me") || lower.includes("busy") || lower.includes("book later") || lower.includes("talk later") || lower.includes("check back"));
   const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), text].join(" ").toLowerCase();
   const reqsList = [];
   if (allUserText.includes("short") || allUserText.includes("reel") || allUserText.includes("tiktok") || allUserText.includes("shorts")) {
@@ -888,17 +1085,65 @@ function extractBookingDetails(text, history) {
   if (allUserText.includes("advance") || allUserText.includes("1490") || allUserText.includes("1,490")) {
     reqsList.push("Advance Plan ($1,490/mo)");
   }
-  if (allUserText.includes("premium") || allUserText.includes("1590") || allUserText.includes("1,590")) {
-    reqsList.push("Premium Tier ($1,590/mo)");
+  if (allUserText.includes("premium") || allUserText.includes("2499") || allUserText.includes("2,499") || allUserText.includes("1590")) {
+    reqsList.push("Premium Tier ($2,499/mo)");
   }
   const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
-  return { email, phone, time, timezone, companyOrWebsite, requirements, clientName };
+  return {
+    email,
+    phone,
+    time,
+    timezone,
+    companyOrWebsite,
+    requirements,
+    clientName,
+    isClientChoiceFollowup,
+    isRescheduleRequest
+  };
 }
 function generateFollowupText(b) {
-  const name = b.client_name?.trim() || "there";
-  const type = b.followup_type || "auto";
-  if (type === "rejected" || b.status === "not_interested") {
+  const name = b.client_name && b.client_name !== "New Lead" && b.client_name !== "Dashboard Lead" ? b.client_name.trim() : "there";
+  const type = b.followup_type || "auto_day1";
+  const count = b.followup_count || 0;
+  if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
+  }
+  if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+    return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in 30 minutes${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
+  }
+  if (type === "auto_day1" || type === "auto") {
+    const day1Templates = [
+      `Hi ${name}! Just checking in to see if you had a chance to look at my previous message. Happy to help if you have any questions about our video editing services!`,
+      `Hey ${name}! Are you still exploring video editing support for your content? Let me know what you're looking for, and I'll help you figure out the best next step.`,
+      `Hi ${name}! Would you be available for a quick 15-minute call to discuss your video editing requirements? You can share a convenient time right here or book directly at https://calendly.com/armaan-gineus/30min`,
+      `Hey ${name}! Just wanted to make sure my message didn't get buried. Whenever you're ready to chat about scaling your video content, let me know!`
+    ];
+    return day1Templates[count % day1Templates.length];
+  }
+  if (type === "no_reply_3d") {
+    const day3Templates = [
+      `Hey ${name}! Hope your week is going well. Just wanted to check if you're still looking for a dedicated video editing team to scale your content? Happy to answer any questions or set up a quick call!`,
+      `Hi ${name}! Whenever you're ready to take video editing off your plate, we can start with a $29 trial edit or jump on a quick 15-minute call (https://calendly.com/armaan-gineus/30min). Let me know what works best for you!`,
+      `Hey ${name}! Just checking in \u2014 are you still deciding which editing package would fit your workflow best? Happy to walk you through our Growth and Scale plans whenever you're free.`
+    ];
+    return day3Templates[count % day3Templates.length];
+  }
+  if (type === "long_term_30d") {
+    const longTermTemplates = [
+      `Hey ${name}! Wanted to share a few recent video edits we produced for creators and agencies in your space: https://vidmox.pages.dev/portfolio. Let me know if you'd like to try a sample edit!`,
+      `Hi ${name}! Just checking in to see how your content pipeline is going this month. If you need extra editing capacity or want to test our dedicated team, feel free to reach out anytime!`,
+      `Hey ${name}! Hope business is booming. If you're still looking to outsource your short-form or long-form video editing with a 24-hour turnaround, I'd love to help get you set up!`
+    ];
+    return longTermTemplates[count % longTermTemplates.length];
+  }
+  if (type === "client_date") {
+    return `Hi ${name}! Hope you're doing well. You mentioned following up around today${b.scheduled_at ? ` (${b.scheduled_at})` : ""} \u2014 would now be a convenient time to arrange a quick call and discuss your video editing requirements?`;
+  }
+  if (type === "custom_timer" || type === "custom") {
+    if (b.notes?.trim()) {
+      return `Hey ${name}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
+    }
+    return `Hey ${name}! Following up as promised to see if you had any questions about our editing packages or if you're ready to schedule a quick strategy call? Happy to help!`;
   }
   if (type === "on_hold") {
     return `Hey ${name}! Hope you're doing well. Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how our dedicated team works? Happy to help whenever you're ready!`;
@@ -912,20 +1157,86 @@ function generateFollowupText(b) {
   if (type === "nurture") {
     return `Hey ${name}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
   }
-  if (type === "custom") {
-    if (b.notes?.trim()) {
-      return `Hey ${name}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
+  if (b.status === "completed") {
+    return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+  }
+  return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step or arrange a quick call!`;
+}
+async function processDueFollowups(env) {
+  const now = Date.now();
+  const dueList = await getDueFollowups(env, now).catch(() => []);
+  const outbound = [];
+  for (const b of dueList) {
+    const lastReplyMs = b.last_client_reply_at || b.created_at || now;
+    const elapsedHours = (now - lastReplyMs) / (3600 * 1e3);
+    if (b.status !== "booked" && b.status !== "confirmed" && b.followup_type !== "call_reminder" && elapsedHours >= 24 * 30) {
+      await updateBooking(env, b.id, {
+        status: "fake_lead",
+        followup_type: "rejected",
+        next_followup_at: null,
+        followup_interval_hours: 0
+      });
+      continue;
     }
-    return `Hey ${name}! Hope your week is going great. Just following up to see how your video content plans are coming along? Happy to help whenever you're ready!`;
+    const message = generateFollowupText(b);
+    if (!message) {
+      await updateBooking(env, b.id, { next_followup_at: null });
+      continue;
+    }
+    const cleanPhone = (b.phone || (b.chat_id?.includes("@") ? b.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "");
+    const jid = b.chat_id?.endsWith("@s.whatsapp.net") ? b.chat_id : cleanPhone.length >= 7 ? `${cleanPhone}@s.whatsapp.net` : null;
+    let nextFollowupAt = null;
+    let nextType = b.followup_type;
+    let nextInterval = b.followup_interval_hours ?? 3.5;
+    let nextStatus = b.status;
+    if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+      nextFollowupAt = null;
+      nextType = "call_reminder";
+      nextInterval = 0;
+    } else if (elapsedHours >= 24 * 30) {
+      nextStatus = "fake_lead";
+      nextType = "rejected";
+      nextFollowupAt = null;
+      nextInterval = 0;
+    } else if (elapsedHours >= 24 * 4) {
+      nextType = "long_term_30d";
+      nextInterval = 24;
+      nextFollowupAt = now + 24 * 3600 * 1e3;
+    } else if (elapsedHours >= 24) {
+      nextType = "no_reply_3d";
+      nextInterval = 8;
+      nextFollowupAt = now + 8 * 3600 * 1e3;
+    } else {
+      nextType = "auto_day1";
+      nextInterval = 3.5;
+      nextFollowupAt = now + 3.5 * 3600 * 1e3;
+    }
+    await updateBooking(env, b.id, {
+      status: nextStatus,
+      followup_type: nextType,
+      followup_interval_hours: nextInterval,
+      last_followup_at: now,
+      followup_count: (b.followup_count || 0) + 1,
+      next_followup_at: nextFollowupAt
+    });
+    if (jid) {
+      outbound.push({ jid, text: message, bookingId: b.id });
+      await insertMessage(env, {
+        id: `followup:${crypto.randomUUID()}`,
+        chat_id: jid,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: message,
+        source: "whatsapp",
+        model: "auto:followup",
+        neurons: 0,
+        created_at: now
+      }).catch(() => {
+      });
+    }
   }
-  switch (b.status) {
-    case "booked":
-      return `Hi ${name}! Looking forward to our call${b.scheduled_at ? ` on ${b.scheduled_at}` : ""}! Please let me know if you need to adjust the time or have any questions beforehand.`;
-    case "completed":
-      return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
-    default:
-      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step or arrange a quick call!`;
-  }
+  return outbound;
 }
 async function generateReply(env, s, rules, c) {
   const [history, userNotes, userTodos] = await Promise.all([
@@ -936,10 +1247,11 @@ async function generateReply(env, s, rules, c) {
   const guidelines = rules.filter((r) => r.type === "ai_guideline").map((r) => r.response);
   const notesText = userNotes.slice(0, 10).map((n) => n.content);
   const todosText = userTodos.slice(0, 10).map((t) => t.task);
+  const nowMs = Date.now();
   const existing = await findLatestBookingForChat(env, c.chatId).catch(() => null);
   let bookingContext = "";
   if (existing) {
-    if (existing.followup_type === "rejected" || existing.status === "not_interested") {
+    if (existing.followup_type === "rejected" || existing.status === "not_interested" || existing.status === "fake_lead") {
       bookingContext = `[LEAD STATUS: REJECTED / NOT INTERESTED]. Client is marked as REJECTED / NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
     } else if (existing.followup_type === "on_hold") {
       bookingContext = `[LEAD STATUS: ON HOLD]. Client is currently on hold. Be warm, friendly, and helpful. Do not pressure them to book right away.`;
@@ -961,57 +1273,139 @@ async function generateReply(env, s, rules, c) {
     bookingContext += (bookingContext ? " " : "") + `The client is asking for the call booking link. Share the official booking link immediately: https://calendly.com/armaan-gineus/30min, and ask for their email and website so our sales team can review their content before the call.`;
   }
   const bookingInfo = extractBookingDetails(c.userContent, history);
-  if (bookingInfo.email || bookingInfo.time && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule"))) {
+  const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
+  const computedPhone = bookingInfo.phone || c.senderPhone || null;
+  const isBookingCallIntent = Boolean(bookingInfo.email) || Boolean(bookingInfo.time) && !bookingInfo.isClientChoiceFollowup && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule") || lowerContent.includes("slot") || lowerContent.includes("free at") || lowerContent.includes("available at") || existing?.status === "booked" || existing?.status === "confirmed");
+  if (!c.isGroup) {
     try {
-      const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
-      const computedPhone = bookingInfo.phone || c.senderPhone || null;
-      if (existing) {
-        const nextStatus = existing.status === "not_interested" ? "booked" : (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at) ? "booked" : existing.status;
-        await updateBooking(env, existing.id, {
-          client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
-          phone: computedPhone || existing.phone,
-          email: bookingInfo.email || existing.email,
-          scheduled_at: bookingInfo.time || existing.scheduled_at,
-          timezone: bookingInfo.timezone || existing.timezone,
-          company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
-          requirements: bookingInfo.requirements || existing.requirements,
-          status: nextStatus
-        });
-        const effEmail = bookingInfo.email || existing.email;
-        const effTime = bookingInfo.time || existing.scheduled_at;
-        if (effEmail && effTime) {
-          bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and preferred time (${effTime}). Acknowledge these details naturally as a human sales representative: let them know you've noted it down and our sales manager will review our schedule and send over the invite shortly. NEVER say "CRM", "app", "database", "sheet", or that you are an AI.`;
-        } else if (effTime && !effEmail) {
-          bookingContext = `The client mentioned a preferred time (${effTime}), but hasn't shared their email yet. Acknowledge the time naturally and ask for their email address so our manager can send the calendar invite.`;
-        } else if (effEmail && !effTime) {
-          bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time. Acknowledge the email and ask what day and time works best for a quick 15-minute call.`;
-        }
-      } else {
-        await createBooking(env, {
-          chat_id: c.chatId,
-          client_name: computedName,
-          phone: computedPhone,
-          email: bookingInfo.email,
-          scheduled_at: bookingInfo.time,
-          timezone: bookingInfo.timezone,
-          company_or_website: bookingInfo.companyOrWebsite,
-          requirements: bookingInfo.requirements,
-          status: "booked",
-          followup_type: "auto",
-          source: c.source
-        });
-        if (bookingInfo.email && bookingInfo.time) {
-          bookingContext = `The client provided their name (${computedName}), email (${bookingInfo.email}), and preferred time (${bookingInfo.time}). Acknowledge these details naturally as a human sales representative: let them know you've noted down their time and email, and our sales manager will review our calendar and send over the invite shortly. NEVER say "CRM", "app", "database", "sheet", or that you are an AI.`;
-        } else if (bookingInfo.time && !bookingInfo.email) {
-          bookingContext = `The client mentioned a preferred time (${bookingInfo.time}), but hasn't given their email. Acknowledge the time warmly and ask what email address our manager should send the invite to.`;
-        } else if (bookingInfo.email && !bookingInfo.time) {
-          bookingContext = `The client provided their email (${bookingInfo.email}), but hasn't mentioned a time. Acknowledge their email and ask what day and time works best for a quick 15-minute call.`;
+      if (isBookingCallIntent || bookingInfo.isRescheduleRequest) {
+        const effTimeText = bookingInfo.time || existing?.scheduled_at || null;
+        const effTz = bookingInfo.timezone || existing?.timezone || null;
+        const parsedCallMs = effTimeText ? parseScheduledTimeToMs(effTimeText, effTz, nowMs) : existing?.call_time_ms || null;
+        const reminderAt = parsedCallMs ? parsedCallMs - 30 * 60 * 1e3 : null;
+        const effEmail = bookingInfo.email || existing?.email || null;
+        const hasBooked = Boolean(effTimeText);
+        if (existing) {
+          const wasAlreadyBooked = existing.status === "booked" || existing.status === "confirmed";
+          const timeChanged = Boolean(bookingInfo.time && bookingInfo.time !== existing.scheduled_at);
+          await updateBooking(env, existing.id, {
+            client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
+            phone: computedPhone || existing.phone,
+            email: effEmail,
+            scheduled_at: effTimeText,
+            call_time_ms: parsedCallMs,
+            timezone: effTz,
+            company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
+            requirements: bookingInfo.requirements || existing.requirements,
+            status: hasBooked ? "booked" : existing.status,
+            followup_type: hasBooked ? "call_reminder" : existing.followup_type,
+            next_followup_at: hasBooked ? reminderAt : nowMs + 3.5 * 3600 * 1e3,
+            followup_interval_hours: hasBooked ? 0 : 3.5,
+            last_client_reply_at: nowMs
+          });
+          if (wasAlreadyBooked && timeChanged && bookingInfo.time) {
+            bookingContext = `The client has changed/rescheduled their call time to "${bookingInfo.time}". Confirm warmly that you have updated their meeting time to ${bookingInfo.time}${effTz ? ` (${effTz})` : ""} and that you will send them a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
+          } else if (effEmail && effTimeText) {
+            bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and meeting time (${effTimeText}). Confirm naturally that their call is scheduled for ${effTimeText}, our sales manager will send the calendar invite to ${effEmail}, and you'll send a quick reminder 30 minutes before the meeting.`;
+          } else if (effTimeText && !effEmail) {
+            bookingContext = `The client mentioned a preferred call time (${effTimeText}), which is now noted, and a reminder is set for 30 minutes before. Ask warmly for their best email address so our manager can send the calendar invite.`;
+          } else if (effEmail && !effTimeText) {
+            bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time yet. Acknowledge the email and ask what day and time works best for a quick 15-minute call.`;
+          }
         } else {
-          bookingContext = `The client is interested in discussing their project. Suggest arranging a quick 15-minute discovery call with our sales manager and ask for their preferred day/time and email address.`;
+          await createBooking(env, {
+            chat_id: c.chatId,
+            client_name: computedName,
+            phone: computedPhone,
+            email: effEmail,
+            scheduled_at: effTimeText,
+            call_time_ms: parsedCallMs,
+            timezone: effTz,
+            company_or_website: bookingInfo.companyOrWebsite,
+            requirements: bookingInfo.requirements,
+            status: hasBooked ? "booked" : "lead",
+            followup_type: hasBooked ? "call_reminder" : "auto_day1",
+            next_followup_at: hasBooked ? reminderAt : nowMs + 3.5 * 3600 * 1e3,
+            followup_interval_hours: hasBooked ? 0 : 3.5,
+            last_client_reply_at: nowMs,
+            source: c.source
+          });
+          if (effEmail && effTimeText) {
+            bookingContext = `The client provided their name (${computedName}), email (${effEmail}), and preferred time (${effTimeText}). Confirm naturally that you've noted down ${effTimeText} and ${effEmail}, our sales manager will send over the calendar invite shortly, and you'll remind them 30 minutes before the meeting.`;
+          } else if (effTimeText && !effEmail) {
+            bookingContext = `The client mentioned a preferred time (${effTimeText}). Acknowledge the time warmly and ask what email address our manager should send the calendar invite to.`;
+          } else if (effEmail && !effTimeText) {
+            bookingContext = `The client provided their email (${effEmail}), but hasn't mentioned a time. Acknowledge their email and ask what day and time works best for a quick 15-minute call.`;
+          }
+        }
+      } else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
+        const effTz = bookingInfo.timezone || existing?.timezone || null;
+        const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs) || nowMs + 24 * 3600 * 1e3;
+        if (existing) {
+          await updateBooking(env, existing.id, {
+            client_name: bookingInfo.clientName || existing.client_name,
+            phone: computedPhone || existing.phone,
+            email: bookingInfo.email || existing.email,
+            scheduled_at: `Follow-up requested: ${bookingInfo.time}`,
+            timezone: effTz,
+            followup_type: "client_date",
+            next_followup_at: targetFollowupMs,
+            last_client_reply_at: nowMs
+          });
+        } else {
+          await createBooking(env, {
+            chat_id: c.chatId,
+            client_name: computedName,
+            phone: computedPhone,
+            email: bookingInfo.email,
+            scheduled_at: `Follow-up requested: ${bookingInfo.time}`,
+            timezone: effTz,
+            company_or_website: bookingInfo.companyOrWebsite,
+            requirements: bookingInfo.requirements,
+            status: "lead",
+            followup_type: "client_date",
+            next_followup_at: targetFollowupMs,
+            last_client_reply_at: nowMs,
+            source: c.source
+          });
+        }
+        bookingContext = `The client requested that you follow up with them at "${bookingInfo.time}". Respect their schedule warmly, confirm that you'll reach back out to them on ${bookingInfo.time}, and don't push for an immediate call right now.`;
+      } else {
+        if (existing) {
+          const isBooked = existing.status === "booked" || existing.status === "confirmed";
+          const isStopped = existing.followup_type === "rejected" || existing.status === "not_interested" || existing.status === "fake_lead";
+          await updateBooking(env, existing.id, {
+            client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
+            phone: computedPhone || existing.phone,
+            company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
+            requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
+            last_client_reply_at: nowMs,
+            // If lead hasn't booked and isn't stopped, reset to Day 1 Auto Follow-up (3.5 hours later)
+            followup_type: isBooked ? "call_reminder" : isStopped ? existing.followup_type : "auto_day1",
+            next_followup_at: isBooked ? existing.next_followup_at : isStopped ? null : nowMs + 3.5 * 3600 * 1e3,
+            followup_interval_hours: isBooked ? 0 : 3.5
+          });
+        } else if (c.chatId !== "dashboard") {
+          await createBooking(env, {
+            chat_id: c.chatId,
+            client_name: computedName,
+            phone: computedPhone,
+            email: null,
+            scheduled_at: null,
+            timezone: bookingInfo.timezone,
+            company_or_website: bookingInfo.companyOrWebsite,
+            requirements: bookingInfo.requirements,
+            status: "lead",
+            followup_type: "auto_day1",
+            next_followup_at: nowMs + 3.5 * 3600 * 1e3,
+            followup_interval_hours: 3.5,
+            last_client_reply_at: nowMs,
+            source: c.source
+          });
         }
       }
     } catch (err) {
-      console.warn("Failed recording call booking lead:", err);
+      console.warn("Failed updating lead / follow-up timer:", err);
     }
   }
   const messages = [
@@ -1100,7 +1494,20 @@ async function gatewayRoutes(request, env, url) {
       await kvSet(env, "gateway", next);
       const command = await kvGet(env, "gateway_command");
       if (command) await kvDelete(env, "gateway_command");
-      return json({ ok: true, command: command?.cmd ?? null });
+      let outbound = [];
+      if (body.state === "open") {
+        const [dueItems, manualQueue] = await Promise.all([
+          processDueFollowups(env).catch(() => []),
+          kvGet(env, "gateway_outbound_queue").catch(() => null)
+        ]);
+        if (dueItems.length > 0) outbound.push(...dueItems);
+        if (manualQueue && manualQueue.length > 0) {
+          outbound.push(...manualQueue);
+          await kvDelete(env, "gateway_outbound_queue").catch(() => {
+          });
+        }
+      }
+      return json({ ok: true, command: command?.cmd ?? null, outbound });
     }
     case "GET /gw/session": {
       const obj = await env.BUCKET.get(SESSION_KEY);
@@ -1365,17 +1772,49 @@ async function dashboardRoutes(request, env, url) {
     }
     case "POST /api/bookings": {
       const body = await request.json();
+      const now = Date.now();
+      const status = body.status || "booked";
+      const rawType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
+      const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, body.timezone, now) : null;
+      let nextFollowupAt = null;
+      let intervalHours = 3.5;
+      if (body.customFollowupAt) {
+        const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
+        if (!Number.isNaN(parsed)) nextFollowupAt = parsed;
+      } else if (body.delayHours && body.delayHours > 0) {
+        intervalHours = body.delayHours;
+        nextFollowupAt = Math.round(now + body.delayHours * 3600 * 1e3);
+      } else {
+        const computed = computeNextFollowupState(
+          {
+            status,
+            followup_type: rawType,
+            scheduled_at: body.scheduledAt,
+            call_time_ms: callTimeMs,
+            timezone: body.timezone,
+            created_at: now,
+            last_client_reply_at: now
+          },
+          now
+        );
+        nextFollowupAt = computed.next_followup_at;
+        intervalHours = computed.followup_interval_hours;
+      }
       const booking = await createBooking(env, {
         chat_id: body.chatId || "manual_crm",
         client_name: body.clientName,
         phone: body.phone,
         email: body.email,
         scheduled_at: body.scheduledAt,
+        call_time_ms: callTimeMs,
         timezone: body.timezone,
         company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
-        status: body.status || "booked",
-        followup_type: body.followupType || body.followup_type || "auto",
+        status,
+        followup_type: rawType,
+        next_followup_at: nextFollowupAt,
+        followup_interval_hours: intervalHours,
+        last_client_reply_at: now,
         source: body.source || "dashboard",
         notes: body.notes
       });
@@ -1384,7 +1823,66 @@ async function dashboardRoutes(request, env, url) {
     case "PATCH /api/bookings": {
       const body = await request.json();
       if (!body?.id) return json({ error: "id is required" }, 400);
-      const booking = await updateBooking(env, body.id, body);
+      const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all();
+      const existing = results?.[0];
+      if (!existing) return json({ error: "Booking not found" }, 404);
+      const now = Date.now();
+      const patch = { ...body };
+      const nextStatus = body.status ?? existing.status;
+      const nextType = body.followup_type ?? existing.followup_type;
+      if (body.scheduled_at !== void 0 && body.scheduled_at !== existing.scheduled_at) {
+        patch.call_time_ms = parseScheduledTimeToMs(body.scheduled_at, body.timezone ?? existing.timezone, now);
+        if (nextStatus === "booked" || nextStatus === "confirmed" || nextType === "call_reminder") {
+          patch.followup_type = "call_reminder";
+          patch.next_followup_at = patch.call_time_ms ? patch.call_time_ms - 30 * 60 * 1e3 : null;
+          patch.followup_interval_hours = 0;
+        }
+      }
+      if (body.delayHours !== void 0 && body.delayHours > 0) {
+        patch.followup_interval_hours = body.delayHours;
+        patch.next_followup_at = Math.round(now + body.delayHours * 3600 * 1e3);
+        if (!body.followup_type) patch.followup_type = "custom_timer";
+      } else if (body.customFollowupAt !== void 0) {
+        if (body.customFollowupAt === null || body.customFollowupAt === "") {
+          patch.next_followup_at = null;
+        } else {
+          const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
+          if (!Number.isNaN(parsed)) {
+            patch.next_followup_at = parsed;
+            if (!body.followup_type) patch.followup_type = "client_date";
+          }
+        }
+      } else if (body.followup_type || body.status) {
+        if (nextType === "rejected" || nextStatus === "not_interested" || nextStatus === "fake_lead" || nextStatus === "completed" || nextStatus === "cancelled") {
+          patch.next_followup_at = null;
+          patch.followup_interval_hours = 0;
+          if (nextStatus === "fake_lead" || nextStatus === "not_interested") {
+            patch.followup_type = "rejected";
+          }
+        } else if (nextType === "call_reminder" || nextStatus === "booked" || nextStatus === "confirmed") {
+          const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, existing.timezone, now);
+          patch.call_time_ms = cMs;
+          patch.followup_type = "call_reminder";
+          patch.next_followup_at = cMs ? cMs - 30 * 60 * 1e3 : now + 30 * 60 * 1e3;
+          patch.followup_interval_hours = 0;
+        } else if (nextType === "auto_day1") {
+          patch.followup_interval_hours = 3.5;
+          patch.next_followup_at = Math.round(now + 3.5 * 3600 * 1e3);
+        } else if (nextType === "no_reply_3d") {
+          patch.followup_interval_hours = 8;
+          patch.next_followup_at = Math.round(now + 8 * 3600 * 1e3);
+        } else if (nextType === "long_term_30d") {
+          patch.followup_interval_hours = 24;
+          patch.next_followup_at = Math.round(now + 24 * 3600 * 1e3);
+        } else if (nextType === "on_hold" || nextType === "nurture") {
+          patch.followup_interval_hours = 48;
+          patch.next_followup_at = Math.round(now + 48 * 3600 * 1e3);
+        } else if (nextType === "not_attended" || nextType === "buy_soon") {
+          patch.followup_interval_hours = 24;
+          patch.next_followup_at = Math.round(now + 24 * 3600 * 1e3);
+        }
+      }
+      const booking = await updateBooking(env, body.id, patch);
       return json({ booking });
     }
     case "POST /api/bookings/followup": {
@@ -1393,20 +1891,22 @@ async function dashboardRoutes(request, env, url) {
       const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all();
       const b = results?.[0];
       if (!b) return json({ error: "Booking not found" }, 404);
+      const now = Date.now();
       if (body.followupType && body.followupType !== b.followup_type) {
         b.followup_type = body.followupType;
         await updateBooking(env, b.id, { followup_type: body.followupType });
       }
-      if (b.followup_type === "rejected" || b.status === "not_interested") {
+      if (b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
         return json(
           {
-            error: "Follow-ups are disabled for this lead (marked as Rejected / Not Interested).",
+            error: `Follow-ups are disabled for this lead (marked as ${b.status === "fake_lead" ? "Fake Lead" : "Rejected / Not Interested"}).`,
             disabled: true
           },
           400
         );
       }
-      const message = generateFollowupText(b);
+      const generated = generateFollowupText(b);
+      const message = body.customText?.trim() || generated;
       if (!message) {
         return json(
           {
@@ -1419,20 +1919,48 @@ async function dashboardRoutes(request, env, url) {
       const cleanPhone = (b.phone || b.chat_id?.split("@")[0] || "").replace(/[^0-9]/g, "");
       const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
       let updatedBooking = b;
-      if (body.markSent) {
+      let queuedToGateway = false;
+      if (body.sendViaGateway) {
+        const jid = b.chat_id?.endsWith("@s.whatsapp.net") ? b.chat_id : cleanPhone.length >= 7 ? `${cleanPhone}@s.whatsapp.net` : null;
+        if (!jid) {
+          return json({ error: "No valid WhatsApp number on this lead to send directly." }, 400);
+        }
+        const existingQueue = await kvGet(env, "gateway_outbound_queue") || [];
+        existingQueue.push({ jid, text: message, bookingId: b.id });
+        await kvSet(env, "gateway_outbound_queue", existingQueue);
+        await insertMessage(env, {
+          id: `followup:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "crm:followup",
+          neurons: 0,
+          created_at: now
+        }).catch(() => {
+        });
+        queuedToGateway = true;
+      }
+      if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        const now = Date.now();
+        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 3.5;
+        const nextFollowupAt = b.followup_type === "call_reminder" ? null : nextInterval > 0 ? Math.round(now + nextInterval * 3600 * 1e3) : null;
         const patched = await updateBooking(env, b.id, {
           last_followup_at: now,
-          followup_count: nextCount
+          followup_count: nextCount,
+          next_followup_at: nextFollowupAt
         });
         if (patched) updatedBooking = patched;
       }
       return json({
         message,
         waLink,
+        queuedToGateway,
         status: updatedBooking.status,
         followupType: updatedBooking.followup_type,
+        nextFollowupAt: updatedBooking.next_followup_at,
         clientName: updatedBooking.client_name,
         phone: updatedBooking.phone,
         followupCount: updatedBooking.followup_count,

@@ -594,39 +594,57 @@ async function loadBookings() {
 
 function updateBookingStats() {
   const total = bookings.length;
+  const activeLeads = bookings.filter(
+    (b) =>
+      b.status === "lead" ||
+      ["auto_day1", "no_reply_3d", "long_term_30d", "client_date", "custom_timer"].includes(b.followup_type)
+  ).length;
   const booked = bookings.filter((b) => b.status === "booked").length;
   const confirmed = bookings.filter((b) => b.status === "confirmed").length;
   const notAttended = bookings.filter((b) => b.status === "not_attended" || b.followup_type === "not_attended").length;
   const buySoon = bookings.filter((b) => b.status === "buy_soon" || b.followup_type === "buy_soon").length;
+  const fakeLeads = bookings.filter((b) => b.status === "fake_lead").length;
   const notInterested = bookings.filter((b) => b.status === "not_interested" || b.followup_type === "rejected").length;
 
   const totalEl = $("#stat-bookings-total");
+  const leadsEl = $("#stat-bookings-leads");
   const bookedEl = $("#stat-bookings-booked");
   const confirmedEl = $("#stat-bookings-confirmed");
   const notAttendedEl = $("#stat-bookings-not-attended");
   const buySoonEl = $("#stat-bookings-buy-soon");
+  const fakeEl = $("#stat-bookings-fake");
   const notInterestedEl = $("#stat-bookings-not-interested");
 
   if (totalEl) totalEl.textContent = total;
+  if (leadsEl) leadsEl.textContent = activeLeads;
   if (bookedEl) bookedEl.textContent = booked;
   if (confirmedEl) confirmedEl.textContent = confirmed;
   if (notAttendedEl) notAttendedEl.textContent = notAttended;
   if (buySoonEl) buySoonEl.textContent = buySoon;
+  if (fakeEl) fakeEl.textContent = fakeLeads;
   if (notInterestedEl) notInterestedEl.textContent = notInterested;
 }
 
 const STATUS_LABELS = {
-  booked: "📅 Booked",
+  lead: "🌱 New Lead",
+  booked: "📅 Booked Call",
   confirmed: "✅ Confirmed",
   not_attended: "⚠️ Not Attended (Missed Call)",
   buy_soon: "⏳ Buy in Few Days",
+  fake_lead: "🕵️ Fake Lead (30d No Reply)",
   not_interested: "🛑 Not Interested",
   completed: "🏆 Completed",
   cancelled: "❌ Cancelled",
 };
 
 const FOLLOWUP_LABELS = {
-  auto: "⚡ Auto (Smart AI)",
+  auto_day1: "⚡ Day 1 Auto (3–4h)",
+  no_reply_3d: "⏳ Next 3 Days (8h)",
+  long_term_30d: "📆 3–30 Days (Daily → Fake)",
+  client_date: "📅 Client Choice Date",
+  custom_timer: "⏱️ Custom Timer",
+  call_reminder: "🔔 30m Call Reminder",
+  auto: "🤖 Smart AI Auto",
   rejected: "🛑 Rejected (No Follow-Up)",
   on_hold: "⏸️ On Hold",
   not_attended: "⚠️ Missed Call Reschedule",
@@ -634,6 +652,40 @@ const FOLLOWUP_LABELS = {
   nurture: "💡 Value Nurture",
   custom: "🎯 Custom Strategy",
 };
+
+function formatNextFollowupTimer(b) {
+  const fType = b.followup_type || "auto";
+  if (fType === "rejected" || b.status === "not_interested" || b.status === "cancelled" || b.status === "completed") {
+    return "🛑 Follow-Up Stopped";
+  }
+  if (b.status === "fake_lead") {
+    return "🕵️ Fake Lead (30d No Reply — Stopped)";
+  }
+  if (!b.next_followup_at) {
+    if (b.status === "booked" || b.status === "confirmed" || fType === "call_reminder") {
+      return "🔔 Call Booked (Sales Follow-Up Stopped)";
+    }
+    return "⏱️ No Timer Set";
+  }
+  const diffMs = b.next_followup_at - Date.now();
+  const isCallReminder = fType === "call_reminder" || b.status === "booked" || b.status === "confirmed";
+  const prefix = isCallReminder ? "🔔 30m Call Reminder" : "⏱️ Next Follow-Up";
+  if (diffMs <= 0) {
+    return `${prefix}: Due Now (${fmtTime(b.next_followup_at)})`;
+  }
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 60) {
+    return `${prefix}: in ${mins}m (${fmtTime(b.next_followup_at)})`;
+  }
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 48) {
+    return `${prefix}: in ${hours}h${remMins > 0 ? ` ${remMins}m` : ""} (${fmtTime(b.next_followup_at)})`;
+  }
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return `${prefix}: in ${days}d${remHours > 0 ? ` ${remHours}h` : ""} (${fmtTime(b.next_followup_at)})`;
+}
 
 function renderBookings() {
   const container = $("#bookings-list");
@@ -677,15 +729,17 @@ function renderBookings() {
     ...filtered.map((b) => {
       const item = el("div", "booking-item");
       const fType = b.followup_type || "auto";
-      const isRejected = fType === "rejected" || b.status === "not_interested";
+      const isRejected = fType === "rejected" || b.status === "not_interested" || b.status === "fake_lead";
 
-      // Top row: Title + badges
+      // Top row: Title + badges + live timer badge
       const top = el("div", "booking-top");
       const clientTitle = el("div", "booking-client-title");
+      clientTitle.style.flexWrap = "wrap";
       clientTitle.append(
         el("span", null, "👤 " + (b.client_name || "Lead Client")),
         el("span", `badge badge-${b.status || "booked"}`, STATUS_LABELS[b.status] || b.status),
-        el("span", `badge badge-${fType}`, `Follow-Up: ${FOLLOWUP_LABELS[fType] || fType}`),
+        el("span", `badge badge-${fType}`, FOLLOWUP_LABELS[fType] || fType),
+        el("span", "badge badge-timer", formatNextFollowupTimer(b)),
         el("span", "badge badge-source", b.source === "dashboard" ? "MANUAL" : "WHATSAPP")
       );
       top.appendChild(clientTitle);
@@ -727,20 +781,81 @@ function renderBookings() {
       // Scheduled time banner
       let schedBox = null;
       if (b.scheduled_at) {
-        schedBox = el("div", "booking-scheduled-box", `📅 Scheduled Call: ${b.scheduled_at}${b.timezone ? ` (${b.timezone})` : ""}`);
+        const isCall = b.status === "booked" || b.status === "confirmed" || fType === "call_reminder";
+        schedBox = el(
+          "div",
+          "booking-scheduled-box",
+          `${isCall ? "📅 Booked Call Time" : "📅 Client Follow-Up Date"}: ${b.scheduled_at}${b.timezone ? ` (${b.timezone})` : ""}${
+            isCall ? " · 🔔 Auto 30m Pre-Call Reminder Active (Sales Follow-Ups Paused)" : ""
+          }`
+        );
       }
 
-      // Status Guidance Banner
+      // Status & 4-Stage Guidance Banner
       let statusGuidance = null;
-      if (isRejected) {
-        statusGuidance = el("div", "booking-notes-box", "🛑 Lead marked as REJECTED / NO FOLLOW-UP. All sales follow-ups and automated messages are strictly stopped.");
+      if (b.status === "fake_lead") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          "🕵️ FAKE LEAD (30 Days No Reply): Client did not reply for 30 days across all follow-up stages. Automatically marked as Fake Lead and all follow-ups stopped."
+        );
+        statusGuidance.style.borderLeftColor = "#e11d48";
+        statusGuidance.style.background = "#2a151b";
+      } else if (fType === "rejected" || b.status === "not_interested") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          "🛑 Lead marked as REJECTED / NO FOLLOW-UP. All sales follow-ups and automated messages are strictly stopped."
+        );
         statusGuidance.style.borderLeftColor = "#ef4444";
         statusGuidance.style.background = "#2a151b";
+      } else if (fType === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          "🔔 CALL BOOKED: Nyra will NOT send sales follow-ups. She only sends a 30-minute meeting reminder before the call (and auto-updates the timer if the client reschedules)."
+        );
+        statusGuidance.style.borderLeftColor = "#eab308";
+      } else if (fType === "auto_day1") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          "⚡ Stage 1 (Day 1 Auto Follow-Up): Following up every 3–4 hours during the first 24 hours until a call is booked. Advances to 3-Day (8h) stage if no reply after 24h."
+        );
+        statusGuidance.style.borderLeftColor = "#a855f7";
+      } else if (fType === "no_reply_3d") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          "⏳ Stage 2 (Next 3 Days No-Reply): Client did not book on Day 1. Following up every 8 hours for 3 days. Advances to 30-Day stage if still no reply."
+        );
+        statusGuidance.style.borderLeftColor = "#f59e0b";
+      } else if (fType === "long_term_30d") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          "📆 Stage 3 (3 to 30 Days No-Reply): Following up once every 24 hours up to Day 30. If no reply after 30 days, automatically converts to 🕵️ Fake Lead."
+        );
+        statusGuidance.style.borderLeftColor = "#ec4899";
+      } else if (fType === "client_date") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          `📅 Type 4 (Client Choice Date): Client asked to be contacted on ${b.scheduled_at || "their chosen date"}. Nyra will follow up on that day.`
+        );
+        statusGuidance.style.borderLeftColor = "#06b6d4";
+      } else if (fType === "custom_timer") {
+        statusGuidance = el(
+          "div",
+          "booking-notes-box",
+          `⏱️ Custom Management Timer: Scheduled to send follow-up ${b.followup_interval_hours ? `every ${b.followup_interval_hours}h` : "at custom time"}.`
+        );
+        statusGuidance.style.borderLeftColor = "#10b981";
       } else if (fType === "on_hold") {
         statusGuidance = el("div", "booking-notes-box", "⏸️ Lead is on hold. Gentle periodic check-in when ready to unpause video editing.");
         statusGuidance.style.borderLeftColor = "#f59e0b";
       } else if (fType === "not_attended" || b.status === "not_attended") {
-        statusGuidance = el("div", "booking-notes-box", "⚠️ Client missed scheduled call. Daily / periodic empathetic follow-up to reschedule without pressure.");
+        statusGuidance = el("div", "booking-notes-box", "⚠️ Client missed scheduled call. Empathetic follow-up every 24h to reschedule without pressure.");
         statusGuidance.style.borderLeftColor = "#f87171";
       } else if (fType === "buy_soon" || b.status === "buy_soon") {
         statusGuidance = el("div", "booking-notes-box", "⏳ Client is deciding / buying in a few days. Closing follow-up on packages and decision timeline.");
@@ -771,12 +886,49 @@ function renderBookings() {
       const loggedInfo = el(
         "div",
         "muted small-text",
-        `Logged: ${fmtTime(b.created_at)} · Follow-ups: ${b.followup_count || 0}${b.last_followup_at ? ` (Last: ${fmtTime(b.last_followup_at)})` : ""}`
+        `Logged: ${fmtTime(b.created_at)} · Follow-ups sent: ${b.followup_count || 0}${b.last_followup_at ? ` (Last: ${fmtTime(b.last_followup_at)})` : ""}`
       );
 
       const rightControls = el("div", "rule-ctrls");
       rightControls.style.flexWrap = "wrap";
       rightControls.style.gap = "8px";
+
+      // Quick Timer Dropdown ("Set how much time later follow-up sent")
+      const timerSelect = document.createElement("select");
+      timerSelect.className = "small";
+      timerSelect.style.width = "auto";
+      timerSelect.style.margin = "0";
+      [
+        { val: "", label: "⏱️ Set Follow-Up Timer…" },
+        { val: "0.5", label: "⏱️ Send 30 Min Later" },
+        { val: "2", label: "⏱️ Send 2 Hours Later" },
+        { val: "3.5", label: "⚡ Send 3.5h Later (Day 1 Auto)" },
+        { val: "8", label: "⏳ Send 8h Later (3-Day Auto)" },
+        { val: "24", label: "📆 Send 1 Day Later (24h)" },
+        { val: "48", label: "📆 Send 2 Days Later (48h)" },
+        { val: "72", label: "📆 Send 3 Days Later (72h)" },
+      ].forEach((opt) => {
+        const o = document.createElement("option");
+        o.value = opt.val;
+        o.textContent = opt.label;
+        timerSelect.appendChild(o);
+      });
+
+      timerSelect.addEventListener("change", async () => {
+        const hours = Number(timerSelect.value);
+        if (!hours) return;
+        const nextType = hours === 3.5 ? "auto_day1" : hours === 8 ? "no_reply_3d" : "custom_timer";
+        const res = await api("PATCH", "/api/bookings", {
+          id: b.id,
+          delayHours: hours,
+          followup_type: nextType,
+        });
+        if (res.booking) {
+          Object.assign(b, res.booking);
+        }
+        updateBookingStats();
+        renderBookings();
+      });
 
       // Follow-up Strategy Dropdown Selector
       const followupSelect = document.createElement("select");
@@ -784,13 +936,18 @@ function renderBookings() {
       followupSelect.style.width = "auto";
       followupSelect.style.margin = "0";
       [
-        { val: "auto", label: "Strategy: ⚡ Auto (Smart AI)" },
-        { val: "rejected", label: "Strategy: 🛑 Rejected (No Follow-Up)" },
-        { val: "on_hold", label: "Strategy: ⏸️ On Hold" },
-        { val: "not_attended", label: "Strategy: ⚠️ Missed Call" },
-        { val: "buy_soon", label: "Strategy: ⏳ Buy in Few Days" },
-        { val: "nurture", label: "Strategy: 💡 Nurture (Portfolio)" },
-        { val: "custom", label: "Strategy: 🎯 Custom" },
+        { val: "auto_day1", label: "Stage: ⚡ Day 1 Auto (3–4h)" },
+        { val: "no_reply_3d", label: "Stage: ⏳ Next 3 Days (8h)" },
+        { val: "long_term_30d", label: "Stage: 📆 3–30 Days (Daily)" },
+        { val: "client_date", label: "Stage: 📅 Client Choice Date" },
+        { val: "custom_timer", label: "Stage: ⏱️ Custom Timer" },
+        { val: "call_reminder", label: "Stage: 🔔 30m Call Reminder" },
+        { val: "rejected", label: "Stage: 🛑 Rejected (Stop)" },
+        { val: "on_hold", label: "Stage: ⏸️ On Hold" },
+        { val: "not_attended", label: "Stage: ⚠️ Missed Call" },
+        { val: "buy_soon", label: "Stage: ⏳ Buy in Few Days" },
+        { val: "nurture", label: "Stage: 💡 Nurture (Portfolio)" },
+        { val: "auto", label: "Stage: 🤖 Smart AI Auto" },
       ].forEach((opt) => {
         const o = document.createElement("option");
         o.value = opt.val;
@@ -801,8 +958,9 @@ function renderBookings() {
 
       followupSelect.addEventListener("change", async () => {
         const nextStrategy = followupSelect.value;
-        await api("PATCH", "/api/bookings", { id: b.id, followup_type: nextStrategy });
-        b.followup_type = nextStrategy;
+        const res = await api("PATCH", "/api/bookings", { id: b.id, followup_type: nextStrategy });
+        if (res.booking) Object.assign(b, res.booking);
+        else b.followup_type = nextStrategy;
         updateBookingStats();
         renderBookings();
       });
@@ -813,10 +971,12 @@ function renderBookings() {
       statusSelect.style.width = "auto";
       statusSelect.style.margin = "0";
       [
-        { val: "booked", label: "Status: 📅 Booked" },
+        { val: "lead", label: "Status: 🌱 New Lead" },
+        { val: "booked", label: "Status: 📅 Booked Call" },
         { val: "confirmed", label: "Status: ✅ Confirmed" },
         { val: "not_attended", label: "Status: ⚠️ Not Attended" },
         { val: "buy_soon", label: "Status: ⏳ Buy in Few Days" },
+        { val: "fake_lead", label: "Status: 🕵️ Fake Lead (30d)" },
         { val: "not_interested", label: "Status: 🛑 Not Interested" },
         { val: "completed", label: "Status: 🏆 Completed" },
         { val: "cancelled", label: "Status: ❌ Cancelled" },
@@ -830,8 +990,9 @@ function renderBookings() {
 
       statusSelect.addEventListener("change", async () => {
         const newStatus = statusSelect.value;
-        await api("PATCH", "/api/bookings", { id: b.id, status: newStatus });
-        b.status = newStatus;
+        const res = await api("PATCH", "/api/bookings", { id: b.id, status: newStatus });
+        if (res.booking) Object.assign(b, res.booking);
+        else b.status = newStatus;
         updateBookingStats();
         renderBookings();
       });
@@ -839,12 +1000,16 @@ function renderBookings() {
       // Follow-up button
       const followupBtn = el("button", "small");
       if (isRejected) {
-        followupBtn.textContent = "🛑 Follow-ups Stopped";
+        followupBtn.textContent = b.status === "fake_lead" ? "🕵️ Fake Lead" : "🛑 Stopped";
         followupBtn.style.background = "#2a151b";
         followupBtn.style.color = "#f87171";
         followupBtn.style.border = "1px solid #ef444455";
+      } else if (fType === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+        followupBtn.textContent = "🔔 30m Reminder / Timer";
+        followupBtn.style.background = "#ca8a04";
+        followupBtn.style.color = "#fff";
       } else {
-        followupBtn.textContent = "⚡ Follow Up";
+        followupBtn.textContent = "⚡ Follow Up & Timer";
         followupBtn.style.background = fType === "not_attended" || b.status === "not_attended"
           ? "#ef4444"
           : fType === "buy_soon" || b.status === "buy_soon"
@@ -853,7 +1018,7 @@ function renderBookings() {
           ? "#d97706"
           : fType === "nurture"
           ? "#7c3aed"
-          : "var(--panel-2)";
+          : "var(--rose-dark)";
         followupBtn.style.color = "#fff";
         followupBtn.style.border = "1px solid var(--line)";
       }
@@ -868,7 +1033,7 @@ function renderBookings() {
         renderBookings();
       });
 
-      rightControls.append(followupBtn, followupSelect, statusSelect, delBtn);
+      rightControls.append(followupBtn, timerSelect, followupSelect, statusSelect, delBtn);
       actions.append(loggedInfo, rightControls);
 
       item.append(top, contactRow);
@@ -897,9 +1062,14 @@ async function openFollowupModal(b) {
     modalStrategySelect.value = fType;
   }
 
-  $("#followup-modal-title").textContent = `⚡ Follow-up Composer: ${b.client_name || "Lead"}`;
-  $("#followup-modal-subtitle").textContent = `Phone: ${b.phone || "Not set"} · Status: ${STATUS_LABELS[b.status] || b.status} · Strategy: ${FOLLOWUP_LABELS[fType] || fType}`;
-  $("#followup-text").value = "Generating tailored follow-up message...";
+  const timerBadge = $("#modal-next-followup-badge");
+  if (timerBadge) {
+    timerBadge.textContent = formatNextFollowupTimer(b);
+  }
+
+  $("#followup-modal-title").textContent = `⚡ Follow-Up & Timer: ${b.client_name || "Lead"}`;
+  $("#followup-modal-subtitle").textContent = `Phone: ${b.phone || "Not set"} · Status: ${STATUS_LABELS[b.status] || b.status} · Stage: ${FOLLOWUP_LABELS[fType] || fType}`;
+  $("#followup-text").value = "Generating tailored message...";
   $("#followup-feedback").textContent = "";
 
   updateModalAlert(b);
@@ -926,10 +1096,38 @@ function updateModalAlert(b) {
   const alertBox = $("#followup-status-alert");
   if (!alertBox) return;
   const fType = b.followup_type || "auto";
-  if (fType === "rejected" || b.status === "not_interested") {
+  if (b.status === "fake_lead") {
+    alertBox.textContent = "🕵️ Fake Lead (30 days no reply). Automated follow-ups are stopped.";
+    alertBox.style.background = "#e11d4822";
+    alertBox.style.color = "#fda4af";
+  } else if (fType === "rejected" || b.status === "not_interested") {
     alertBox.textContent = "🛑 Lead marked as Rejected / Not Interested. All sales outreach is stopped.";
     alertBox.style.background = "#ef444422";
     alertBox.style.color = "#f87171";
+  } else if (fType === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+    alertBox.textContent = "🔔 Call is Booked! Sales follow-ups are OFF. Nyra only sends a 30-minute meeting reminder before the call (auto-updates if rescheduled).";
+    alertBox.style.background = "#eab30822";
+    alertBox.style.color = "#facc15";
+  } else if (fType === "auto_day1") {
+    alertBox.textContent = "⚡ Stage 1 (Day 1 Auto): Sends follow-up every 3–4 hours until a call is booked.";
+    alertBox.style.background = "#8b5cf622";
+    alertBox.style.color = "#c4b5fd";
+  } else if (fType === "no_reply_3d") {
+    alertBox.textContent = "⏳ Stage 2 (Next 3 Days No-Reply): Sends follow-up every 8 hours for 3 days.";
+    alertBox.style.background = "#f59e0b22";
+    alertBox.style.color = "#fbbf24";
+  } else if (fType === "long_term_30d") {
+    alertBox.textContent = "📆 Stage 3 (3–30 Days No-Reply): Sends follow-up every 24h until Day 30, then marks Fake Lead.";
+    alertBox.style.background = "#ec489922";
+    alertBox.style.color = "#f472b6";
+  } else if (fType === "client_date") {
+    alertBox.textContent = `📅 Type 4 (Client Choice Date): Scheduled for client's requested date (${b.scheduled_at || "set date"}).`;
+    alertBox.style.background = "#06b6d422";
+    alertBox.style.color = "#22d3ee";
+  } else if (fType === "custom_timer") {
+    alertBox.textContent = "⏱️ Custom Management Timer active.";
+    alertBox.style.background = "#10b98122";
+    alertBox.style.color = "#34d399";
   } else if (fType === "on_hold") {
     alertBox.textContent = "⏸️ Lead is on hold. This message gently checks in if they are ready to unpause.";
     alertBox.style.background = "#f59e0b22";
@@ -947,11 +1145,77 @@ function updateModalAlert(b) {
     alertBox.style.background = "#8b5cf622";
     alertBox.style.color = "#c084fc";
   } else {
-    alertBox.textContent = "📅 Standard lead check-in message based on current status.";
+    alertBox.textContent = "📅 Dynamic lead follow-up message based on current status.";
     alertBox.style.background = "#120c15";
     alertBox.style.color = "var(--text)";
   }
 }
+
+// Preset Timer Buttons inside Modal (30m, 2h, 3.5h, 8h, 1d, 2d, 3d)
+document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (!currentFollowupBookingId) return;
+    const hours = Number(btn.dataset.hours);
+    if (!hours) return;
+    const nextType = hours === 3.5 ? "auto_day1" : hours === 8 ? "no_reply_3d" : "custom_timer";
+    try {
+      const res = await api("PATCH", "/api/bookings", {
+        id: currentFollowupBookingId,
+        delayHours: hours,
+        followup_type: nextType,
+      });
+      const found = bookings.find((x) => x.id === currentFollowupBookingId);
+      if (found && res.booking) {
+        Object.assign(found, res.booking);
+        const modalStrategySelect = $("#modal-followup-type");
+        if (modalStrategySelect) modalStrategySelect.value = found.followup_type;
+        const timerBadge = $("#modal-next-followup-badge");
+        if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+        updateModalAlert(found);
+        renderBookings();
+      }
+      $("#followup-feedback").textContent = `⏱️ Timer set! Next auto follow-up will send in ${hours} hour(s) ✓`;
+    } catch (err) {
+      $("#followup-feedback").textContent = `Error setting timer: ${err.message}`;
+    }
+  });
+});
+
+// Exact Date/Time Picker inside Modal
+$("#modal-save-datetime-btn")?.addEventListener("click", async () => {
+  if (!currentFollowupBookingId) return;
+  const val = $("#modal-custom-datetime")?.value;
+  if (!val) {
+    $("#followup-feedback").textContent = "Please pick a date and time first.";
+    return;
+  }
+  const ts = Date.parse(val);
+  if (Number.isNaN(ts)) {
+    $("#followup-feedback").textContent = "Invalid date/time.";
+    return;
+  }
+  try {
+    const res = await api("PATCH", "/api/bookings", {
+      id: currentFollowupBookingId,
+      customFollowupAt: ts,
+      followup_type: "client_date",
+      scheduled_at: new Date(ts).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }),
+    });
+    const found = bookings.find((x) => x.id === currentFollowupBookingId);
+    if (found && res.booking) {
+      Object.assign(found, res.booking);
+      const modalStrategySelect = $("#modal-followup-type");
+      if (modalStrategySelect) modalStrategySelect.value = found.followup_type;
+      const timerBadge = $("#modal-next-followup-badge");
+      if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+      updateModalAlert(found);
+      renderBookings();
+    }
+    $("#followup-feedback").textContent = `📅 Scheduled follow-up for ${fmtTime(ts)} ✓`;
+  } catch (err) {
+    $("#followup-feedback").textContent = `Error: ${err.message}`;
+  }
+});
 
 // Modal Strategy Switcher listener
 $("#modal-followup-type")?.addEventListener("change", async (e) => {
@@ -969,6 +1233,11 @@ $("#modal-followup-type")?.addEventListener("change", async (e) => {
       followupType: newType,
     });
     $("#followup-text").value = res.message;
+    if (found && res.nextFollowupAt !== undefined) {
+      found.next_followup_at = res.nextFollowupAt;
+      const timerBadge = $("#modal-next-followup-badge");
+      if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+    }
     const sendBtn = $("#followup-send-wa-btn");
     if (res.waLink) {
       sendBtn.href = res.waLink;
@@ -1000,6 +1269,35 @@ $("#followup-copy-btn")?.addEventListener("click", () => {
   setTimeout(() => ($("#followup-feedback").textContent = ""), 2500);
 });
 
+// Send Now via Nyra WhatsApp Gateway
+$("#followup-send-gateway-btn")?.addEventListener("click", async () => {
+  if (!currentFollowupBookingId) return;
+  const btn = $("#followup-send-gateway-btn");
+  if (btn) btn.disabled = true;
+  $("#followup-feedback").textContent = "Queuing message to Nyra's WhatsApp Gateway…";
+  try {
+    const res = await api("POST", "/api/bookings/followup", {
+      id: currentFollowupBookingId,
+      markSent: true,
+      sendViaGateway: true,
+    });
+    const found = bookings.find((x) => x.id === currentFollowupBookingId);
+    if (found) {
+      found.followup_count = res.followupCount;
+      found.last_followup_at = res.lastFollowupAt;
+      found.next_followup_at = res.nextFollowupAt;
+      const timerBadge = $("#modal-next-followup-badge");
+      if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+      renderBookings();
+    }
+    $("#followup-feedback").textContent = `🚀 Queued to Nyra WhatsApp! Will deliver on next gateway heartbeat (≤30s). Total sent: ${res.followupCount} ✓`;
+  } catch (err) {
+    $("#followup-feedback").textContent = `Error: ${err.message}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
 $("#followup-mark-sent-btn")?.addEventListener("click", async () => {
   if (!currentFollowupBookingId) return;
   try {
@@ -1011,9 +1309,12 @@ $("#followup-mark-sent-btn")?.addEventListener("click", async () => {
     if (found) {
       found.followup_count = res.followupCount;
       found.last_followup_at = res.lastFollowupAt;
+      found.next_followup_at = res.nextFollowupAt;
+      const timerBadge = $("#modal-next-followup-badge");
+      if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
       renderBookings();
     }
-    $("#followup-feedback").textContent = `Marked as sent! Total follow-ups: ${res.followupCount} ✓`;
+    $("#followup-feedback").textContent = `Marked as sent & advanced timer! Total follow-ups: ${res.followupCount} ✓`;
   } catch (err) {
     $("#followup-feedback").textContent = `Error: ${err.message}`;
   }
@@ -1057,7 +1358,9 @@ $("#new-booking-form")?.addEventListener("submit", async (e) => {
   const companyOrWebsite = $("#booking-website").value.trim();
   const requirements = $("#booking-reqs").value.trim();
   const status = $("#booking-status").value;
-  const followupType = $("#booking-followup-type")?.value || "auto";
+  const followupType = $("#booking-followup-type")?.value || "auto_day1";
+  const delayVal = $("#booking-delay-hours")?.value;
+  const delayHours = delayVal ? Number(delayVal) : undefined;
   const notes = $("#booking-notes").value.trim();
 
   if (!email && !phone && !clientName) {
@@ -1077,6 +1380,7 @@ $("#new-booking-form")?.addEventListener("submit", async (e) => {
       requirements,
       status,
       followupType,
+      delayHours,
       notes,
       source: "dashboard",
     });

@@ -259,10 +259,20 @@ code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; font-si
 }
 
 .badge-auto { background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f644; }
+.badge-auto_day1 { background: #8b5cf622; color: #c084fc; border: 1px solid #8b5cf655; }
+.badge-no_reply_3d { background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b55; }
+.badge-long_term_30d { background: #ec489922; color: #f472b6; border: 1px solid #ec489955; }
+.badge-client_date { background: #06b6d422; color: #22d3ee; border: 1px solid #06b6d455; }
+.badge-custom_timer { background: #10b98122; color: #34d399; border: 1px solid #10b98155; }
+.badge-call_reminder { background: #eab30822; color: #facc15; border: 1px solid #ca8a04; }
+.badge-lead { background: #8b5cf633; color: #c4b5fd; border: 1px solid #7c3aed; }
+.badge-fake_lead { background: #e11d4833; color: #fda4af; border: 1px solid #be123c; }
 .badge-rejected { background: #ef444422; color: #f87171; border: 1px solid #ef444455; }
-.badge-hold { background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b44; }
+.badge-on_hold, .badge-hold { background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b44; }
 .badge-not-attended { background: #dc262622; color: #f87171; border: 1px solid #dc262644; }
 .badge-buy-soon { background: #0284c722; color: #38bdf8; border: 1px solid #0284c744; }
 .badge-nurture { background: #8b5cf622; color: #c084fc; border: 1px solid #8b5cf644; }
 .badge-custom { background: #ec489922; color: #f472b6; border: 1px solid #ec489944; }
+.badge-timer { background: #1e1b4b; color: #a5b4fc; border: 1px solid #4338ca; text-transform: none; }
+.timer-preset-btn:hover { border-color: var(--rose) !important; color: #fff !important; }
 

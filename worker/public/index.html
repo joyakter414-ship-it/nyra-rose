@@ -124,30 +124,38 @@
     <!-- Booked Calls CRM Sheet -->
     <section id="tab-bookings" class="page hidden">
       <!-- Stats bar -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 16px;">
-        <div class="card" style="padding: 12px 16px;">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); margin-bottom: 16px;">
+        <div class="card" style="padding: 12px 14px;">
           <div class="muted small-text">Total Leads</div>
-          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 24px;">0</div>
+          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 22px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 16px;">
-          <div class="muted small-text">📅 Booked Calls</div>
-          <div class="big" id="stat-bookings-booked" style="color: #f59e0b; font-size: 24px;">0</div>
+        <div class="card" style="padding: 12px 14px;">
+          <div class="muted small-text">🌱 Active Auto Follow-Up</div>
+          <div class="big" id="stat-bookings-leads" style="color: #a78bfa; font-size: 22px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 16px;">
+        <div class="card" style="padding: 12px 14px;">
+          <div class="muted small-text">📅 Booked (30m Reminder)</div>
+          <div class="big" id="stat-bookings-booked" style="color: #f59e0b; font-size: 22px;">0</div>
+        </div>
+        <div class="card" style="padding: 12px 14px;">
           <div class="muted small-text">✅ Confirmed</div>
-          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 24px;">0</div>
+          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 22px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 16px;">
+        <div class="card" style="padding: 12px 14px;">
           <div class="muted small-text">⚠️ Missed (No-Show)</div>
-          <div class="big" id="stat-bookings-not-attended" style="color: #f87171; font-size: 24px;">0</div>
+          <div class="big" id="stat-bookings-not-attended" style="color: #f87171; font-size: 22px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 16px;">
+        <div class="card" style="padding: 12px 14px;">
           <div class="muted small-text">⏳ Buy in Few Days</div>
-          <div class="big" id="stat-bookings-buy-soon" style="color: #38bdf8; font-size: 24px;">0</div>
+          <div class="big" id="stat-bookings-buy-soon" style="color: #38bdf8; font-size: 22px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 16px;">
-          <div class="muted small-text">🛑 Not Interested</div>
-          <div class="big" id="stat-bookings-not-interested" style="color: #9ca3af; font-size: 24px;">0</div>
+        <div class="card" style="padding: 12px 14px;">
+          <div class="muted small-text">🕵️ Fake Leads (30d)</div>
+          <div class="big" id="stat-bookings-fake" style="color: #fb7185; font-size: 22px;">0</div>
+        </div>
+        <div class="card" style="padding: 12px 14px;">
+          <div class="muted small-text">🛑 Stopped / Rejected</div>
+          <div class="big" id="stat-bookings-not-interested" style="color: #9ca3af; font-size: 22px;">0</div>
         </div>
       </div>
 
@@ -157,11 +165,11 @@
           <div>
             <h2>Vidmox Lead & Call Booking CRM 📅</h2>
             <p class="muted small-text">
-              Nyra automatically gathers lead details and adapts follow-ups dynamically based on status (Missed Call, Buying in Few Days, Not Interested).
+              Automated 4-Stage Follow-Up Engine: <b>Day 1 (Every 3–4h)</b> → <b>Next 3 Days (Every 8h)</b> → <b>3–30 Days (Daily → Fake Lead)</b> + <b>Client Choice Date</b> + <b>Custom Management Timers</b>. Booked calls stop sales follow-ups and send a <b>30-min Pre-Meeting Reminder</b> (auto-updates if rescheduled).
             </p>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
-            <button id="toggle-add-booking-btn" class="small">+ Log Call Manually</button>
+            <button id="toggle-add-booking-btn" class="small">+ Log Lead / Call</button>
             <button id="refresh-bookings-btn" class="ghost small">↻ Refresh</button>
           </div>
         </div>
@@ -179,8 +187,8 @@
             <label>Phone / WhatsApp
               <input id="booking-phone" placeholder="e.g. +1 555 123 4567" />
             </label>
-            <label>Scheduled Date & Time
-              <input id="booking-scheduled" placeholder="e.g. Tomorrow 4 PM / Oct 15 2:00 PM" />
+            <label>Scheduled Call / Follow-Up Date
+              <input id="booking-scheduled" placeholder="e.g. Tomorrow 4 PM / Monday 3 PM" />
             </label>
           </div>
           <div class="row" style="margin-top: 10px;">
@@ -195,24 +203,45 @@
             </label>
             <label>Lead Status
               <select id="booking-status">
-                <option value="booked">📅 Booked (Pending Call)</option>
-                <option value="confirmed">✅ Confirmed</option>
+                <option value="lead">🌱 New Lead (Not Booked Yet)</option>
+                <option value="booked">📅 Booked Call (30m Reminder Only)</option>
+                <option value="confirmed">✅ Confirmed Call</option>
                 <option value="not_attended">⚠️ Not Attended (Missed Call)</option>
                 <option value="buy_soon">⏳ Buying in Few Days (Considering)</option>
                 <option value="not_interested">🛑 Not Interested (Stop Follow-ups)</option>
+                <option value="fake_lead">🕵️ Fake Lead (30d No Reply)</option>
                 <option value="completed">🏆 Completed / Closed</option>
                 <option value="cancelled">❌ Cancelled</option>
               </select>
             </label>
-            <label>Follow-Up Strategy
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <label>Follow-Up Stage / Type
               <select id="booking-followup-type">
-                <option value="auto">⚡ Auto (Smart AI)</option>
+                <option value="auto_day1">⚡ Type 1: Day 1 Auto (3–4h until booked)</option>
+                <option value="no_reply_3d">⏳ Type 2: Next 3 Days No-Reply (Every 8h)</option>
+                <option value="long_term_30d">📆 Type 3: 3–30 Days No-Reply (Daily → Fake Lead)</option>
+                <option value="client_date">📅 Type 4: Client Choice Date</option>
+                <option value="custom_timer">⏱️ Management Custom Timer (2h, 1d, 2d later)</option>
+                <option value="call_reminder">🔔 Booked Call Reminder (30m before meeting)</option>
                 <option value="rejected">🛑 Rejected (No Follow-Up)</option>
                 <option value="on_hold">⏸️ On Hold (Check-In)</option>
                 <option value="not_attended">⚠️ Missed Call (Reschedule)</option>
                 <option value="buy_soon">⏳ Buying in Few Days (Closing)</option>
                 <option value="nurture">💡 Value Nurture (Portfolio)</option>
-                <option value="custom">🎯 Custom Strategy</option>
+                <option value="auto">🤖 Smart AI Auto</option>
+              </select>
+            </label>
+            <label>Send Follow-Up How Much Time Later?
+              <select id="booking-delay-hours">
+                <option value="">⚡ Automatic (Based on Stage / Call Time)</option>
+                <option value="0.5">⏱️ 30 Minutes Later</option>
+                <option value="2">⏱️ 2 Hours Later</option>
+                <option value="3.5">⏱️ 3.5 Hours Later (Day 1 Auto 3–4h)</option>
+                <option value="8">⏱️ 8 Hours Later (Next 3 Days 8h)</option>
+                <option value="24">⏱️ 1 Day Later (24h)</option>
+                <option value="48">⏱️ 2 Days Later (48h)</option>
+                <option value="72">⏱️ 3 Days Later (72h)</option>
               </select>
             </label>
           </div>
@@ -220,7 +249,7 @@
             <textarea id="booking-notes" rows="2" placeholder="e.g. Agency owner, wants trial first, likes Alex Hormozi captions style"></textarea>
           </label>
           <div class="actions" style="margin-top: 12px;">
-            <button type="submit">Save Lead</button>
+            <button type="submit">Save Lead & Schedule Timer</button>
             <button type="button" id="cancel-booking-btn" class="ghost small">Cancel</button>
             <span id="booking-error" class="error"></span>
           </div>
@@ -231,28 +260,35 @@
           <div style="flex: 1; min-width: 220px;">
             <input id="bookings-search" placeholder="Search by client, email, phone, website, or requirements..." style="margin: 0;" />
           </div>
-          <div style="width: 200px;">
+          <div style="width: 210px;">
             <select id="bookings-filter-status" style="margin: 0;">
               <option value="all">All Lead Statuses</option>
-              <option value="booked">📅 Booked</option>
+              <option value="lead">🌱 New Lead (Active Follow-Up)</option>
+              <option value="booked">📅 Booked Call</option>
               <option value="confirmed">✅ Confirmed</option>
               <option value="not_attended">⚠️ Missed Call (Not Attended)</option>
               <option value="buy_soon">⏳ Buying in Few Days</option>
+              <option value="fake_lead">🕵️ Fake Lead (30d No Reply)</option>
               <option value="not_interested">🛑 Not Interested</option>
               <option value="completed">🏆 Completed / Closed</option>
               <option value="cancelled">❌ Cancelled</option>
             </select>
           </div>
-          <div style="width: 210px;">
+          <div style="width: 240px;">
             <select id="bookings-filter-followup" style="margin: 0;">
-              <option value="all">All Follow-Up Strategies</option>
-              <option value="auto">⚡ Auto (Smart AI)</option>
+              <option value="all">All Follow-Up Stages & Timers</option>
+              <option value="auto_day1">⚡ Type 1: Day 1 Auto (3–4h)</option>
+              <option value="no_reply_3d">⏳ Type 2: Next 3 Days (8h)</option>
+              <option value="long_term_30d">📆 Type 3: 3–30 Days (Daily → Fake)</option>
+              <option value="client_date">📅 Type 4: Client Choice Date</option>
+              <option value="custom_timer">⏱️ Custom Management Timer</option>
+              <option value="call_reminder">🔔 Booked Call 30m Reminder</option>
               <option value="rejected">🛑 Rejected (No Follow-Up)</option>
               <option value="on_hold">⏸️ On Hold</option>
               <option value="not_attended">⚠️ Missed Call Reschedule</option>
               <option value="buy_soon">⏳ Buying in Few Days</option>
               <option value="nurture">💡 Value Nurture</option>
-              <option value="custom">🎯 Custom Strategy</option>
+              <option value="auto">🤖 Smart AI Auto</option>
             </select>
           </div>
         </div>
@@ -261,7 +297,7 @@
       <!-- Bookings Table / List -->
       <div class="card">
         <div class="chat-head">
-          <h2 style="margin: 0;">Lead Booking Records & Follow-up Center</h2>
+          <h2 style="margin: 0;">Lead Booking Records & Automated Follow-Up Timer Center</h2>
           <span id="bookings-count-label" class="muted small-text"></span>
         </div>
         <div id="bookings-list" class="rules-list"></div>
@@ -269,37 +305,67 @@
 
       <!-- Follow-up Modal -->
       <div id="followup-modal" class="hidden" style="position: fixed; inset: 0; background: #000000cc; backdrop-filter: blur(8px); z-index: 100; place-items: center; padding: 16px;">
-        <div class="card" style="width: min(580px, 100%); margin: auto; max-height: 90vh; overflow-y: auto;">
+        <div class="card" style="width: min(640px, 100%); margin: auto; max-height: 92vh; overflow-y: auto;">
           <div class="chat-head">
-            <h2 id="followup-modal-title" style="margin: 0;">⚡ Dynamic Follow-up Composer</h2>
+            <h2 id="followup-modal-title" style="margin: 0;">⚡ Follow-Up & Timer Controller</h2>
             <button id="close-followup-modal" class="ghost small">✕</button>
           </div>
           <p class="muted small-text" id="followup-modal-subtitle" style="margin-top: 4px;"></p>
 
+          <!-- Strategy Selector -->
           <div style="margin: 12px 0 8px; padding: 10px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
-            <label style="margin: 0; font-size: 13px; font-weight: 600;">Active Follow-Up Strategy for this Lead:
+            <label style="margin: 0; font-size: 13px; font-weight: 600;">Follow-Up Stage / Strategy:
               <select id="modal-followup-type" style="margin-top: 6px;">
-                <option value="auto">⚡ Auto (Smart AI based on status)</option>
+                <option value="auto_day1">⚡ Type 1: Day 1 Auto Follow-Up (Every 3–4h until call booked)</option>
+                <option value="no_reply_3d">⏳ Type 2: Next 3 Days No-Reply (Every 8h for 3 days)</option>
+                <option value="long_term_30d">📆 Type 3: 3–30 Days No-Reply (Every 24h → Fake Lead after 30d)</option>
+                <option value="client_date">📅 Type 4: Client Choice Date (Follow up on exact day client asked)</option>
+                <option value="custom_timer">⏱️ Custom Management Timer (2h later, 1 day later, 2 days later...)</option>
+                <option value="call_reminder">🔔 Booked Call 30-Min Meeting Reminder (No sales follow-up)</option>
                 <option value="rejected">🛑 Rejected (No Follow-Up / Stopped)</option>
                 <option value="on_hold">⏸️ On Hold (Friendly check-in)</option>
                 <option value="not_attended">⚠️ Missed Call (Reschedule call)</option>
                 <option value="buy_soon">⏳ Buying in Few Days (Closing check-in)</option>
                 <option value="nurture">💡 Value Nurture (Share portfolio)</option>
-                <option value="custom">🎯 Custom Strategy</option>
+                <option value="auto">🤖 Smart AI Auto</option>
               </select>
             </label>
           </div>
 
+          <!-- Custom Management Timer Preset Bar -->
+          <div style="margin: 10px 0; padding: 12px 14px; background: #1a1121; border: 1px solid var(--line); border-radius: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
+              <span style="font-size: 13px; font-weight: 600; color: var(--rose-light);">⏱️ Set How Much Time Later Follow-Up Is Sent:</span>
+              <span id="modal-next-followup-badge" class="badge badge-auto" style="font-size: 11.5px;"></span>
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button type="button" class="ghost small timer-preset-btn" data-hours="0.5">30m Later</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="2">2 Hours Later</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="3.5">3.5h (Day 1 Auto)</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="8">8h (3-Day Auto)</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="24">1 Day Later</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="48">2 Days Later</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="72">3 Days Later</button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+              <input type="datetime-local" id="modal-custom-datetime" style="margin: 0; flex: 1; min-width: 190px; padding: 7px 10px; font-size: 13px;" />
+              <button type="button" id="modal-save-datetime-btn" class="small">📅 Set Exact Date/Time</button>
+            </div>
+          </div>
+
           <div id="followup-status-alert" style="margin: 10px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;"></div>
-          <label style="margin-top: 10px;">Message (Tailored to Strategy)
+          <label style="margin-top: 10px;">Follow-Up / Reminder Message (Nyra sends this automatically when timer expires, or send now)
             <textarea id="followup-text" rows="5" style="font-family: inherit; font-size: 14px; line-height: 1.5;"></textarea>
           </label>
-          <div class="actions" style="margin-top: 14px; flex-wrap: wrap;">
-            <a id="followup-send-wa-btn" href="#" target="_blank" rel="noopener noreferrer" style="background: #10b981; color: #fff; text-decoration: none; padding: 9px 16px; border-radius: 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-              💬 Open in WhatsApp
+          <div class="actions" style="margin-top: 14px; flex-wrap: wrap; gap: 8px;">
+            <button type="button" id="followup-send-gateway-btn" class="small" style="background: linear-gradient(135deg, #10b981, #059669);">
+              🚀 Send Now via Nyra WhatsApp
+            </button>
+            <a id="followup-send-wa-btn" href="#" target="_blank" rel="noopener noreferrer" style="background: var(--panel-2); border: 1px solid #10b981; color: #34d399; text-decoration: none; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              💬 Open WhatsApp Link
             </a>
-            <button id="followup-copy-btn" class="ghost small">📋 Copy Text</button>
-            <button id="followup-mark-sent-btn" class="small">✓ Mark as Sent</button>
+            <button type="button" id="followup-copy-btn" class="ghost small">📋 Copy</button>
+            <button type="button" id="followup-mark-sent-btn" class="ghost small">✓ Mark Sent</button>
           </div>
           <div id="followup-feedback" class="muted small-text" style="margin-top: 10px;"></div>
         </div>

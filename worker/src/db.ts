@@ -262,16 +262,24 @@ export async function deleteTodo(env: AppEnv, id: string): Promise<boolean> {
 // ─── Bookings & Leads CRM Sheet ──────────────────────────────────────────────
 
 export type BookingStatus =
+  | "lead"
   | "booked"
   | "confirmed"
   | "not_attended"
   | "buy_soon"
   | "not_interested"
+  | "fake_lead"
   | "completed"
   | "cancelled";
 
 export type FollowupType =
   | "auto"
+  | "auto_day1"
+  | "no_reply_3d"
+  | "long_term_30d"
+  | "client_date"
+  | "custom_timer"
+  | "call_reminder"
   | "rejected"
   | "on_hold"
   | "not_attended"
@@ -291,6 +299,10 @@ export interface Booking {
   requirements: string | null;
   status: BookingStatus;
   followup_type: FollowupType;
+  next_followup_at: number | null;
+  call_time_ms: number | null;
+  last_client_reply_at: number | null;
+  followup_interval_hours: number | null;
   source: string;
   notes: string | null;
   last_followup_at: number | null;
@@ -334,6 +346,10 @@ export async function createBooking(
     requirements?: string | null;
     status?: BookingStatus;
     followup_type?: FollowupType;
+    next_followup_at?: number | null;
+    call_time_ms?: number | null;
+    last_client_reply_at?: number | null;
+    followup_interval_hours?: number | null;
     source?: string;
     notes?: string | null;
   }
@@ -343,10 +359,16 @@ export async function createBooking(
   const status: BookingStatus = b.status || "booked";
   const followup_type: FollowupType = b.followup_type || "auto";
   const source = b.source || "whatsapp";
+  const followup_interval_hours = b.followup_interval_hours ?? 3.5;
+  const last_client_reply_at = b.last_client_reply_at ?? created_at;
 
   await env.DB.prepare(
-    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, followup_type, source, notes, last_followup_at, followup_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
+    `INSERT INTO bookings (
+       id, chat_id, client_name, phone, email, scheduled_at, timezone,
+       company_or_website, requirements, status, followup_type,
+       next_followup_at, call_time_ms, last_client_reply_at, followup_interval_hours,
+       source, notes, last_followup_at, followup_count, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   )
     .bind(
       id,
@@ -360,6 +382,10 @@ export async function createBooking(
       b.requirements?.trim() ?? null,
       status,
       followup_type,
+      b.next_followup_at ?? null,
+      b.call_time_ms ?? null,
+      last_client_reply_at,
+      followup_interval_hours,
       source,
       b.notes?.trim() ?? null,
       created_at
@@ -378,6 +404,10 @@ export async function createBooking(
     requirements: b.requirements?.trim() ?? null,
     status,
     followup_type,
+    next_followup_at: b.next_followup_at ?? null,
+    call_time_ms: b.call_time_ms ?? null,
+    last_client_reply_at,
+    followup_interval_hours,
     source,
     notes: b.notes?.trim() ?? null,
     last_followup_at: null,
@@ -410,6 +440,10 @@ export async function updateBooking(
        requirements = ?,
        status = ?,
        followup_type = ?,
+       next_followup_at = ?,
+       call_time_ms = ?,
+       last_client_reply_at = ?,
+       followup_interval_hours = ?,
        notes = ?,
        last_followup_at = ?,
        followup_count = ?
@@ -425,6 +459,10 @@ export async function updateBooking(
       next.requirements,
       next.status,
       next.followup_type ?? "auto",
+      next.next_followup_at ?? null,
+      next.call_time_ms ?? null,
+      next.last_client_reply_at ?? null,
+      next.followup_interval_hours ?? 3.5,
       next.notes,
       next.last_followup_at,
       next.followup_count,
@@ -433,6 +471,21 @@ export async function updateBooking(
     .run();
 
   return next;
+}
+
+export async function getDueFollowups(env: AppEnv, now: number): Promise<Booking[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM bookings
+     WHERE next_followup_at IS NOT NULL
+       AND next_followup_at <= ?
+       AND status NOT IN ('fake_lead', 'not_interested', 'completed', 'cancelled')
+       AND followup_type != 'rejected'
+     ORDER BY next_followup_at ASC
+     LIMIT 5`
+  )
+    .bind(now)
+    .all<Booking>();
+  return results;
 }
 
 export async function deleteBooking(env: AppEnv, id: string): Promise<boolean> {
@@ -445,4 +498,5 @@ export async function findLatestBookingForChat(env: AppEnv, chatId: string): Pro
     .bind(chatId)
     .first<Booking>();
 }
+
 

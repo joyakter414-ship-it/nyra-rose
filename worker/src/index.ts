@@ -1,6 +1,14 @@
 import type { AppEnv } from "./env";
 import { getLiveNeuronUsage } from "./analytics";
-import { generateFollowupText, handleDashboardChat, handleIncoming, type IncomingMessage } from "./brain";
+import {
+  computeNextFollowupState,
+  generateFollowupText,
+  handleDashboardChat,
+  handleIncoming,
+  parseScheduledTimeToMs,
+  processDueFollowups,
+  type IncomingMessage,
+} from "./brain";
 import {
   createBooking,
   createNote,
@@ -14,6 +22,7 @@ import {
   getNotes,
   getRules,
   getTodos,
+  insertMessage,
   kvDelete,
   kvGet,
   kvSet,
@@ -21,6 +30,8 @@ import {
   updateBooking,
   updateRule,
   type Booking,
+  type BookingStatus,
+  type FollowupType,
 } from "./db";
 import { getSettings, MODELS, saveSettings, type Settings } from "./settings";
 
@@ -77,7 +88,21 @@ async function gatewayRoutes(request: Request, env: AppEnv, url: URL): Promise<R
       await kvSet(env, "gateway", next);
       const command = await kvGet<{ cmd: string }>(env, "gateway_command");
       if (command) await kvDelete(env, "gateway_command");
-      return json({ ok: true, command: command?.cmd ?? null });
+
+      let outbound: Array<{ jid: string; text: string; bookingId?: string }> = [];
+      if (body.state === "open") {
+        const [dueItems, manualQueue] = await Promise.all([
+          processDueFollowups(env).catch(() => []),
+          kvGet<Array<{ jid: string; text: string; bookingId?: string }>>(env, "gateway_outbound_queue").catch(() => null),
+        ]);
+        if (dueItems.length > 0) outbound.push(...dueItems);
+        if (manualQueue && manualQueue.length > 0) {
+          outbound.push(...manualQueue);
+          await kvDelete(env, "gateway_outbound_queue").catch(() => {});
+        }
+      }
+
+      return json({ ok: true, command: command?.cmd ?? null, outbound });
     }
     case "GET /gw/session": {
       const obj = await env.BUCKET.get(SESSION_KEY);
@@ -389,23 +414,60 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         timezone?: string;
         companyOrWebsite?: string;
         requirements?: string;
-        status?: "booked" | "confirmed" | "not_attended" | "buy_soon" | "not_interested" | "completed" | "cancelled";
-        followupType?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom";
-        followup_type?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom";
+        status?: BookingStatus;
+        followupType?: FollowupType;
+        followup_type?: FollowupType;
+        delayHours?: number;
+        customFollowupAt?: string | number;
         source?: string;
         notes?: string;
       };
+      const now = Date.now();
+      const status: BookingStatus = body.status || "booked";
+      const rawType: FollowupType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
+      const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, body.timezone, now) : null;
+
+      let nextFollowupAt: number | null = null;
+      let intervalHours = 3.5;
+
+      if (body.customFollowupAt) {
+        const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
+        if (!Number.isNaN(parsed)) nextFollowupAt = parsed;
+      } else if (body.delayHours && body.delayHours > 0) {
+        intervalHours = body.delayHours;
+        nextFollowupAt = Math.round(now + body.delayHours * 3600 * 1000);
+      } else {
+        const computed = computeNextFollowupState(
+          {
+            status,
+            followup_type: rawType,
+            scheduled_at: body.scheduledAt,
+            call_time_ms: callTimeMs,
+            timezone: body.timezone,
+            created_at: now,
+            last_client_reply_at: now,
+          },
+          now,
+        );
+        nextFollowupAt = computed.next_followup_at;
+        intervalHours = computed.followup_interval_hours;
+      }
+
       const booking = await createBooking(env, {
         chat_id: body.chatId || "manual_crm",
         client_name: body.clientName,
         phone: body.phone,
         email: body.email,
         scheduled_at: body.scheduledAt,
+        call_time_ms: callTimeMs,
         timezone: body.timezone,
         company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
-        status: body.status || "booked",
-        followup_type: body.followupType || body.followup_type || "auto",
+        status,
+        followup_type: rawType,
+        next_followup_at: nextFollowupAt,
+        followup_interval_hours: intervalHours,
+        last_client_reply_at: now,
         source: body.source || "dashboard",
         notes: body.notes,
       });
@@ -422,40 +484,127 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         timezone?: string;
         company_or_website?: string;
         requirements?: string;
-        status?: "booked" | "confirmed" | "not_attended" | "buy_soon" | "not_interested" | "completed" | "cancelled";
-        followup_type?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom";
+        status?: BookingStatus;
+        followup_type?: FollowupType;
+        next_followup_at?: number | null;
+        call_time_ms?: number | null;
+        followup_interval_hours?: number;
+        delayHours?: number;
+        customFollowupAt?: string | number | null;
         notes?: string;
         last_followup_at?: number;
         followup_count?: number;
       };
       if (!body?.id) return json({ error: "id is required" }, 400);
-      const booking = await updateBooking(env, body.id, body);
+
+      const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all<Booking>();
+      const existing = results?.[0];
+      if (!existing) return json({ error: "Booking not found" }, 404);
+
+      const now = Date.now();
+      const patch: Partial<Booking> = { ...body };
+      const nextStatus = body.status ?? existing.status;
+      const nextType = body.followup_type ?? existing.followup_type;
+
+      // If scheduled_at changed, re-parse call_time_ms
+      if (body.scheduled_at !== undefined && body.scheduled_at !== existing.scheduled_at) {
+        patch.call_time_ms = parseScheduledTimeToMs(body.scheduled_at, body.timezone ?? existing.timezone, now);
+        if (nextStatus === "booked" || nextStatus === "confirmed" || nextType === "call_reminder") {
+          patch.followup_type = "call_reminder";
+          patch.next_followup_at = patch.call_time_ms ? patch.call_time_ms - 30 * 60 * 1000 : null;
+          patch.followup_interval_hours = 0;
+        }
+      }
+
+      // If custom timer delay in hours was passed from the app ("2 hours later", "1 day later", "2 days later", etc.)
+      if (body.delayHours !== undefined && body.delayHours > 0) {
+        patch.followup_interval_hours = body.delayHours;
+        patch.next_followup_at = Math.round(now + body.delayHours * 3600 * 1000);
+        if (!body.followup_type) patch.followup_type = "custom_timer";
+      } else if (body.customFollowupAt !== undefined) {
+        if (body.customFollowupAt === null || body.customFollowupAt === "") {
+          patch.next_followup_at = null;
+        } else {
+          const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
+          if (!Number.isNaN(parsed)) {
+            patch.next_followup_at = parsed;
+            if (!body.followup_type) patch.followup_type = "client_date";
+          }
+        }
+      } else if (body.followup_type || body.status) {
+        // Recompute schedule based on chosen strategy or status
+        if (
+          nextType === "rejected" ||
+          nextStatus === "not_interested" ||
+          nextStatus === "fake_lead" ||
+          nextStatus === "completed" ||
+          nextStatus === "cancelled"
+        ) {
+          patch.next_followup_at = null;
+          patch.followup_interval_hours = 0;
+          if (nextStatus === "fake_lead" || nextStatus === "not_interested") {
+            patch.followup_type = "rejected";
+          }
+        } else if (nextType === "call_reminder" || nextStatus === "booked" || nextStatus === "confirmed") {
+          const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, existing.timezone, now);
+          patch.call_time_ms = cMs;
+          patch.followup_type = "call_reminder";
+          patch.next_followup_at = cMs ? cMs - 30 * 60 * 1000 : now + 30 * 60 * 1000;
+          patch.followup_interval_hours = 0;
+        } else if (nextType === "auto_day1") {
+          patch.followup_interval_hours = 3.5;
+          patch.next_followup_at = Math.round(now + 3.5 * 3600 * 1000);
+        } else if (nextType === "no_reply_3d") {
+          patch.followup_interval_hours = 8;
+          patch.next_followup_at = Math.round(now + 8 * 3600 * 1000);
+        } else if (nextType === "long_term_30d") {
+          patch.followup_interval_hours = 24;
+          patch.next_followup_at = Math.round(now + 24 * 3600 * 1000);
+        } else if (nextType === "on_hold" || nextType === "nurture") {
+          patch.followup_interval_hours = 48;
+          patch.next_followup_at = Math.round(now + 48 * 3600 * 1000);
+        } else if (nextType === "not_attended" || nextType === "buy_soon") {
+          patch.followup_interval_hours = 24;
+          patch.next_followup_at = Math.round(now + 24 * 3600 * 1000);
+        }
+      }
+
+      const booking = await updateBooking(env, body.id, patch);
       return json({ booking });
     }
 
     case "POST /api/bookings/followup": {
-      const body = (await request.json()) as { id: string; markSent?: boolean; followupType?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom" };
+      const body = (await request.json()) as {
+        id: string;
+        markSent?: boolean;
+        sendViaGateway?: boolean;
+        customText?: string;
+        followupType?: FollowupType;
+        delayHours?: number;
+      };
       if (!body?.id) return json({ error: "id is required" }, 400);
       const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all<Booking>();
       const b = results?.[0];
       if (!b) return json({ error: "Booking not found" }, 404);
 
+      const now = Date.now();
       if (body.followupType && body.followupType !== b.followup_type) {
         b.followup_type = body.followupType;
         await updateBooking(env, b.id, { followup_type: body.followupType });
       }
 
-      if (b.followup_type === "rejected" || b.status === "not_interested") {
+      if (b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
         return json(
           {
-            error: "Follow-ups are disabled for this lead (marked as Rejected / Not Interested).",
+            error: `Follow-ups are disabled for this lead (marked as ${b.status === "fake_lead" ? "Fake Lead" : "Rejected / Not Interested"}).`,
             disabled: true,
           },
           400,
         );
       }
 
-      const message = generateFollowupText(b);
+      const generated = generateFollowupText(b);
+      const message = body.customText?.trim() || generated;
       if (!message) {
         return json(
           {
@@ -470,12 +619,48 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
 
       let updatedBooking = b;
-      if (body.markSent) {
+      let queuedToGateway = false;
+
+      if (body.sendViaGateway) {
+        const jid = b.chat_id?.endsWith("@s.whatsapp.net")
+          ? b.chat_id
+          : cleanPhone.length >= 7
+          ? `${cleanPhone}@s.whatsapp.net`
+          : null;
+        if (!jid) {
+          return json({ error: "No valid WhatsApp number on this lead to send directly." }, 400);
+        }
+        const existingQueue = (await kvGet<Array<{ jid: string; text: string; bookingId?: string }>>(env, "gateway_outbound_queue")) || [];
+        existingQueue.push({ jid, text: message, bookingId: b.id });
+        await kvSet(env, "gateway_outbound_queue", existingQueue);
+        await insertMessage(env, {
+          id: `followup:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "crm:followup",
+          neurons: 0,
+          created_at: now,
+        }).catch(() => {});
+        queuedToGateway = true;
+      }
+
+      if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        const now = Date.now();
+        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 3.5;
+        const nextFollowupAt =
+          b.followup_type === "call_reminder"
+            ? null
+            : nextInterval > 0
+            ? Math.round(now + nextInterval * 3600 * 1000)
+            : null;
         const patched = await updateBooking(env, b.id, {
           last_followup_at: now,
           followup_count: nextCount,
+          next_followup_at: nextFollowupAt,
         });
         if (patched) updatedBooking = patched;
       }
@@ -483,8 +668,10 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       return json({
         message,
         waLink,
+        queuedToGateway,
         status: updatedBooking.status,
         followupType: updatedBooking.followup_type,
+        nextFollowupAt: updatedBooking.next_followup_at,
         clientName: updatedBooking.client_name,
         phone: updatedBooking.phone,
         followupCount: updatedBooking.followup_count,
