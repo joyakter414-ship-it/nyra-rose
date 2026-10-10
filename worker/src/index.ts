@@ -405,7 +405,21 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
     case "GET /api/bookings": {
       const status = url.searchParams.get("status") || undefined;
       const followupType = url.searchParams.get("followup_type") || undefined;
-      return json({ bookings: await getBookings(env, status, followupType) });
+      const list = await getBookings(env, status, followupType);
+      const now = Date.now();
+      for (const b of list) {
+        if (!b.timezone) {
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+        }
+        if (
+          !b.call_time_ms &&
+          b.scheduled_at &&
+          (b.status === "booked" || b.status === "confirmed" || b.followup_type === "call_reminder")
+        ) {
+          b.call_time_ms = parseScheduledTimeToMs(b.scheduled_at, b.timezone, b.created_at || now, b.phone || b.chat_id);
+        }
+      }
+      return json({ bookings: list });
     }
 
     case "POST /api/bookings": {
@@ -511,10 +525,31 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
       const now = Date.now();
       const patch: Partial<Booking> = { ...body };
-      const nextStatus = body.status ?? existing.status;
-      const nextType = body.followup_type ?? existing.followup_type;
+      let nextStatus = body.status ?? existing.status;
+      let nextType = body.followup_type ?? existing.followup_type;
       const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BDT";
       patch.timezone = effTz;
+
+      // Synchronize status and followup_type when one is explicitly changed in CRM
+      if (body.status && !body.followup_type) {
+        if (body.status === "not_attended") nextType = "not_attended";
+        else if (body.status === "buy_soon") nextType = "buy_soon";
+        else if (body.status === "booked" || body.status === "confirmed") nextType = "call_reminder";
+        else if (body.status === "not_interested" || body.status === "fake_lead") nextType = "rejected";
+        else if (body.status === "lead" && (existing.followup_type === "call_reminder" || existing.followup_type === "rejected")) {
+          nextType = "auto_day1";
+        }
+        patch.followup_type = nextType;
+      } else if (body.followup_type && !body.status) {
+        if (body.followup_type === "not_attended") nextStatus = "not_attended";
+        else if (body.followup_type === "buy_soon") nextStatus = "buy_soon";
+        else if (body.followup_type === "rejected") nextStatus = "not_interested";
+        else if (body.followup_type === "call_reminder") nextStatus = "booked";
+        else if (existing.status === "booked" || existing.status === "confirmed" || existing.status === "not_interested" || existing.status === "fake_lead") {
+          nextStatus = "lead";
+        }
+        patch.status = nextStatus;
+      }
 
       // If scheduled_at or timezone changed, re-parse call_time_ms and format scheduled_at cleanly
       if (
@@ -567,7 +602,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           if (nextStatus === "fake_lead" || nextStatus === "not_interested") {
             patch.followup_type = "rejected";
           }
-        } else if (nextType === "call_reminder" || nextStatus === "booked" || nextStatus === "confirmed") {
+        } else if (nextType === "call_reminder") {
           const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, effTz, now, existing.phone || existing.chat_id);
           patch.call_time_ms = cMs;
           patch.followup_type = "call_reminder";
@@ -578,7 +613,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
             patch.next_followup_at = null;
           }
           patch.followup_interval_hours = 0;
-        } else if (nextType === "auto_day1") {
+        } else if (nextType === "auto_day1" || nextType === "auto") {
           patch.followup_interval_hours = 3.5;
           patch.next_followup_at = Math.round(now + 3.5 * 3600 * 1000);
         } else if (nextType === "no_reply_3d") {
@@ -616,8 +651,27 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
       const now = Date.now();
       if (body.followupType && body.followupType !== b.followup_type) {
+        const nextPatch: Partial<Booking> = { followup_type: body.followupType };
+        if (body.followupType !== "rejected" && (b.status === "not_interested" || b.status === "fake_lead")) {
+          nextPatch.status = "lead";
+          b.status = "lead";
+        } else if (body.followupType === "not_attended") {
+          nextPatch.status = "not_attended";
+          b.status = "not_attended";
+        } else if (body.followupType === "buy_soon") {
+          nextPatch.status = "buy_soon";
+          b.status = "buy_soon";
+        } else if (body.followupType === "call_reminder") {
+          nextPatch.status = "booked";
+          b.status = "booked";
+        }
+        const computed = computeNextFollowupState({ ...b, ...nextPatch }, now);
+        nextPatch.next_followup_at = computed.next_followup_at;
+        nextPatch.followup_interval_hours = computed.followup_interval_hours;
         b.followup_type = body.followupType;
-        await updateBooking(env, b.id, { followup_type: body.followupType });
+        b.next_followup_at = computed.next_followup_at;
+        b.followup_interval_hours = computed.followup_interval_hours;
+        await updateBooking(env, b.id, nextPatch);
       }
 
       if (b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {

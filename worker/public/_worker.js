@@ -533,6 +533,14 @@ What style of videos are you looking to edit, and what target budget do you have
     `Client: "Hey sorry I was traveling! Still interested in getting my YouTube videos edited."`,
     `Nyra: "Welcome back! Hope you had a great trip. Since you're focusing on YouTube long-form edits, our *Scale Plan ($890/mo)* or a custom negotiable YouTube package would be ideal. What day and time works best for a quick 15-minute call with our Sales Executive or CEO to go over your channel style?"`,
     ``,
+    `[SIMULATION 16: Client Skeptical / Asking for Client Phone Numbers or "Are You Legit?"]`,
+    `Client: "Give me an existing client's number, how do I know you're not a scam/fraud?"`,
+    `Nyra: "Totally understand wanting to be 100% sure before investing! For privacy and NDA reasons we never give out our clients' personal phone numbers, but you can watch our real client edits and case studies at https://vidmox.pages.dev/portfolio \u2014 and the best way to verify us is to jump on a live face-to-face video call with our CEO / Sales Executive where we'll screen-share our active client projects and workflow live. What time works best for you to hop on a quick video call?"`,
+    ``,
+    `[SIMULATION 17: Banglish / Bengali Client Conversation]`,
+    `Client: "Vaiya amr budget kom 100 dollar er moddhe 15 ta reel hobe?"`,
+    `Nyra: "Totally understand! Amader standard package $490/mo theke shuru hoy, kintu amader *budget genuinely negotiable* \u2014 apnar video style ar volume onujayi amra custom package kore dite parbo. Apni ki amader Sales Executive ba CEO-r sathe 15 minute-er ekta quick call-e boste parben jekhane amra apnar budget-er moddhe best deal set kore dibo? Kon time-ta apnar jonno best hoy?"`,
+    ``,
     `=== 6. DYNAMIC CRM STATUS & FOLLOW-UP RULES ===`,
     `1. *'rejected' / 'not_interested'*: STRICTLY STOP ALL SALES PITCHES. If they message, be brief, polite, and zero-pressure.`,
     `2. *'on_hold'*: Warm, low-pressure support until they are ready to resume.`,
@@ -542,9 +550,10 @@ What style of videos are you looking to edit, and what target budget do you have
     ``,
     `=== 7. FORMATTING & STYLE RULES ===`,
     `\u2022 Keep messages concise and natural for WhatsApp (2\u20134 short sentences max, separated by a clean line break when helpful).`,
-    `\u2022 Use WhatsApp formatting only (*bold*, _italic_). NEVER use ### headers, HTML, or markdown tables.`,
+    `\u2022 Use WhatsApp formatting only (*bold*, _italic_). NEVER use ### headers, HTML, markdown tables, or markdown links like [text](url) or mailto: links \u2014 always write plain URLs like https://vidmox.pages.dev/portfolio.`,
+    `\u2022 NEVER invent fake email addresses like support@vidmox.com or info@vidmox.com.`,
+    `\u2022 NEVER say "I don't understand Bengali yet" or claim you cannot read Bengali/Banglish \u2014 you understand English, \u09AC\u09BE\u0982\u09B2\u09BE, and Banglish fluently. Match the client's language naturally.`,
     `\u2022 Always ask at most ONE clear question at the end of your message so it's effortless for the client to reply.`,
-    `\u2022 Match the client's language naturally (English, \u09AC\u09BE\u0982\u09B2\u09BE, or Banglish).`,
     ``,
     `Current date/time (UTC): ${ctx.now.toISOString()}.`
   ];
@@ -1031,7 +1040,7 @@ function formatTimeInTimezone(utcMs, tz, phoneFallback, nowMs = Date.now()) {
 }
 function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallback) {
   if (!phrase || !phrase.trim()) return null;
-  const p = phrase.toLowerCase().replace(/\blatter\b/g, "later").replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2").trim();
+  const p = phrase.toLowerCase().replace(/^follow-up:\s*/i, "").replace(/\blatter\b/g, "later").replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2").trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(p)) {
     const parsed = Date.parse(phrase);
     if (!Number.isNaN(parsed) && parsed > nowMs - 864e5) return parsed;
@@ -1045,17 +1054,31 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallb
     if (unit.startsWith("day")) return Math.round(nowMs + val * 24 * 3600 * 1e3);
     if (unit.startsWith("week")) return Math.round(nowMs + val * 7 * 24 * 3600 * 1e3);
   }
-  const tzOffsetHours = getTimezoneOffsetHours(timezone, phoneFallback);
+  const inlineTzMatch = p.match(
+    /\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|pst|cst|mst|edt|pdt|cdt|mdt|gmt|bst|bdt|utc|cet|aest|aedt|awst|acst|nzst|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst)\b/i
+  );
+  const effectiveTz = inlineTzMatch ? inlineTzMatch[1].toUpperCase() : timezone;
+  const tzOffsetHours = getTimezoneOffsetHours(effectiveTz, phoneFallback);
   const localNowMs = nowMs + tzOffsetHours * 3600 * 1e3;
   const localDate = new Date(localNowMs);
+  let explicitMonth = null;
+  let explicitDay = null;
+  const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const monthMatch = p.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\b/i);
+  if (monthMatch) {
+    explicitMonth = monthNames.indexOf(monthMatch[1].slice(0, 3).toLowerCase());
+    explicitDay = parseInt(monthMatch[2], 10);
+  }
   let dayOffset = 0;
-  if (p.includes("day after tomorrow")) {
+  if (p.includes("yesterday")) {
+    dayOffset = -1;
+  } else if (p.includes("day after tomorrow")) {
     dayOffset = 2;
   } else if (p.includes("tomorrow")) {
     dayOffset = 1;
   } else if (p.includes("next week")) {
     dayOffset = 7;
-  } else {
+  } else if (explicitMonth === null) {
     const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
     for (let i = 0; i < 7; i++) {
       if (p.includes(days[i])) {
@@ -1109,10 +1132,14 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallb
     hour = 20;
   }
   const targetLocal = new Date(localNowMs);
-  targetLocal.setUTCDate(targetLocal.getUTCDate() + dayOffset);
+  if (explicitMonth !== null && explicitDay !== null) {
+    targetLocal.setUTCMonth(explicitMonth, explicitDay);
+  } else {
+    targetLocal.setUTCDate(targetLocal.getUTCDate() + dayOffset);
+  }
   targetLocal.setUTCHours(hour, minute, 0, 0);
   let targetUtcMs = targetLocal.getTime() - tzOffsetHours * 3600 * 1e3;
-  if (dayOffset === 0 && targetUtcMs <= nowMs - 15 * 60 * 1e3 && !p.includes("today")) {
+  if (explicitMonth === null && dayOffset === 0 && targetUtcMs <= nowMs - 15 * 60 * 1e3 && !p.includes("today") && !p.includes("yesterday")) {
     targetUtcMs += 24 * 3600 * 1e3;
   }
   return targetUtcMs;
@@ -1128,7 +1155,7 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
       followup_interval_hours: 0
     };
   }
-  if (curStatus === "booked" || curStatus === "confirmed") {
+  if (curType === "call_reminder" || (curStatus === "booked" || curStatus === "confirmed") && (curType === "auto" || !b.followup_type)) {
     const callMs = b.call_time_ms || parseScheduledTimeToMs(b.scheduled_at, b.timezone, nowMs, b.phone || b.chat_id);
     let reminderAt = null;
     if (callMs) {
@@ -1170,6 +1197,25 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
       followup_type: "rejected",
       next_followup_at: null,
       followup_interval_hours: 0
+    };
+  }
+  if (curType === "on_hold" || curType === "nurture") {
+    const hrs = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 48;
+    return {
+      status: curStatus,
+      followup_type: curType,
+      next_followup_at: nowMs + hrs * 3600 * 1e3,
+      followup_interval_hours: hrs
+    };
+  }
+  if (curType === "not_attended" || curStatus === "not_attended" || curType === "buy_soon" || curStatus === "buy_soon") {
+    const hrs = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 24;
+    const effType = curType === "not_attended" || curStatus === "not_attended" ? "not_attended" : "buy_soon";
+    return {
+      status: curStatus,
+      followup_type: effType,
+      next_followup_at: nowMs + hrs * 3600 * 1e3,
+      followup_interval_hours: hrs
     };
   }
   if (elapsedHours >= 24 * 4) {
@@ -1221,6 +1267,83 @@ function normalizeTimezoneMention(rawTz) {
   if (u.includes("MOUNTAIN") || u === "MST") return "MST";
   return u;
 }
+var NAME_STOPWORDS = /* @__PURE__ */ new Set([
+  "free",
+  "busy",
+  "available",
+  "interested",
+  "looking",
+  "good",
+  "fine",
+  "great",
+  "okay",
+  "ok",
+  "ready",
+  "here",
+  "back",
+  "from",
+  "in",
+  "at",
+  "on",
+  "for",
+  "with",
+  "the",
+  "and",
+  "of",
+  "to",
+  "a",
+  "an",
+  "not",
+  "just",
+  "very",
+  "so",
+  "really",
+  "currently",
+  "still",
+  "asking",
+  "texting",
+  "messaging",
+  "calling",
+  "booking",
+  "trying",
+  "going",
+  "working",
+  "running",
+  "doing",
+  "making",
+  "creating",
+  "editing",
+  "need",
+  "want",
+  "happy",
+  "glad",
+  "sorry",
+  "sure",
+  "new",
+  "old",
+  "late",
+  "out",
+  "away",
+  "traveling",
+  "travelling",
+  "thinking",
+  "deciding",
+  "ready",
+  "done"
+]);
+function extractClientNameFromText(text) {
+  const explicitMatch = text.match(/(?:my name is|name\s*[:=-])\s*([A-Za-z]{2,20}(?:\s+[A-Za-z]{2,20})?)/i);
+  if (explicitMatch) {
+    const tokens = explicitMatch[1].trim().split(/\s+/).filter((w) => !NAME_STOPWORDS.has(w.toLowerCase()));
+    if (tokens.length > 0) return tokens.join(" ");
+  }
+  const iamMatch = text.match(/(?:\bI am|\bI'm|\bIm|\bi am|\bi'm)\s+([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20})?)/);
+  if (iamMatch) {
+    const tokens = iamMatch[1].trim().split(/\s+/).filter((w) => !NAME_STOPWORDS.has(w.toLowerCase()));
+    if (tokens.length > 0) return tokens.join(" ");
+  }
+  return null;
+}
 function extractBookingDetails(text, history) {
   const normalizedText = text.replace(/\blatter\b/gi, "later").replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2");
   const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
@@ -1240,15 +1363,13 @@ function extractBookingDetails(text, history) {
   const phoneRegex = /(?:\+?\d{1,4}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/;
   const phoneMatch = normalizedText.match(phoneRegex);
   const phone = phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7 ? phoneMatch[0].trim() : null;
-  const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+(?!from|at|with|the|and|here|of\b)[A-Z][a-z]+)?)/i;
-  const nameMatch = normalizedText.match(nameRegex);
-  const clientName = nameMatch ? nameMatch[1].trim() : null;
-  const timePhraseRegex = /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+  const clientName = extractClientNameFromText(normalizedText);
+  const timePhraseRegex = /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
   const timePhraseMatch = normalizedText.match(timePhraseRegex);
   let time = null;
   if (timePhraseMatch) {
     const rawMatched = timePhraseMatch[0].trim();
-    const isBareUnitWithoutCue = /^\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?$/i.test(rawMatched) && !/\b(in|after|later|free|msg|message|text|talk|call|ping|remind|back)\b/i.test(normalizedText);
+    const isBareUnitWithoutCue = /^\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?$/i.test(rawMatched) && !/\b(later|free|msg|message|text|knock|talk|call|ping|remind|follow\s*up|followup|back)\b/i.test(normalizedText);
     if (!isBareUnitWithoutCue) {
       const dayPrefixMatch = normalizedText.match(/\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
       if (dayPrefixMatch && !rawMatched.toLowerCase().includes(dayPrefixMatch[1].toLowerCase())) {
@@ -1266,17 +1387,21 @@ function extractBookingDetails(text, history) {
       time = sentence ? sentence.trim() : looseMatch[0].trim();
     }
   }
-  const tzRegex = /\b((?:GMT|UTC)\s*[+-]\d{1,2}(?::\d{2})?|EST|PST|CST|MST|EDT|PDT|CDT|MDT|GMT|BST|BDT|UTC|CET|AEST|AEDT|AWST|ACST|NZST|IST|PKT|GST|AST|SGT|MYT|PHT|HKT|JST|KST|Australi(?:an|a)(?:\s+time(?:\s*zone)?)?|Sydney(?:\s+time)?|Melbourne(?:\s+time)?|Dhaka(?:\s+time)?|Bangladesh(?:\s+time)?|BD(?:\s+time)?|UK(?:\s+time)?|London(?:\s+time)?|India(?:\s+time)?|Pakistan(?:\s+time)?|Dubai(?:\s+time)?|UAE(?:\s+time)?|Eastern(?:\s+time)?|Pacific(?:\s+time)?|Central(?:\s+time)?)\b/i;
+  const tzRegex = /\b((?:GMT|UTC)\s*[+-]\d{1,2}(?::\d{2})?|EST|PST|CST|MST|EDT|PDT|CDT|MDT|GMT|BST|BDT|UTC|CET|AEST|AEDT|AWST|ACST|NZST|IST|PKT|GST|AST|SGT|MYT|PHT|HKT|JST|KST|(?:Australi(?:an|a)|Sydney|Melbourne|Dhaka|Bangladesh|BD|UK|London|India|Pakistan|Dubai|UAE|Eastern|Pacific|Central|Mountain)\s+time(?:\s*zone)?)\b/i;
   const tzMatch = normalizedText.match(tzRegex);
   const timezone = tzMatch ? normalizeTimezoneMention(tzMatch[1]) : null;
   const textWithoutEmails = normalizedText.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "");
   const siteRegex = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|io|net|co|app|agency|tv|dev)|youtube\.com\/@[a-zA-Z0-9_.-]+|instagram\.com\/[a-zA-Z0-9_.-]+)/i;
   const siteMatch = textWithoutEmails.match(siteRegex);
-  const companyOrWebsite = siteMatch ? siteMatch[0] : null;
+  const rawSite = siteMatch ? siteMatch[0] : null;
+  const ignoredSiteDomains = /^(?:https?:\/\/)?(?:www\.)?(?:meet\.google\.com|zoom\.us|calendly\.com|wa\.me|whatsapp\.com|vidmox\.(?:pages\.dev|online|com)|gmail\.com|yahoo\.com|hotmail\.com|outlook\.com)/i;
+  const companyOrWebsite = rawSite && !ignoredSiteDomains.test(rawSite) ? rawSite : null;
   const lower = normalizedText.toLowerCase();
-  const isRescheduleRequest = (Boolean(time) || Boolean(timezone)) && (lower.includes("change") || lower.includes("reschedule") || lower.includes("move") || lower.includes("shift") || lower.includes("instead") || lower.includes("postpone") || lower.includes("another time") || lower.includes("new time") || lower.startsWith("no ") || lower.startsWith("no,"));
-  const hasExplicitCallWord = lower.includes("book") || lower.includes("call") || lower.includes("meet") || lower.includes("zoom") || lower.includes("schedule") || lower.includes("slot");
-  const isClientChoiceFollowup = Boolean(time) && !isRescheduleRequest && !hasExplicitCallWord && !email && (lower.includes("msg") || lower.includes("message") || lower.includes("text") || lower.includes("free") || lower.includes("available") || lower.includes("follow up") || lower.includes("followup") || lower.includes("contact") || lower.includes("reach out") || lower.includes("ping") || lower.includes("remind") || lower.includes("busy") || lower.includes("talk") || lower.includes("chat") || lower.includes("later") || lower.includes("after") || lower.includes("check back"));
+  const hasExplicitCallWord = /\b(book|call|meet|meeting|zoom|schedule|slot)\b/i.test(lower);
+  const hasFollowupKnockCue = /\b(knock|msg|message|text|ping|remind|follow\s*up|followup|check\s*back|reach\s*out|busy\s+now|busy\s+right\s+now|talk\s+later|chat\s+later)\b/i.test(lower);
+  const isRelativeDelayPhrase = /\b\d+(?:\.\d+)?\s*(?:minute|min|hour|hr|day|week)s?\s+later\b/i.test(lower) || /\b(?:in|after)\s+\d+(?:\.\d+)?\s*(?:minute|min|hour|hr)s?\b/i.test(lower);
+  const isClientChoiceFollowup = Boolean(time) && !email && (hasFollowupKnockCue || isRelativeDelayPhrase && !hasExplicitCallWord || !hasExplicitCallWord && /\b(free|available|contact|busy|talk|chat|later|after)\b/i.test(lower));
+  const isRescheduleRequest = !isClientChoiceFollowup && (Boolean(time) || Boolean(timezone)) && (lower.includes("change") || lower.includes("reschedule") || lower.includes("move") || lower.includes("shift") || lower.includes("instead") || lower.includes("postpone") || lower.includes("another time") || lower.includes("new time") || lower.includes("make it") || lower.includes("make in") || lower.startsWith("no ") || lower.startsWith("no,"));
   let inferredStatus = null;
   let inferredFollowupType = null;
   if (/\b(not interested|no interest|stop messaging|don't message|dont message|remove me|unsubscribe|don't need|dont need|no need|already hired|already have an editor)\b/i.test(lower)) {
@@ -1318,28 +1443,28 @@ function extractBookingDetails(text, history) {
   if (volMatch) {
     reqsList.push(`Volume: ~${volMatch[0].trim()}`);
   }
-  const budgetDollarMatch = allUserText.match(/(?:\$\s*(\d{2,4})|(\d{2,4})\s*(?:dollars?|usd|\$))/i);
+  const budgetDollarMatch = allUserText.match(/(?:\$\s*(\d{1,4})|(\d{1,4})\s*(?:\$|dollars?|usd))/i);
   if (budgetDollarMatch) {
     const amt = budgetDollarMatch[1] || budgetDollarMatch[2];
     if (!["29", "490", "890", "1490", "2499"].includes(amt)) {
       reqsList.push(`Client Budget: ~$${amt} (Negotiable)`);
     }
-  } else if (/\b(low budget|small budget|tight budget|negotiate|negotiable|discount)\b/i.test(allUserText)) {
+  } else if (/\b(low budget|small budget|tight budget|negotiate|negotiable|discount|budget kom|kom dam)\b/i.test(allUserText)) {
     reqsList.push("Custom / Negotiable Budget");
   }
-  if (allUserText.includes("trial") || allUserText.includes("kickstart") || allUserText.includes("29")) {
+  if (allUserText.includes("trial") || allUserText.includes("kickstart") || /\b29\b/.test(allUserText)) {
     reqsList.push("Kickstart Trial ($29)");
   }
-  if (allUserText.includes("growth") || allUserText.includes("490")) {
+  if (allUserText.includes("growth") || /\b490\b/.test(allUserText)) {
     reqsList.push("Growth Plan ($490/mo)");
   }
-  if (allUserText.includes("scale") || allUserText.includes("890")) {
+  if (allUserText.includes("scale") || /\b890\b/.test(allUserText)) {
     reqsList.push("Scale Plan ($890/mo)");
   }
-  if (allUserText.includes("advance") || allUserText.includes("1490") || allUserText.includes("1,490")) {
+  if (allUserText.includes("advance") || /\b1,?490\b/.test(allUserText)) {
     reqsList.push("Advance Plan ($1,490/mo)");
   }
-  if (allUserText.includes("premium") || allUserText.includes("2499") || allUserText.includes("2,499") || allUserText.includes("1590")) {
+  if (allUserText.includes("premium") || /\b2,?499\b/.test(allUserText) || /\b1,?590\b/.test(allUserText)) {
     reqsList.push("Premium Tier ($2,499/mo)");
   }
   const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
@@ -1372,6 +1497,9 @@ function analyzeConversationMemory(params) {
   const knownScheduledAt = existing?.scheduled_at || null;
   let detectedIntent = "GENERAL CONVERSATION / DISCOVERY";
   let nextSalesObjective = "";
+  const isLowBudgetOrPriceNegotiation = /(?:\$\s*\d{1,3}\b|\b\d{1,3}\s*\$|\b\d{1,3}\s*(?:dollars?|usd)\b|\b(?:expensive|high|out of budget|low budget|small budget|tight budget|budget|cheaper|discount|lower price|too much|cant afford|can't afford|negotiate|negotiable|budget kom|kom dam)\b)/i.test(
+    lower
+  );
   if (bookingInfo.inferredStatus === "not_interested") {
     detectedIntent = "CLIENT DECLINING / NOT INTERESTED";
     nextSalesObjective = "Be 100% polite, warm, and zero-pressure ('Totally understand! Thanks for letting me know, and feel free to reach out anytime in the future if your editing needs change.'). Do NOT pitch or push.";
@@ -1381,15 +1509,18 @@ function analyzeConversationMemory(params) {
   } else if (/\b(are you a bot|are you ai|is this a bot|automated|chatting with a bot|real person)\b/i.test(lower)) {
     detectedIntent = "ASKING IF YOU ARE HUMAN OR AI";
     nextSalesObjective = "Reassure them warmly and naturally like a real human at your desk ('Haha no, I'm Nyra from the Vidmox team! Just at my desk right now so I reply fast.') and continue helping with their videos.";
-  } else if (/\b(expensive|high|out of budget|budget|cheaper|discount|lower price|too much|cant afford|can't afford|negotiate|negotiable|dollar|\$\s*\d{2,3}\b)\b/i.test(lower)) {
+  } else if (/\b(fraud|scam|fake|genuine|genune|real agency|trust|client er number|client number|talk with your client)\b/i.test(lower)) {
+    detectedIntent = "TRUST / VERIFICATION / ASKING FOR CLIENT PROOF";
+    nextSalesObjective = "Respond warmly, empathetically, and concisely like a real human (2\u20133 sentences max): explain that we keep our clients' personal phone numbers private for NDA/privacy reasons, share our verified client reviews page (https://vidmox.pages.dev/reviews) and portfolio (https://vidmox.pages.dev/portfolio), and invite them to jump on a quick 10-minute live video call with our Sales Executive or CEO right now so they can meet our team face-to-face.";
+  } else if (isLowBudgetOrPriceNegotiation) {
     detectedIntent = "LOW BUDGET / CUSTOM BUDGET OFFER / NEGOTIATION";
-    nextSalesObjective = "Genuinely reassure the client that our budget is negotiable! Never turn them away even if their budget is low (like '$100 for 20 videos'). Warmly tell them that our Sales Executive or CEO can work out a special custom deal with them based on their editing style and volume, and invite them to book a quick 10\u201315 minute call with our Sales Executive or CEO right now (ask what day/time and email works best for them).";
+    nextSalesObjective = "Genuinely reassure the client that our budget is negotiable! Never turn them away even if their budget is low (like '$10', '$100 for 20 videos', etc.). Warmly tell them that our Sales Executive or CEO can work out a special custom deal that fits their budget and editing volume, and invite them to book a quick 10\u201315 minute call with our Sales Executive or CEO right now (ask what day/time and email works best for them).";
   } else if (/\b(free sample|free trial|free test|free edit|sample edit|test edit|try first)\b/i.test(lower)) {
     detectedIntent = "ASKING FOR FREE SAMPLE / TRIAL EDIT";
     nextSalesObjective = "Explain warmly that because we assign a dedicated senior editor and PM to every project, we offer a risk-free $29 Kickstart Trial (https://vidmox.pages.dev/29-video) with unlimited revisions \u2014 or we can hop on a quick 10\u201315 minute call with our Sales Executive or CEO first to show live edits in their niche. Ask which they prefer.";
   } else if (/\b(price|pricing|cost|how much|package|plan|rate|charge|per video|monthly)\b/i.test(lower)) {
     detectedIntent = "ASKING ABOUT PRICING / PACKAGES";
-    nextSalesObjective = knownScope ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching plan ($490/mo Growth for 25\u201330 Shorts, $890/mo Scale for 55\u201360 Shorts or 6\u20138 YouTube videos, $1,490/mo Advance for agencies, plus $29 Trial) and ask what day/time works for a quick 15-minute call to tailor their workflow.` : `Give a clear, concise overview of our main plans ($490/mo Growth for 25\u201330 short-form videos, $890/mo Scale for 55\u201360 shorts or 6\u20138 long-form YouTube videos, and $29 Trial edit) and ask what type of videos they mainly want edited.`;
+    nextSalesObjective = knownScope ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching plan ($490/mo Growth for 25\u201330 Shorts, $890/mo Scale for 55\u201360 Shorts or 6\u20138 YouTube videos, $1,490/mo Advance for agencies, plus $29 Trial \u2014 and note that budget is negotiable for custom packages) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.` : `Give a clear, concise overview of our main plans ($490/mo Growth for 25\u201330 short-form videos, $890/mo Scale for 55\u201360 shorts or 6\u20138 long-form YouTube videos, $29 Trial edit, and negotiable custom budgets) and ask what type of videos they mainly want edited.`;
   } else if (/\b(portfolio|sample|work|previous edit|example|show me|quality|reel|demo)\b/i.test(lower)) {
     detectedIntent = "ASKING FOR PORTFOLIO / PREVIOUS WORK";
     nextSalesObjective = "Share https://vidmox.pages.dev/portfolio (and https://vidmox.pages.dev/premium-portfolio if they want high-end motion graphics) and ask what style of videos they are currently creating so you can point out the best match.";
@@ -1404,7 +1535,7 @@ function analyzeConversationMemory(params) {
     nextSalesObjective = "Answer what the client just asked warmly and ask ONE natural discovery question to learn what kind of videos they create (Reels/Shorts vs. YouTube long-form) and roughly how many per month.";
   } else {
     detectedIntent = "QUALIFIED LEAD \u2014 READY TO GUIDE TO CALL";
-    nextSalesObjective = `You already know their video scope (${knownScope}). Build on what they just said without re-asking what videos they make, and smoothly invite them to a quick 15-minute strategy call (ask what day/time and email works best for them).`;
+    nextSalesObjective = `You already know their video scope (${knownScope}). Build on what they just said without re-asking what videos they make, and smoothly invite them to a quick 15-minute strategy call with our Sales Executive or CEO (ask what day/time and email works best for them).`;
   }
   const recentClientQuotes = userMsgs.slice(-3).map((m) => `"${m.content.slice(0, 120)}"`).join(" -> ");
   const antiRepeatRules = [];
@@ -1442,39 +1573,6 @@ function generateFollowupText(b) {
   if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
   }
-  if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
-    let minsText = "30 minutes";
-    if (b.call_time_ms && b.call_time_ms > Date.now()) {
-      const diffMins = Math.max(1, Math.round((b.call_time_ms - Date.now()) / 6e4));
-      if (diffMins <= 35) minsText = `${diffMins} minute${diffMins === 1 ? "" : "s"}`;
-    }
-    return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
-  }
-  if (type === "auto_day1" || type === "auto") {
-    const day1Templates = [
-      `Hi ${name}! Just checking in to see if you had a chance to look at my previous message regarding ${reqTopic}. Happy to help if you have any questions!`,
-      `Hey ${name}! Are you still exploring editing support for ${reqTopic}? Let me know what you're looking for and I'll help you figure out the best next step.`,
-      `Hi ${name}! Would you be available for a quick 15-minute call to discuss ${reqTopic}? You can share a convenient time right here or book directly at https://calendly.com/armaan-gineus/30min`,
-      `Hey ${name}! Just wanted to make sure my message didn't get buried. Whenever you're ready to chat about scaling ${reqTopic}, let me know!`
-    ];
-    return day1Templates[count % day1Templates.length];
-  }
-  if (type === "no_reply_3d") {
-    const day3Templates = [
-      `Hey ${name}! Hope your week is going well. Just wanted to check if you're still looking for a dedicated editing team for ${reqTopic}? Happy to answer any questions or set up a quick call!`,
-      `Hi ${name}! Whenever you're ready to take editing off your plate, we can start with a $29 trial edit or jump on a quick 15-minute call (https://calendly.com/armaan-gineus/30min). Let me know what works best for you!`,
-      `Hey ${name}! Just checking in \u2014 are you still deciding which editing package would fit your workflow best? Happy to walk you through our Growth and Scale plans whenever you're free.`
-    ];
-    return day3Templates[count % day3Templates.length];
-  }
-  if (type === "long_term_30d") {
-    const longTermTemplates = [
-      `Hey ${name}! Wanted to share a few recent video edits we produced for creators and agencies in your space: https://vidmox.pages.dev/portfolio. Let me know if you'd like to try a sample edit!`,
-      `Hi ${name}! Just checking in to see how your content pipeline is going this month. If you need extra editing capacity for ${reqTopic}, feel free to reach out anytime!`,
-      `Hey ${name}! Hope business is booming. If you're still looking to outsource your video editing with a 24-hour turnaround, I'd love to help get you set up!`
-    ];
-    return longTermTemplates[count % longTermTemplates.length];
-  }
   if (type === "client_date") {
     const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
     return `Hi ${name}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
@@ -1489,13 +1587,46 @@ function generateFollowupText(b) {
     return `Hey ${name}! Hope you're doing well. Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how our dedicated team works? Happy to help whenever you're ready!`;
   }
   if (type === "not_attended" || b.status === "not_attended") {
-    return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+    return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
   }
   if (type === "buy_soon" || b.status === "buy_soon") {
     return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
   }
   if (type === "nurture") {
     return `Hey ${name}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+  }
+  if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+    let minsText = "30 minutes";
+    if (b.call_time_ms && b.call_time_ms > Date.now()) {
+      const diffMins = Math.max(1, Math.round((b.call_time_ms - Date.now()) / 6e4));
+      if (diffMins <= 35) minsText = `${diffMins} minute${diffMins === 1 ? "" : "s"}`;
+    }
+    return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
+  }
+  if (type === "auto_day1" || type === "auto") {
+    const day1Templates = [
+      `Hi ${name}! Just checking in to see if you had a chance to look at my previous message regarding ${reqTopic}. Happy to help if you have any questions!`,
+      `Hey ${name}! Are you still exploring editing support for ${reqTopic}? Let me know what you're looking for and I'll help you figure out the best next step.`,
+      `Hi ${name}! Would you be available for a quick 15-minute call with our Sales Executive or CEO to discuss ${reqTopic}? You can share a convenient time right here or book directly at https://calendly.com/armaan-gineus/30min`,
+      `Hey ${name}! Just wanted to make sure my message didn't get buried. Whenever you're ready to chat about scaling ${reqTopic}, let me know!`
+    ];
+    return day1Templates[count % day1Templates.length];
+  }
+  if (type === "no_reply_3d") {
+    const day3Templates = [
+      `Hey ${name}! Hope your week is going well. Just wanted to check if you're still looking for a dedicated editing team for ${reqTopic}? Happy to answer any questions or set up a quick call!`,
+      `Hi ${name}! Whenever you're ready to take editing off your plate, we can start with a $29 trial edit or jump on a quick 15-minute call (https://calendly.com/armaan-gineus/30min). Let me know what works best for you!`,
+      `Hey ${name}! Just checking in \u2014 are you still deciding which editing package would fit your workflow and budget best? Our pricing is flexible, and I'd be happy to walk you through our options whenever you're free.`
+    ];
+    return day3Templates[count % day3Templates.length];
+  }
+  if (type === "long_term_30d") {
+    const longTermTemplates = [
+      `Hey ${name}! Wanted to share a few recent video edits we produced for creators and agencies in your space: https://vidmox.pages.dev/portfolio. Let me know if you'd like to try a sample edit!`,
+      `Hi ${name}! Just checking in to see how your content pipeline is going this month. If you need extra editing capacity for ${reqTopic}, feel free to reach out anytime!`,
+      `Hey ${name}! Hope business is booming. If you're still looking to outsource your video editing with a 24-hour turnaround, I'd love to help get you set up!`
+    ];
+    return longTermTemplates[count % longTermTemplates.length];
   }
   if (b.status === "completed") {
     return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
@@ -1529,7 +1660,7 @@ async function processDueFollowups(env) {
     let nextType = b.followup_type;
     let nextInterval = b.followup_interval_hours ?? 3.5;
     let nextStatus = b.status;
-    if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+    if (b.followup_type === "call_reminder") {
       nextFollowupAt = null;
       nextType = "call_reminder";
       nextInterval = 0;
@@ -1538,6 +1669,18 @@ async function processDueFollowups(env) {
       nextType = "rejected";
       nextFollowupAt = null;
       nextInterval = 0;
+    } else if (b.followup_type === "on_hold" || b.followup_type === "nurture") {
+      nextType = b.followup_type;
+      nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 48;
+      nextFollowupAt = now + nextInterval * 3600 * 1e3;
+    } else if (b.followup_type === "not_attended" || b.status === "not_attended") {
+      nextType = "not_attended";
+      nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 24;
+      nextFollowupAt = now + nextInterval * 3600 * 1e3;
+    } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
+      nextType = "buy_soon";
+      nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 24;
+      nextFollowupAt = now + nextInterval * 3600 * 1e3;
     } else if (elapsedHours >= 24 * 4) {
       nextType = "long_term_30d";
       nextInterval = 24;
@@ -1577,6 +1720,12 @@ async function processDueFollowups(env) {
     }
   }
   return outbound;
+}
+function cleanWhatsAppReply(raw) {
+  return raw.replace(/I don['’]t understand Bengali yet[^.\n]*\.(?:\s*I will send you a message when we can talk in Bengali\.)?\s*/gi, "").replace(/\[([^\]]+)\]\(mailto:([^)]+)\)/gi, "$2").replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi,
+    (_, label, url) => label.trim().toLowerCase() === url.trim().toLowerCase() ? url : `${label} (${url})`
+  ).replace(/\*\*([^*]+)\*\*/g, "*$1*").replace(/\s*🌹+\s*$/g, "").trim();
 }
 async function generateReply(env, s, rules, c) {
   const [history, userNotes, userTodos] = await Promise.all([
@@ -1619,15 +1768,15 @@ async function generateReply(env, s, rules, c) {
   const bookingInfo = extractBookingDetails(c.userContent, history);
   const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
   const computedPhone = bookingInfo.phone || c.senderPhone || null;
-  const isBookingCallIntent = Boolean(bookingInfo.email) || existing?.status === "booked" && Boolean(bookingInfo.timezone) || Boolean(bookingInfo.time) && !bookingInfo.isClientChoiceFollowup && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule") || lowerContent.includes("slot") || lowerContent.includes("free") || lowerContent.includes("available") || lowerContent.includes("today") || lowerContent.includes("tomorrow") || existing?.status === "booked" || existing?.status === "confirmed");
+  const lastAssistantMsg = [...history].reverse().find((m) => m.role === "assistant")?.content?.toLowerCase() || "";
+  const assistantJustAskedForCallTime = /\b(what day and time|what time works|schedule a quick|15-minute call|10-minute call|10–15 minute call)\b/i.test(lastAssistantMsg);
+  const isBookingCallIntent = Boolean(bookingInfo.email) || existing?.status === "booked" && Boolean(bookingInfo.timezone) || Boolean(bookingInfo.time) && !bookingInfo.isClientChoiceFollowup && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule") || lowerContent.includes("slot") || lowerContent.includes("free") || lowerContent.includes("available") || lowerContent.includes("today") || lowerContent.includes("tomorrow") || Boolean(existing?.email) || assistantJustAskedForCallTime || existing?.status === "booked" || existing?.status === "confirmed");
   if (!c.isGroup) {
     try {
       if (isBookingCallIntent || bookingInfo.isRescheduleRequest) {
         const wasAlreadyBooked = Boolean(existing && (existing.status === "booked" || existing.status === "confirmed"));
-        const useExplicitTz = Boolean(
-          bookingInfo.timezone && (!phoneTz || wasAlreadyBooked || bookingInfo.isRescheduleRequest)
-        );
-        const effTz = useExplicitTz ? bookingInfo.timezone : phoneTz?.code || existing?.timezone || bookingInfo.timezone || "BDT";
+        const useExplicitTz = Boolean(bookingInfo.timezone);
+        const effTz = useExplicitTz ? bookingInfo.timezone : phoneTz?.code || existing?.timezone || "BDT";
         const tzDisplayName = useExplicitTz ? bookingInfo.timezone : phoneTz ? phoneTz.label : existing?.timezone || "Bangladesh Time (GMT+6)";
         const rawTimePhrase = bookingInfo.time || existing?.scheduled_at || null;
         const parsedCallMs = rawTimePhrase ? parseScheduledTimeToMs(rawTimePhrase, effTz, nowMs, computedPhone || c.chatId) : existing?.call_time_ms || null;
@@ -1657,7 +1806,7 @@ async function generateReply(env, s, rules, c) {
             call_time_ms: parsedCallMs,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
-            requirements: bookingInfo.requirements || existing.requirements,
+            requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
             status: hasBooked ? "booked" : existing.status,
             followup_type: hasBooked ? "call_reminder" : existing.followup_type,
             next_followup_at: hasBooked ? reminderAt : nowMs + 3.5 * 3600 * 1e3,
@@ -1707,18 +1856,19 @@ async function generateReply(env, s, rules, c) {
         const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
         const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 2 * 3600 * 1e3;
         const formattedFollowupTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
-        const nextStatus = bookingInfo.inferredStatus || (existing?.status && existing.status !== "fake_lead" ? existing.status : "lead");
+        const nextStatus = bookingInfo.inferredStatus || (existing?.status && existing.status !== "fake_lead" && existing.status !== "booked" && existing.status !== "confirmed" ? existing.status : "lead");
         if (existing) {
           await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || existing.client_name,
             phone: computedPhone || existing.phone,
             email: bookingInfo.email || existing.email,
             scheduled_at: `Follow-up: ${formattedFollowupTime}`,
+            call_time_ms: null,
             timezone: effTz,
             status: nextStatus,
             followup_type: "client_date",
             next_followup_at: targetFollowupMs,
-            followup_interval_hours: Math.max(0.5, Math.round((targetFollowupMs - nowMs) / (3600 * 1e3) * 10) / 10),
+            followup_interval_hours: Math.max(0.1, Math.round((targetFollowupMs - nowMs) / (3600 * 1e3) * 10) / 10),
             last_client_reply_at: nowMs
           });
         } else {
@@ -1728,18 +1878,19 @@ async function generateReply(env, s, rules, c) {
             phone: computedPhone,
             email: bookingInfo.email,
             scheduled_at: `Follow-up: ${formattedFollowupTime}`,
+            call_time_ms: null,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite,
             requirements: bookingInfo.requirements,
             status: nextStatus,
             followup_type: "client_date",
             next_followup_at: targetFollowupMs,
-            followup_interval_hours: Math.max(0.5, Math.round((targetFollowupMs - nowMs) / (3600 * 1e3) * 10) / 10),
+            followup_interval_hours: Math.max(0.1, Math.round((targetFollowupMs - nowMs) / (3600 * 1e3) * 10) / 10),
             last_client_reply_at: nowMs,
             source: c.source
           });
         }
-        bookingContext = `The client mentioned they will be free or message around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
+        bookingContext = `The client mentioned they will be free or asked you to knock/message them around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
       } else {
         const isConfirmingBookedCall = existing?.status === "booked" && /\b(yes|yeah|yep|ok|okay|sure|sounds good|works for me|confirmed|confirm|perfect|great|see you|book this time)\b/i.test(lowerContent);
         if (existing) {
@@ -1761,6 +1912,14 @@ async function generateReply(env, s, rules, c) {
             nextFollowupType = "call_reminder";
             nextFollowupAt = existing.next_followup_at;
             nextInterval = 0;
+          } else if (existing.followup_type === "on_hold" || existing.followup_type === "nurture") {
+            nextFollowupType = existing.followup_type;
+            nextInterval = existing.followup_interval_hours || 48;
+            nextFollowupAt = nowMs + nextInterval * 3600 * 1e3;
+          } else if (existing.followup_type === "buy_soon" || nextStatus === "buy_soon" || existing.followup_type === "not_attended" || nextStatus === "not_attended") {
+            nextFollowupType = nextStatus === "not_attended" ? "not_attended" : "buy_soon";
+            nextInterval = existing.followup_interval_hours || 24;
+            nextFollowupAt = nowMs + nextInterval * 3600 * 1e3;
           } else {
             nextFollowupType = "auto_day1";
             nextFollowupAt = nowMs + 3.5 * 3600 * 1e3;
@@ -1843,6 +2002,7 @@ async function generateReply(env, s, rules, c) {
       maxTokens: s.maxReplyTokens,
       temperature: s.temperature
     });
+    const cleanedReply = cleanWhatsAppReply(out.text);
     await Promise.all([
       insertMessage(env, {
         id: `ai:${crypto.randomUUID()}`,
@@ -1850,7 +2010,7 @@ async function generateReply(env, s, rules, c) {
         role: "assistant",
         sender: null,
         sender_name: "Nyra Rose",
-        content: out.text,
+        content: cleanedReply,
         source: c.source,
         model: out.model,
         neurons: out.neurons ?? null,
@@ -1858,7 +2018,7 @@ async function generateReply(env, s, rules, c) {
       }),
       addUsage(env, out.neurons)
     ]);
-    return { action: "reply", reply: out.text, model: out.model, neurons: out.neurons };
+    return { action: "reply", reply: cleanedReply, model: out.model, neurons: out.neurons };
   } catch (err) {
     console.error("AI generation failed", { model: s.model, error: String(err) });
     return { action: "reply", reply: "Sorry about that, my connection had a quick hiccup. Could you send that once more?" };
@@ -2179,7 +2339,17 @@ async function dashboardRoutes(request, env, url) {
     case "GET /api/bookings": {
       const status = url.searchParams.get("status") || void 0;
       const followupType = url.searchParams.get("followup_type") || void 0;
-      return json({ bookings: await getBookings(env, status, followupType) });
+      const list = await getBookings(env, status, followupType);
+      const now = Date.now();
+      for (const b of list) {
+        if (!b.timezone) {
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+        }
+        if (!b.call_time_ms && b.scheduled_at && (b.status === "booked" || b.status === "confirmed" || b.followup_type === "call_reminder")) {
+          b.call_time_ms = parseScheduledTimeToMs(b.scheduled_at, b.timezone, b.created_at || now, b.phone || b.chat_id);
+        }
+      }
+      return json({ bookings: list });
     }
     case "POST /api/bookings": {
       const body = await request.json();
@@ -2243,10 +2413,29 @@ async function dashboardRoutes(request, env, url) {
       if (!existing) return json({ error: "Booking not found" }, 404);
       const now = Date.now();
       const patch = { ...body };
-      const nextStatus = body.status ?? existing.status;
-      const nextType = body.followup_type ?? existing.followup_type;
+      let nextStatus = body.status ?? existing.status;
+      let nextType = body.followup_type ?? existing.followup_type;
       const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BDT";
       patch.timezone = effTz;
+      if (body.status && !body.followup_type) {
+        if (body.status === "not_attended") nextType = "not_attended";
+        else if (body.status === "buy_soon") nextType = "buy_soon";
+        else if (body.status === "booked" || body.status === "confirmed") nextType = "call_reminder";
+        else if (body.status === "not_interested" || body.status === "fake_lead") nextType = "rejected";
+        else if (body.status === "lead" && (existing.followup_type === "call_reminder" || existing.followup_type === "rejected")) {
+          nextType = "auto_day1";
+        }
+        patch.followup_type = nextType;
+      } else if (body.followup_type && !body.status) {
+        if (body.followup_type === "not_attended") nextStatus = "not_attended";
+        else if (body.followup_type === "buy_soon") nextStatus = "buy_soon";
+        else if (body.followup_type === "rejected") nextStatus = "not_interested";
+        else if (body.followup_type === "call_reminder") nextStatus = "booked";
+        else if (existing.status === "booked" || existing.status === "confirmed" || existing.status === "not_interested" || existing.status === "fake_lead") {
+          nextStatus = "lead";
+        }
+        patch.status = nextStatus;
+      }
       if (body.scheduled_at !== void 0 && body.scheduled_at !== existing.scheduled_at || body.timezone !== void 0 && body.timezone !== existing.timezone) {
         const rawSched = body.scheduled_at ?? existing.scheduled_at;
         patch.call_time_ms = parseScheduledTimeToMs(rawSched, effTz, now, body.phone || existing.phone || existing.chat_id);
@@ -2285,7 +2474,7 @@ async function dashboardRoutes(request, env, url) {
           if (nextStatus === "fake_lead" || nextStatus === "not_interested") {
             patch.followup_type = "rejected";
           }
-        } else if (nextType === "call_reminder" || nextStatus === "booked" || nextStatus === "confirmed") {
+        } else if (nextType === "call_reminder") {
           const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, effTz, now, existing.phone || existing.chat_id);
           patch.call_time_ms = cMs;
           patch.followup_type = "call_reminder";
@@ -2296,7 +2485,7 @@ async function dashboardRoutes(request, env, url) {
             patch.next_followup_at = null;
           }
           patch.followup_interval_hours = 0;
-        } else if (nextType === "auto_day1") {
+        } else if (nextType === "auto_day1" || nextType === "auto") {
           patch.followup_interval_hours = 3.5;
           patch.next_followup_at = Math.round(now + 3.5 * 3600 * 1e3);
         } else if (nextType === "no_reply_3d") {
@@ -2324,8 +2513,27 @@ async function dashboardRoutes(request, env, url) {
       if (!b) return json({ error: "Booking not found" }, 404);
       const now = Date.now();
       if (body.followupType && body.followupType !== b.followup_type) {
+        const nextPatch = { followup_type: body.followupType };
+        if (body.followupType !== "rejected" && (b.status === "not_interested" || b.status === "fake_lead")) {
+          nextPatch.status = "lead";
+          b.status = "lead";
+        } else if (body.followupType === "not_attended") {
+          nextPatch.status = "not_attended";
+          b.status = "not_attended";
+        } else if (body.followupType === "buy_soon") {
+          nextPatch.status = "buy_soon";
+          b.status = "buy_soon";
+        } else if (body.followupType === "call_reminder") {
+          nextPatch.status = "booked";
+          b.status = "booked";
+        }
+        const computed = computeNextFollowupState({ ...b, ...nextPatch }, now);
+        nextPatch.next_followup_at = computed.next_followup_at;
+        nextPatch.followup_interval_hours = computed.followup_interval_hours;
         b.followup_type = body.followupType;
-        await updateBooking(env, b.id, { followup_type: body.followupType });
+        b.next_followup_at = computed.next_followup_at;
+        b.followup_interval_hours = computed.followup_interval_hours;
+        await updateBooking(env, b.id, nextPatch);
       }
       if (b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
         return json(

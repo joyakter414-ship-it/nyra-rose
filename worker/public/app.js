@@ -60,8 +60,26 @@ async function enterApp() {
   $("#login").classList.add("hidden");
   $("#app").classList.remove("hidden");
   clearInterval(pollTimer);
+  let tick = 0;
   pollTimer = setInterval(() => {
-    if (!document.hidden && !$("#tab-home").classList.contains("hidden")) refreshOverview().catch(() => {});
+    if (document.hidden) return;
+    tick++;
+    if (!$("#tab-home").classList.contains("hidden")) {
+      refreshOverview().catch(() => {});
+    } else if (!$("#tab-bookings").classList.contains("hidden")) {
+      const activeTag = document.activeElement?.tagName;
+      const modalOpen = !$("#followup-modal")?.classList.contains("hidden");
+      const formOpen = !$("#new-booking-form")?.classList.contains("hidden");
+      if (!modalOpen && !formOpen && activeTag !== "SELECT" && activeTag !== "INPUT" && activeTag !== "TEXTAREA") {
+        if (tick % 2 === 0) {
+          loadBookings().catch(() => {});
+        } else {
+          renderBookings();
+        }
+      }
+    } else if (!$("#tab-chats").classList.contains("hidden") && tick % 2 === 0) {
+      loadChats().catch(() => {});
+    }
   }, 4000);
 }
 
@@ -922,7 +940,7 @@ function formatNextFollowupTimer(b) {
     return "🕵️ Fake Lead (30d No Reply — Stopped)";
   }
   const now = Date.now();
-  const isCallReminder = fType === "call_reminder" || b.status === "booked" || b.status === "confirmed";
+  const isCallReminder = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
   if (isCallReminder && b.call_time_ms && b.call_time_ms <= now) {
     return `⏰ Call Time Passed (${fmtTimeInBookingTz(b.call_time_ms, b.timezone)})`;
   }
@@ -1062,8 +1080,8 @@ function renderBookings() {
 
       // Scheduled time banner
       let schedBox = null;
+      const isCall = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
       if (b.scheduled_at) {
-        const isCall = b.status === "booked" || b.status === "confirmed" || fType === "call_reminder";
         const isPastCall = isCall && b.call_time_ms && b.call_time_ms <= Date.now();
         const tzSuffix = b.timezone && !b.scheduled_at.toUpperCase().includes(b.timezone.toUpperCase()) ? ` (${b.timezone})` : "";
         schedBox = el(
@@ -1097,7 +1115,7 @@ function renderBookings() {
         );
         statusGuidance.style.borderLeftColor = "#ef4444";
         statusGuidance.style.background = "#2a151b";
-      } else if (fType === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+      } else if (isCall) {
         statusGuidance = el(
           "div",
           "booking-notes-box",
@@ -1292,7 +1310,7 @@ function renderBookings() {
         followupBtn.style.background = "#2a151b";
         followupBtn.style.color = "#f87171";
         followupBtn.style.border = "1px solid #ef444455";
-      } else if (fType === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+      } else if (isCall) {
         followupBtn.textContent = "🔔 30m Reminder / Timer";
         followupBtn.style.background = "#ca8a04";
         followupBtn.style.color = "#fff";
@@ -1405,6 +1423,7 @@ function updateModalAlert(b) {
   const alertBox = $("#followup-status-alert");
   if (!alertBox) return;
   const fType = b.followup_type || "auto";
+  const isCall = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
   if (b.status === "fake_lead") {
     alertBox.textContent = "🕵️ Fake Lead (30 days no reply). Automated follow-ups are stopped.";
     alertBox.style.background = "#e11d4822";
@@ -1413,7 +1432,7 @@ function updateModalAlert(b) {
     alertBox.textContent = "🛑 Lead marked as Rejected / Not Interested. All sales outreach is stopped.";
     alertBox.style.background = "#ef444422";
     alertBox.style.color = "#f87171";
-  } else if (fType === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+  } else if (isCall) {
     alertBox.textContent = "🔔 Call is Booked! Sales follow-ups are OFF. Nyra only sends a 30-minute meeting reminder before the call (auto-updates if rescheduled).";
     alertBox.style.background = "#eab30822";
     alertBox.style.color = "#facc15";
@@ -1481,6 +1500,7 @@ document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
         const timerBadge = $("#modal-next-followup-badge");
         if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
         updateModalAlert(found);
+        updateBookingStats();
         renderBookings();
       }
       $("#followup-feedback").textContent = `⏱️ Timer set! Next auto follow-up will send in ${hours} hour(s) ✓`;
@@ -1518,6 +1538,7 @@ $("#modal-save-datetime-btn")?.addEventListener("click", async () => {
       const timerBadge = $("#modal-next-followup-badge");
       if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
       updateModalAlert(found);
+      updateBookingStats();
       renderBookings();
     }
     $("#followup-feedback").textContent = `📅 Scheduled follow-up for ${fmtTime(ts)} ✓`;
@@ -1542,10 +1563,13 @@ $("#modal-followup-type")?.addEventListener("change", async (e) => {
       followupType: newType,
     });
     $("#followup-text").value = res.message;
-    if (found && res.nextFollowupAt !== undefined) {
-      found.next_followup_at = res.nextFollowupAt;
+    if (found) {
+      if (res.status) found.status = res.status;
+      if (res.followupType) found.followup_type = res.followupType;
+      if (res.nextFollowupAt !== undefined) found.next_followup_at = res.nextFollowupAt;
       const timerBadge = $("#modal-next-followup-badge");
       if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+      updateModalAlert(found);
     }
     const sendBtn = $("#followup-send-wa-btn");
     if (res.waLink) {
@@ -1554,10 +1578,12 @@ $("#modal-followup-type")?.addEventListener("change", async (e) => {
     } else {
       sendBtn.style.display = "none";
     }
+    updateBookingStats();
     renderBookings();
   } catch (err) {
     $("#followup-text").value = `[Follow-up Stopped]: ${err.message}`;
     $("#followup-send-wa-btn").style.display = "none";
+    updateBookingStats();
     renderBookings();
   }
 });
@@ -1585,10 +1611,12 @@ $("#followup-send-gateway-btn")?.addEventListener("click", async () => {
   if (btn) btn.disabled = true;
   $("#followup-feedback").textContent = "Queuing message to Nyra's WhatsApp Gateway…";
   try {
+    const customText = $("#followup-text")?.value?.trim();
     const res = await api("POST", "/api/bookings/followup", {
       id: currentFollowupBookingId,
       markSent: true,
       sendViaGateway: true,
+      customText: customText && !customText.startsWith("[Follow-up Stopped]") ? customText : undefined,
     });
     const found = bookings.find((x) => x.id === currentFollowupBookingId);
     if (found) {
@@ -1597,6 +1625,7 @@ $("#followup-send-gateway-btn")?.addEventListener("click", async () => {
       found.next_followup_at = res.nextFollowupAt;
       const timerBadge = $("#modal-next-followup-badge");
       if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+      updateBookingStats();
       renderBookings();
     }
     $("#followup-feedback").textContent = `🚀 Queued to Nyra WhatsApp! Will deliver on next gateway heartbeat (≤30s). Total sent: ${res.followupCount} ✓`;
@@ -1610,9 +1639,11 @@ $("#followup-send-gateway-btn")?.addEventListener("click", async () => {
 $("#followup-mark-sent-btn")?.addEventListener("click", async () => {
   if (!currentFollowupBookingId) return;
   try {
+    const customText = $("#followup-text")?.value?.trim();
     const res = await api("POST", "/api/bookings/followup", {
       id: currentFollowupBookingId,
       markSent: true,
+      customText: customText && !customText.startsWith("[Follow-up Stopped]") ? customText : undefined,
     });
     const found = bookings.find((x) => x.id === currentFollowupBookingId);
     if (found) {
@@ -1621,6 +1652,7 @@ $("#followup-mark-sent-btn")?.addEventListener("click", async () => {
       found.next_followup_at = res.nextFollowupAt;
       const timerBadge = $("#modal-next-followup-badge");
       if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+      updateBookingStats();
       renderBookings();
     }
     $("#followup-feedback").textContent = `Marked as sent & advanced timer! Total follow-ups: ${res.followupCount} ✓`;
