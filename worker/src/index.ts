@@ -141,11 +141,10 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const online = !!gateway && Date.now() - gateway.at < GATEWAY_OFFLINE_AFTER_MS;
 
       if (role === "client") {
-        // Client panel:
-        // - Cannot see raw model name (sees only publicModelName configured by admin)
-        // - Cannot see raw models dropdown
-        // - Cannot see live Cloudflare Neuron numbers/quotas
-        // - Cannot see client password
+        // Management view:
+        // - Sees publicModelName as the active flagship AI engine
+        // - Can view and change their own login password (clientPassword)
+        // - Does not see underlying Cloudflare Neuron quotas or raw model IDs
         const clientSettings: Partial<Settings> & { modelLabel: string } = {
           enabled: settings.enabled,
           instantReplyPaused: settings.instantReplyPaused,
@@ -154,7 +153,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           model: settings.publicModelName || "Nyra Rose Intelligence 🌹",
           modelLabel: settings.publicModelName || "Nyra Rose Intelligence 🌹",
           publicModelName: settings.publicModelName,
-          clientPassword: "",
+          clientPassword: settings.clientPassword || "rose2026",
           replyMode: settings.replyMode,
           allowlist: settings.allowlist,
           groupsEnabled: settings.groupsEnabled,
@@ -187,7 +186,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         });
       }
 
-      // Admin panel: full access to raw model selection, live neurons, and client password
+      // Root Admin panel: full access to raw model selection, live neurons, and management password
       const activeModel = MODELS.find((m) => m.id === settings.model);
       return json({
         name: "Nyra Rose",
@@ -206,11 +205,15 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
     case "PUT /api/settings": {
       const patch = (await request.json()) as Partial<Settings>;
       if (role === "client") {
-        // Prevent client from changing underlying model, public model name, or client password
+        // Prevent changing underlying Cloudflare model or display name, but allow changing their own login password
         delete patch.model;
         delete patch.provider;
         delete patch.publicModelName;
-        delete patch.clientPassword;
+        if (typeof patch.clientPassword === "string" && patch.clientPassword.trim().length >= 4) {
+          patch.clientPassword = patch.clientPassword.trim();
+        } else {
+          delete patch.clientPassword;
+        }
       }
       const saved = await saveSettings(env, patch);
       if (role === "client") {
@@ -219,7 +222,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
             ...saved,
             model: saved.publicModelName || "Nyra Rose Intelligence 🌹",
             modelLabel: saved.publicModelName || "Nyra Rose Intelligence 🌹",
-            clientPassword: "",
+            clientPassword: saved.clientPassword || "rose2026",
           },
         });
       }

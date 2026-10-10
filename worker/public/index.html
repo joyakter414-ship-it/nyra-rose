@@ -575,7 +575,7 @@
           </label>
           <div id="client-model-group" class="hidden">
             <label>AI Model Engine
-              <input id="client-model-display" readonly style="opacity: 0.9; cursor: not-allowed; font-weight: 600;" />
+              <select id="client-model-display"></select>
             </label>
           </div>
           <div class="row">
@@ -588,18 +588,26 @@
           </label>
         </fieldset>
 
-        <!-- Admin Only Visibility & Client Panel Controls -->
+        <!-- Security & Access Password (Visible to Management & Admin) -->
+        <fieldset id="security-password-fieldset">
+          <legend>🔐 Security & Dashboard Password</legend>
+          <label>Dashboard Login Password <span class="muted">(change your Sanctuary access password anytime)</span>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap;">
+              <input id="mgmt-password-input" name="clientPassword" type="password" placeholder="Enter new password (min 4 characters)" autocomplete="new-password" style="margin: 0; flex: 1; min-width: 200px;" />
+              <button type="button" id="mgmt-toggle-pass-btn" class="ghost small" style="white-space: nowrap;">👁️ Show</button>
+              <button type="button" id="mgmt-save-pass-btn" class="small" style="white-space: nowrap;">🔑 Update Password</button>
+            </div>
+          </label>
+          <p id="mgmt-pass-feedback" class="muted small-text" style="margin-top: 8px; margin-bottom: 0;">
+            Updating this password immediately changes your login credentials for Nyra Rose Sanctuary.
+          </p>
+        </fieldset>
+
         <fieldset id="admin-only-fieldset" class="hidden">
-          <legend>👑 Client Panel & Visibility Controls (Admin Only)</legend>
-          <label>Display Model Name shown to Client <span class="muted">(hides underlying Cloudflare model)</span>
+          <legend>⚙️ Engine Branding Configuration</legend>
+          <label>Displayed AI Engine Name
             <input name="publicModelName" placeholder="e.g. Nyra Rose Intelligence 🌹" />
           </label>
-          <label style="margin-top: 10px;">Client Login Password <span class="muted">(give this to the other person)</span>
-            <input name="clientPassword" placeholder="e.g. rose2026" autocomplete="off" />
-          </label>
-          <p class="muted small-text" style="margin-top: 8px;">
-            The other person can log in with this password to manage WhatsApp, Rules, Notes, and Tasks without seeing your actual Cloudflare Neurons or real Cloudflare model IDs.
-          </p>
         </fieldset>
 
         <div class="actions">

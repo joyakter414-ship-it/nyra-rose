@@ -118,20 +118,13 @@ async function refreshOverview() {
   const { gateway, usage, settings, models, role } = overview;
   const isClient = role === "client";
 
-  // Role Badge in Topbar
+  // Role Badge in Topbar — always displays 👑 Admin so Management feels full ownership
   const roleBadge = $("#role-badge");
   if (roleBadge) {
-    if (isClient) {
-      roleBadge.textContent = "🌹 Manager Panel";
-      roleBadge.style.background = "#be185d22";
-      roleBadge.style.color = "#fb7185";
-      roleBadge.style.border = "1px solid #be185d";
-    } else {
-      roleBadge.textContent = "👑 Admin";
-      roleBadge.style.background = "#eab30822";
-      roleBadge.style.color = "#facc15";
-      roleBadge.style.border = "1px solid #ca8a04";
-    }
+    roleBadge.textContent = "👑 Admin";
+    roleBadge.style.background = "#eab30822";
+    roleBadge.style.color = "#facc15";
+    roleBadge.style.border = "1px solid #ca8a04";
   }
 
   const isOnline = Boolean(gateway.online);
@@ -1751,7 +1744,12 @@ async function fillSettings() {
   if (isClient) {
     if (adminModelGroup) adminModelGroup.classList.add("hidden");
     if (clientModelGroup) clientModelGroup.classList.remove("hidden");
-    if (clientModelDisplay) clientModelDisplay.value = s.modelLabel || s.model || "Nyra Rose Intelligence 🌹";
+    if (clientModelDisplay) {
+      const labelText = s.modelLabel || s.model || "Nyra Rose Intelligence 🌹";
+      clientModelDisplay.replaceChildren(
+        Object.assign(el("option", null, `${labelText} — Flagship Neural Engine (Active)`), { value: labelText })
+      );
+    }
     if (adminOnlyFieldset) adminOnlyFieldset.classList.add("hidden");
   } else {
     if (adminModelGroup) adminModelGroup.classList.remove("hidden");
@@ -1761,7 +1759,11 @@ async function fillSettings() {
     $("#model-select").replaceChildren(...(models || []).map((m) => Object.assign(el("option", null, m.label), { value: m.id })));
     if (f.model) f.model.value = s.model;
     if (f.publicModelName) f.publicModelName.value = s.publicModelName || "";
-    if (f.clientPassword) f.clientPassword.value = s.clientPassword || "";
+  }
+
+  const passInput = $("#mgmt-password-input");
+  if (passInput) {
+    passInput.value = s.clientPassword || "";
   }
 
   f.enabled.checked = Boolean(s.enabled);
@@ -1778,6 +1780,56 @@ async function fillSettings() {
   f.extraInstructions.value = s.extraInstructions || "";
 }
 
+$("#mgmt-toggle-pass-btn")?.addEventListener("click", () => {
+  const input = $("#mgmt-password-input");
+  const btn = $("#mgmt-toggle-pass-btn");
+  if (!input || !btn) return;
+  if (input.type === "password") {
+    input.type = "text";
+    btn.textContent = "🙈 Hide";
+  } else {
+    input.type = "password";
+    btn.textContent = "👁️ Show";
+  }
+});
+
+$("#mgmt-save-pass-btn")?.addEventListener("click", async () => {
+  const input = $("#mgmt-password-input");
+  const feedback = $("#mgmt-pass-feedback");
+  const btn = $("#mgmt-save-pass-btn");
+  const newPass = input?.value?.trim() || "";
+  if (newPass.length < 4) {
+    if (feedback) {
+      feedback.textContent = "⚠️ Password must be at least 4 characters.";
+      feedback.style.color = "var(--red)";
+    }
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const isClient = overview?.role === "client";
+    const { settings } = await api("PUT", "/api/settings", { clientPassword: newPass });
+    if (overview?.settings) {
+      overview.settings.clientPassword = settings?.clientPassword || newPass;
+    }
+    if (isClient) {
+      password = newPass;
+      localStorage.setItem("nr_password", newPass);
+    }
+    if (feedback) {
+      feedback.textContent = "🔑 Password updated! Your new login password is now active ✓";
+      feedback.style.color = "#34d399";
+    }
+  } catch (err) {
+    if (feedback) {
+      feedback.textContent = `⚠️ ${err.message}`;
+      feedback.style.color = "var(--red)";
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
 $("#settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.target;
@@ -1791,6 +1843,7 @@ $("#settings-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   try {
     const isClient = overview?.role === "client";
+    const newPass = $("#mgmt-password-input")?.value?.trim();
     const payload = {
       enabled: f.enabled.checked,
       instantReplyPaused: f.instantReplyPaused ? f.instantReplyPaused.checked : Boolean(overview?.settings?.instantReplyPaused),
@@ -1811,14 +1864,21 @@ $("#settings-form").addEventListener("submit", async (e) => {
       extraInstructions: f.extraInstructions.value,
     };
 
+    if (newPass && newPass.length >= 4) {
+      payload.clientPassword = newPass;
+    }
+
     if (!isClient) {
       if (f.model) payload.model = f.model.value;
       if (f.publicModelName) payload.publicModelName = f.publicModelName.value;
-      if (f.clientPassword) payload.clientPassword = f.clientPassword.value;
     }
 
     const { settings } = await api("PUT", "/api/settings", payload);
     overview.settings = { ...overview.settings, ...settings };
+    if (isClient && newPass && newPass.length >= 4) {
+      password = newPass;
+      localStorage.setItem("nr_password", newPass);
+    }
     fillSettings();
     renderInstantReplyControls();
     if (typeof renderBookings === "function") renderBookings();

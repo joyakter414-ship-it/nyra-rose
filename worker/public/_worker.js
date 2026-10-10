@@ -2115,7 +2115,7 @@ async function dashboardRoutes(request, env, url) {
           model: settings.publicModelName || "Nyra Rose Intelligence \u{1F339}",
           modelLabel: settings.publicModelName || "Nyra Rose Intelligence \u{1F339}",
           publicModelName: settings.publicModelName,
-          clientPassword: "",
+          clientPassword: settings.clientPassword || "rose2026",
           replyMode: settings.replyMode,
           allowlist: settings.allowlist,
           groupsEnabled: settings.groupsEnabled,
@@ -2166,7 +2166,11 @@ async function dashboardRoutes(request, env, url) {
         delete patch.model;
         delete patch.provider;
         delete patch.publicModelName;
-        delete patch.clientPassword;
+        if (typeof patch.clientPassword === "string" && patch.clientPassword.trim().length >= 4) {
+          patch.clientPassword = patch.clientPassword.trim();
+        } else {
+          delete patch.clientPassword;
+        }
       }
       const saved = await saveSettings(env, patch);
       if (role === "client") {
@@ -2175,7 +2179,7 @@ async function dashboardRoutes(request, env, url) {
             ...saved,
             model: saved.publicModelName || "Nyra Rose Intelligence \u{1F339}",
             modelLabel: saved.publicModelName || "Nyra Rose Intelligence \u{1F339}",
-            clientPassword: ""
+            clientPassword: saved.clientPassword || "rose2026"
           }
         });
       }
