@@ -787,6 +787,15 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   if (volMatch) {
     reqsList.push(`Volume: ~${volMatch[0].trim()}`);
   }
+  const budgetDollarMatch = allUserText.match(/(?:\$\s*(\d{2,4})|(\d{2,4})\s*(?:dollars?|usd|\$))/i);
+  if (budgetDollarMatch) {
+    const amt = budgetDollarMatch[1] || budgetDollarMatch[2];
+    if (!["29", "490", "890", "1490", "2499"].includes(amt)) {
+      reqsList.push(`Client Budget: ~$${amt} (Negotiable)`);
+    }
+  } else if (/\b(low budget|small budget|tight budget|negotiate|negotiable|discount)\b/i.test(allUserText)) {
+    reqsList.push("Custom / Negotiable Budget");
+  }
   if (allUserText.includes("trial") || allUserText.includes("kickstart") || allUserText.includes("29")) {
     reqsList.push("Kickstart Trial ($29)");
   }
@@ -867,14 +876,16 @@ function analyzeConversationMemory(params: {
     detectedIntent = "ASKING IF YOU ARE HUMAN OR AI";
     nextSalesObjective =
       "Reassure them warmly and naturally like a real human at your desk ('Haha no, I'm Nyra from the Vidmox team! Just at my desk right now so I reply fast.') and continue helping with their videos.";
-  } else if (/\b(expensive|high|out of budget|budget|cheaper|discount|lower price|too much|cant afford|can't afford)\b/i.test(lower)) {
-    detectedIntent = "PRICE / BUDGET OBJECTION";
+  } else if (
+    /\b(expensive|high|out of budget|budget|cheaper|discount|lower price|too much|cant afford|can't afford|negotiate|negotiable|dollar|\$\s*\d{2,3}\b)\b/i.test(lower)
+  ) {
+    detectedIntent = "LOW BUDGET / CUSTOM BUDGET OFFER / NEGOTIATION";
     nextSalesObjective =
-      "Validate their concern warmly. Never invent discounts on your own — explain that if they need fewer videos per month, our sales manager can build a custom lower-volume package tailored to their budget, OR they can start with our $29 Trial edit (https://vidmox.pages.dev/29-video). Invite them to a quick 10–15 min call with our sales manager to work out a custom rate.";
+      "Genuinely reassure the client that our budget is negotiable! Never turn them away even if their budget is low (like '$100 for 20 videos'). Warmly tell them that our Sales Executive or CEO can work out a special custom deal with them based on their editing style and volume, and invite them to book a quick 10–15 minute call with our Sales Executive or CEO right now (ask what day/time and email works best for them).";
   } else if (/\b(free sample|free trial|free test|free edit|sample edit|test edit|try first)\b/i.test(lower)) {
     detectedIntent = "ASKING FOR FREE SAMPLE / TRIAL EDIT";
     nextSalesObjective =
-      "Explain warmly that because we assign a dedicated senior editor and PM to every project, we offer a risk-free $29 Kickstart Trial (https://vidmox.pages.dev/29-video) with unlimited revisions — or we can hop on a quick 15-minute call first to show live edits in their niche. Ask which they prefer.";
+      "Explain warmly that because we assign a dedicated senior editor and PM to every project, we offer a risk-free $29 Kickstart Trial (https://vidmox.pages.dev/29-video) with unlimited revisions — or we can hop on a quick 10–15 minute call with our Sales Executive or CEO first to show live edits in their niche. Ask which they prefer.";
   } else if (/\b(price|pricing|cost|how much|package|plan|rate|charge|per video|monthly)\b/i.test(lower)) {
     detectedIntent = "ASKING ABOUT PRICING / PACKAGES";
     nextSalesObjective = knownScope
