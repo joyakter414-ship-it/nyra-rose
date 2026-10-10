@@ -180,6 +180,8 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   email: string | null;
   phone: string | null;
   time: string | null;
+  timezone: string | null;
+  companyOrWebsite: string | null;
   requirements: string | null;
   clientName: string | null;
 } {
@@ -224,6 +226,16 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
     }
   }
 
+  // Detect timezone mentions (e.g. EST, PST, GMT, BST, UTC, Dhaka time)
+  const tzRegex = /\b(EST|PST|CST|MST|EDT|PDT|CDT|MDT|GMT|BST|UTC|CET|AEST|Dhaka(?:\s+time)?|BD(?:\s+time)?)\b/i;
+  const tzMatch = text.match(tzRegex);
+  const timezone = tzMatch ? tzMatch[0].toUpperCase() : null;
+
+  // Detect website / channel URL mentions
+  const siteRegex = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|io|net|co|app|agency|tv)|youtube\.com\/@[a-zA-Z0-9_.-]+|instagram\.com\/[a-zA-Z0-9_.-]+)/i;
+  const siteMatch = text.match(siteRegex);
+  const companyOrWebsite = siteMatch ? siteMatch[0] : null;
+
   // Extract requirements from user text and recent conversation history
   const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), text].join(" ").toLowerCase();
   const reqsList: string[] = [];
@@ -256,7 +268,30 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   }
 
   const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
-  return { email, phone, time, requirements, clientName };
+  return { email, phone, time, timezone, companyOrWebsite, requirements, clientName };
+}
+
+export function generateFollowupText(b: {
+  client_name?: string | null;
+  scheduled_at?: string | null;
+  status: string;
+  requirements?: string | null;
+}): string {
+  const name = b.client_name?.trim() || "there";
+  switch (b.status) {
+    case "not_attended":
+      return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+    case "buy_soon":
+      return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready!`;
+    case "booked":
+      return `Hi ${name}! Looking forward to our call${b.scheduled_at ? ` on ${b.scheduled_at}` : ""}! Please let me know if you need to adjust the time or have any questions beforehand.`;
+    case "not_interested":
+      return `Hi ${name}! Thank you for considering Vidmox. If your editing needs ever change down the road, feel free to reach out anytime!`;
+    case "completed":
+      return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+    default:
+      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step!`;
+  }
 }
 
 async function generateReply(
@@ -275,15 +310,31 @@ async function generateReply(
   const notesText = userNotes.slice(0, 10).map((n) => n.content);
   const todosText = userTodos.slice(0, 10).map((t) => t.task);
 
-  // Automatic Call Booking / Lead Capture
+  // Check existing lead record for status awareness
+  const existing = await findLatestBookingForChat(env, c.chatId).catch(() => null);
   let bookingContext = "";
+
+  if (existing) {
+    if (existing.status === "not_interested") {
+      bookingContext = `[LEAD STATUS: NOT INTERESTED]. Client is marked as NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
+    } else if (existing.status === "not_attended") {
+      bookingContext = `[LEAD STATUS: MISSED CALL / NOT ATTENDED]. Client missed our scheduled call earlier (${existing.scheduled_at || "previously"}). Follow up gently and warmly offering to reschedule at their convenience.`;
+    } else if (existing.status === "buy_soon") {
+      bookingContext = `[LEAD STATUS: BUYING IN FEW DAYS / CONSIDERING]. Client is considering purchasing soon. Check in warmly on their decision timeline and answer any lingering questions without being pushy.`;
+    } else if (existing.status === "booked" || existing.status === "confirmed") {
+      bookingContext = `[LEAD STATUS: CALL SCHEDULED FOR ${existing.scheduled_at}]. The discovery call is already scheduled. Reconfirm and answer any preliminary questions.`;
+    } else if (existing.status === "completed") {
+      bookingContext = `[LEAD STATUS: CALL COMPLETED / CLIENT ONBOARDED]. The call took place. If they need to submit project footage, guide them to our intake form: https://vidmox.pages.dev/intake.`;
+    }
+  }
+
+  // Automatic Call Booking / Lead Capture
   const bookingInfo = extractBookingDetails(c.userContent, history);
   if (
     bookingInfo.email ||
     (bookingInfo.time && (c.userContent.toLowerCase().includes("call") || c.userContent.toLowerCase().includes("meet") || c.userContent.toLowerCase().includes("book") || c.userContent.toLowerCase().includes("schedule")))
   ) {
     try {
-      const existing = await findLatestBookingForChat(env, c.chatId);
       const computedName =
         bookingInfo.clientName ||
         (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) ||
@@ -292,13 +343,22 @@ async function generateReply(
       const computedPhone = bookingInfo.phone || c.senderPhone || null;
 
       if (existing) {
+        const nextStatus =
+          existing.status === "not_interested"
+            ? "booked"
+            : (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at)
+            ? "booked"
+            : existing.status;
+
         await updateBooking(env, existing.id, {
           client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
           phone: computedPhone || existing.phone,
           email: bookingInfo.email || existing.email,
           scheduled_at: bookingInfo.time || existing.scheduled_at,
+          timezone: bookingInfo.timezone || existing.timezone,
+          company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
           requirements: bookingInfo.requirements || existing.requirements,
-          status: (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at) ? "booked" : existing.status,
+          status: nextStatus,
         });
 
         const effEmail = bookingInfo.email || existing.email;
@@ -317,6 +377,8 @@ async function generateReply(
           phone: computedPhone,
           email: bookingInfo.email,
           scheduled_at: bookingInfo.time,
+          timezone: bookingInfo.timezone,
+          company_or_website: bookingInfo.companyOrWebsite,
           requirements: bookingInfo.requirements,
           status: "booked",
           source: c.source,

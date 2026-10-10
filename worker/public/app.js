@@ -578,6 +578,7 @@ $("#new-todo-form").addEventListener("submit", async (e) => {
 let bookings = [];
 let bookingStatusFilter = "all";
 let bookingSearch = "";
+let currentFollowupBookingId = null;
 
 async function loadBookings() {
   const statusParam = bookingStatusFilter !== "all" ? `?status=${encodeURIComponent(bookingStatusFilter)}` : "";
@@ -589,20 +590,36 @@ async function loadBookings() {
 
 function updateBookingStats() {
   const total = bookings.length;
-  const pending = bookings.filter((b) => b.status === "booked" || b.status === "pending").length;
+  const booked = bookings.filter((b) => b.status === "booked").length;
   const confirmed = bookings.filter((b) => b.status === "confirmed").length;
-  const completed = bookings.filter((b) => b.status === "completed").length;
+  const notAttended = bookings.filter((b) => b.status === "not_attended").length;
+  const buySoon = bookings.filter((b) => b.status === "buy_soon").length;
+  const notInterested = bookings.filter((b) => b.status === "not_interested").length;
 
   const totalEl = $("#stat-bookings-total");
-  const pendingEl = $("#stat-bookings-pending");
+  const bookedEl = $("#stat-bookings-booked");
   const confirmedEl = $("#stat-bookings-confirmed");
-  const completedEl = $("#stat-bookings-completed");
+  const notAttendedEl = $("#stat-bookings-not-attended");
+  const buySoonEl = $("#stat-bookings-buy-soon");
+  const notInterestedEl = $("#stat-bookings-not-interested");
 
   if (totalEl) totalEl.textContent = total;
-  if (pendingEl) pendingEl.textContent = pending;
+  if (bookedEl) bookedEl.textContent = booked;
   if (confirmedEl) confirmedEl.textContent = confirmed;
-  if (completedEl) completedEl.textContent = completed;
+  if (notAttendedEl) notAttendedEl.textContent = notAttended;
+  if (buySoonEl) buySoonEl.textContent = buySoon;
+  if (notInterestedEl) notInterestedEl.textContent = notInterested;
 }
+
+const STATUS_LABELS = {
+  booked: "📅 Booked",
+  confirmed: "✅ Confirmed",
+  not_attended: "⚠️ Not Attended (Missed Call)",
+  buy_soon: "⏳ Buy in Few Days",
+  not_interested: "🛑 Not Interested",
+  completed: "🏆 Completed",
+  cancelled: "❌ Cancelled",
+};
 
 function renderBookings() {
   const container = $("#bookings-list");
@@ -616,6 +633,8 @@ function renderBookings() {
       (b.email && b.email.toLowerCase().includes(q)) ||
       (b.phone && b.phone.toLowerCase().includes(q)) ||
       (b.scheduled_at && b.scheduled_at.toLowerCase().includes(q)) ||
+      (b.timezone && b.timezone.toLowerCase().includes(q)) ||
+      (b.company_or_website && b.company_or_website.toLowerCase().includes(q)) ||
       (b.requirements && b.requirements.toLowerCase().includes(q)) ||
       (b.notes && b.notes.toLowerCase().includes(q))
     );
@@ -623,7 +642,7 @@ function renderBookings() {
 
   const countLabel = $("#bookings-count-label");
   if (countLabel) {
-    countLabel.textContent = `Showing ${filtered.length} of ${bookings.length} call${bookings.length === 1 ? "" : "s"}`;
+    countLabel.textContent = `Showing ${filtered.length} of ${bookings.length} lead${bookings.length === 1 ? "" : "s"}`;
   }
 
   if (filtered.length === 0) {
@@ -632,8 +651,8 @@ function renderBookings() {
         "div",
         "muted",
         bookings.length === 0
-          ? "No calls recorded yet. Nyra Rose will automatically record leads whenever someone shares their email or call time on WhatsApp or Web Chat!"
-          : "No bookings match your search query."
+          ? "No leads recorded yet. Nyra will automatically gather lead details from WhatsApp or Web Chat!"
+          : "No leads match your search query."
       )
     );
     return;
@@ -647,13 +666,13 @@ function renderBookings() {
       const top = el("div", "booking-top");
       const clientTitle = el("div", "booking-client-title");
       clientTitle.append(
-        el("span", null, "👤 " + (b.client_name || "Lead Prospect")),
-        el("span", `badge badge-${b.status || "booked"}`, (b.status || "booked").toUpperCase()),
+        el("span", null, "👤 " + (b.client_name || "Lead Client")),
+        el("span", `badge badge-${b.status || "booked"}`, STATUS_LABELS[b.status] || b.status),
         el("span", "badge badge-source", b.source === "dashboard" ? "MANUAL" : "WHATSAPP")
       );
       top.appendChild(clientTitle);
 
-      // Contact row (Email + WhatsApp)
+      // Contact row (Email, WhatsApp, Timezone, Website)
       const contactRow = el("div", "booking-contact-row");
       if (b.email) {
         const emailLink = document.createElement("a");
@@ -674,15 +693,36 @@ function renderBookings() {
           contactRow.appendChild(waLink);
         }
       }
-      if (b.chat_id && b.chat_id !== "dashboard" && b.chat_id !== "manual_crm") {
-        const chatPill = el("span", "booking-link-pill", `Chat: ${b.chat_id.split("@")[0]}`);
-        contactRow.appendChild(chatPill);
+      if (b.timezone) {
+        contactRow.appendChild(el("span", "booking-link-pill", `🌐 Timezone: ${b.timezone}`));
+      }
+      if (b.company_or_website) {
+        const webLink = document.createElement("a");
+        webLink.className = "booking-link-pill";
+        webLink.href = b.company_or_website.startsWith("http") ? b.company_or_website : `https://${b.company_or_website}`;
+        webLink.target = "_blank";
+        webLink.rel = "noopener noreferrer";
+        webLink.textContent = `🔗 ${b.company_or_website}`;
+        contactRow.appendChild(webLink);
       }
 
       // Scheduled time banner
       let schedBox = null;
       if (b.scheduled_at) {
-        schedBox = el("div", "booking-scheduled-box", `📅 Scheduled Call: ${b.scheduled_at}`);
+        schedBox = el("div", "booking-scheduled-box", `📅 Scheduled Call: ${b.scheduled_at}${b.timezone ? ` (${b.timezone})` : ""}`);
+      }
+
+      // Status Guidance Banner
+      let statusGuidance = null;
+      if (b.status === "not_attended") {
+        statusGuidance = el("div", "booking-notes-box", "⚠️ Client missed scheduled call. Follow up daily or every couple of days to reschedule.");
+        statusGuidance.style.borderLeftColor = "#f87171";
+      } else if (b.status === "buy_soon") {
+        statusGuidance = el("div", "booking-notes-box", "⏳ Client is deciding / buying soon. Follow up on their timeline and answer any package questions.");
+        statusGuidance.style.borderLeftColor = "#38bdf8";
+      } else if (b.status === "not_interested") {
+        statusGuidance = el("div", "booking-notes-box", "🛑 Client marked Not Interested. All sales follow-ups and marketing pitches are disabled.");
+        statusGuidance.style.borderLeftColor = "#9ca3af";
       }
 
       // Requirements
@@ -690,7 +730,7 @@ function renderBookings() {
       if (b.requirements) {
         reqsBox = el("div", "rule-content");
         reqsBox.append(
-          el("span", "rule-triggers", "🎬 Video Scope / Plan: "),
+          el("span", "rule-triggers", "🎬 Video Scope / Goals: "),
           el("span", "muted", b.requirements)
         );
       }
@@ -703,18 +743,36 @@ function renderBookings() {
 
       // Bottom actions
       const actions = el("div", "booking-actions");
-      const loggedInfo = el("div", "muted small-text", `Logged: ${fmtTime(b.created_at)}`);
+      const loggedInfo = el(
+        "div",
+        "muted small-text",
+        `Logged: ${fmtTime(b.created_at)} · Follow-ups: ${b.followup_count || 0}${b.last_followup_at ? ` (Last: ${fmtTime(b.last_followup_at)})` : ""}`
+      );
 
       const rightControls = el("div", "rule-ctrls");
+
+      // Dynamic Follow-up button
+      if (b.status !== "not_interested") {
+        const followupBtn = el("button", "small", "⚡ Follow Up");
+        followupBtn.style.background = b.status === "not_attended" ? "#ef4444" : b.status === "buy_soon" ? "#0284c7" : "var(--panel-2)";
+        followupBtn.style.color = "#fff";
+        followupBtn.style.border = "1px solid var(--line)";
+        followupBtn.addEventListener("click", () => openFollowupModal(b));
+        rightControls.appendChild(followupBtn);
+      }
+
       const statusSelect = document.createElement("select");
       statusSelect.className = "small";
       statusSelect.style.width = "auto";
       statusSelect.style.margin = "0";
       [
-        { val: "booked", label: "Status: Booked" },
-        { val: "confirmed", label: "Status: Confirmed" },
-        { val: "completed", label: "Status: Completed" },
-        { val: "cancelled", label: "Status: Cancelled" },
+        { val: "booked", label: "Status: 📅 Booked" },
+        { val: "confirmed", label: "Status: ✅ Confirmed" },
+        { val: "not_attended", label: "Status: ⚠️ Not Attended" },
+        { val: "buy_soon", label: "Status: ⏳ Buy in Few Days" },
+        { val: "not_interested", label: "Status: 🛑 Not Interested" },
+        { val: "completed", label: "Status: 🏆 Completed" },
+        { val: "cancelled", label: "Status: ❌ Cancelled" },
       ].forEach((opt) => {
         const o = document.createElement("option");
         o.value = opt.val;
@@ -745,6 +803,7 @@ function renderBookings() {
 
       item.append(top, contactRow);
       if (schedBox) item.appendChild(schedBox);
+      if (statusGuidance) item.appendChild(statusGuidance);
       if (reqsBox) item.appendChild(reqsBox);
       if (notesBox) item.appendChild(notesBox);
       item.appendChild(actions);
@@ -753,6 +812,84 @@ function renderBookings() {
     })
   );
 }
+
+// Follow-up Composer Modal
+async function openFollowupModal(b) {
+  currentFollowupBookingId = b.id;
+  const modal = $("#followup-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.style.display = "grid";
+
+  $("#followup-modal-title").textContent = `⚡ Follow-up Composer: ${b.client_name || "Lead"}`;
+  $("#followup-modal-subtitle").textContent = `Phone: ${b.phone || "Not set"} · Current Status: ${STATUS_LABELS[b.status] || b.status}`;
+  $("#followup-text").value = "Generating tailored follow-up message...";
+  $("#followup-feedback").textContent = "";
+
+  const alertBox = $("#followup-status-alert");
+  if (b.status === "not_attended") {
+    alertBox.textContent = "⚠️ Lead missed their scheduled call. This message offers a warm, guilt-free reschedule.";
+    alertBox.style.background = "#ef444422";
+    alertBox.style.color = "#f87171";
+  } else if (b.status === "buy_soon") {
+    alertBox.textContent = "⏳ Lead is planning to buy in a few days. This message checks in on their decision timeline.";
+    alertBox.style.background = "#0284c722";
+    alertBox.style.color = "#38bdf8";
+  } else {
+    alertBox.textContent = "📅 Standard lead check-in message based on current status.";
+    alertBox.style.background = "#120c15";
+    alertBox.style.color = "var(--text)";
+  }
+
+  try {
+    const res = await api("POST", "/api/bookings/followup", { id: b.id });
+    $("#followup-text").value = res.message;
+    const sendBtn = $("#followup-send-wa-btn");
+    if (res.waLink) {
+      sendBtn.href = res.waLink;
+      sendBtn.style.display = "inline-flex";
+    } else {
+      sendBtn.style.display = "none";
+    }
+  } catch (err) {
+    $("#followup-text").value = `Failed to generate message: ${err.message}`;
+  }
+}
+
+$("#close-followup-modal")?.addEventListener("click", () => {
+  const modal = $("#followup-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+  currentFollowupBookingId = null;
+});
+
+$("#followup-copy-btn")?.addEventListener("click", () => {
+  const text = $("#followup-text").value;
+  navigator.clipboard.writeText(text);
+  $("#followup-feedback").textContent = "Copied to clipboard ✓";
+  setTimeout(() => ($("#followup-feedback").textContent = ""), 2500);
+});
+
+$("#followup-mark-sent-btn")?.addEventListener("click", async () => {
+  if (!currentFollowupBookingId) return;
+  try {
+    const res = await api("POST", "/api/bookings/followup", {
+      id: currentFollowupBookingId,
+      markSent: true,
+    });
+    const found = bookings.find((x) => x.id === currentFollowupBookingId);
+    if (found) {
+      found.followup_count = res.followupCount;
+      found.last_followup_at = res.lastFollowupAt;
+      renderBookings();
+    }
+    $("#followup-feedback").textContent = `Marked as sent! Total follow-ups: ${res.followupCount} ✓`;
+  } catch (err) {
+    $("#followup-feedback").textContent = `Error: ${err.message}`;
+  }
+});
 
 // Bookings form & control bindings
 $("#toggle-add-booking-btn")?.addEventListener("click", () => {
@@ -783,6 +920,8 @@ $("#new-booking-form")?.addEventListener("submit", async (e) => {
   const email = $("#booking-email").value.trim();
   const phone = $("#booking-phone").value.trim();
   const scheduledAt = $("#booking-scheduled").value.trim();
+  const timezone = $("#booking-timezone").value.trim();
+  const companyOrWebsite = $("#booking-website").value.trim();
   const requirements = $("#booking-reqs").value.trim();
   const status = $("#booking-status").value;
   const notes = $("#booking-notes").value.trim();
@@ -799,6 +938,8 @@ $("#new-booking-form")?.addEventListener("submit", async (e) => {
       email,
       phone,
       scheduledAt,
+      timezone,
+      companyOrWebsite,
       requirements,
       status,
       notes,

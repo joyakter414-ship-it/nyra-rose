@@ -261,6 +261,15 @@ export async function deleteTodo(env: AppEnv, id: string): Promise<boolean> {
 
 // ─── Bookings & Leads CRM Sheet ──────────────────────────────────────────────
 
+export type BookingStatus =
+  | "booked"
+  | "confirmed"
+  | "not_attended"
+  | "buy_soon"
+  | "not_interested"
+  | "completed"
+  | "cancelled";
+
 export interface Booking {
   id: string;
   chat_id: string;
@@ -268,10 +277,14 @@ export interface Booking {
   phone: string | null;
   email: string | null;
   scheduled_at: string | null;
+  timezone: string | null;
+  company_or_website: string | null;
   requirements: string | null;
-  status: "booked" | "confirmed" | "pending" | "rescheduled" | "completed" | "cancelled";
+  status: BookingStatus;
   source: string;
   notes: string | null;
+  last_followup_at: number | null;
+  followup_count: number;
   created_at: number;
 }
 
@@ -295,20 +308,22 @@ export async function createBooking(
     phone?: string | null;
     email?: string | null;
     scheduled_at?: string | null;
+    timezone?: string | null;
+    company_or_website?: string | null;
     requirements?: string | null;
-    status?: "booked" | "confirmed" | "pending" | "rescheduled" | "completed" | "cancelled";
+    status?: BookingStatus;
     source?: string;
     notes?: string | null;
   }
 ): Promise<Booking> {
   const id = `book_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
-  const status = b.status || "booked";
+  const status: BookingStatus = b.status || "booked";
   const source = b.source || "whatsapp";
 
   await env.DB.prepare(
-    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, requirements, status, source, notes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, source, notes, last_followup_at, followup_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   )
     .bind(
       id,
@@ -317,6 +332,8 @@ export async function createBooking(
       b.phone?.trim() ?? null,
       b.email?.trim() ?? null,
       b.scheduled_at?.trim() ?? null,
+      b.timezone?.trim() ?? null,
+      b.company_or_website?.trim() ?? null,
       b.requirements?.trim() ?? null,
       status,
       source,
@@ -332,10 +349,14 @@ export async function createBooking(
     phone: b.phone?.trim() ?? null,
     email: b.email?.trim() ?? null,
     scheduled_at: b.scheduled_at?.trim() ?? null,
+    timezone: b.timezone?.trim() ?? null,
+    company_or_website: b.company_or_website?.trim() ?? null,
     requirements: b.requirements?.trim() ?? null,
     status,
     source,
     notes: b.notes?.trim() ?? null,
+    last_followup_at: null,
+    followup_count: 0,
     created_at,
   };
 }
@@ -359,9 +380,13 @@ export async function updateBooking(
        phone = ?,
        email = ?,
        scheduled_at = ?,
+       timezone = ?,
+       company_or_website = ?,
        requirements = ?,
        status = ?,
-       notes = ?
+       notes = ?,
+       last_followup_at = ?,
+       followup_count = ?
      WHERE id = ?`
   )
     .bind(
@@ -369,9 +394,13 @@ export async function updateBooking(
       next.phone,
       next.email,
       next.scheduled_at,
+      next.timezone,
+      next.company_or_website,
       next.requirements,
       next.status,
       next.notes,
+      next.last_followup_at,
+      next.followup_count,
       id
     )
     .run();

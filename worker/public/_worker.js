@@ -165,8 +165,8 @@ async function createBooking(env, b) {
   const status = b.status || "booked";
   const source = b.source || "whatsapp";
   await env.DB.prepare(
-    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, requirements, status, source, notes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, source, notes, last_followup_at, followup_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   ).bind(
     id,
     b.chat_id,
@@ -174,6 +174,8 @@ async function createBooking(env, b) {
     b.phone?.trim() ?? null,
     b.email?.trim() ?? null,
     b.scheduled_at?.trim() ?? null,
+    b.timezone?.trim() ?? null,
+    b.company_or_website?.trim() ?? null,
     b.requirements?.trim() ?? null,
     status,
     source,
@@ -187,10 +189,14 @@ async function createBooking(env, b) {
     phone: b.phone?.trim() ?? null,
     email: b.email?.trim() ?? null,
     scheduled_at: b.scheduled_at?.trim() ?? null,
+    timezone: b.timezone?.trim() ?? null,
+    company_or_website: b.company_or_website?.trim() ?? null,
     requirements: b.requirements?.trim() ?? null,
     status,
     source,
     notes: b.notes?.trim() ?? null,
+    last_followup_at: null,
+    followup_count: 0,
     created_at
   };
 }
@@ -207,18 +213,26 @@ async function updateBooking(env, id, patch) {
        phone = ?,
        email = ?,
        scheduled_at = ?,
+       timezone = ?,
+       company_or_website = ?,
        requirements = ?,
        status = ?,
-       notes = ?
+       notes = ?,
+       last_followup_at = ?,
+       followup_count = ?
      WHERE id = ?`
   ).bind(
     next.client_name,
     next.phone,
     next.email,
     next.scheduled_at,
+    next.timezone,
+    next.company_or_website,
     next.requirements,
     next.status,
     next.notes,
+    next.last_followup_at,
+    next.followup_count,
     id
   ).run();
   return next;
@@ -351,19 +365,49 @@ function buildSystemPrompt(s, ctx) {
     `Our sales executive or manager views your collected lead details inside our internal dashboard and manually schedules the meeting with the client.`,
     `THEREFORE:`,
     `\u2022 DO NOT send Calendly links or external booking URLs to clients.`,
-    `\u2022 Your job in the conversation is to directly gather the client's booking information:`,
+    `\u2022 Your job in the conversation is to directly gather the client's booking information that is normally required on Calendly:`,
     `  1. Full Name`,
     `  2. Email Address`,
     `  3. Preferred Date & Time (e.g. "Tomorrow at 4pm", "Monday afternoon")`,
-    `  4. Video Requirements / Scope (e.g. Shorts, YouTube long-form, ads, monthly volume)`,
+    `  4. Timezone (e.g. EST, GMT, PST, BST, or city/country if outside Bangladesh/US)`,
+    `  5. Website, YouTube channel, or Instagram link (to review their current video style)`,
+    `  6. Video Requirements & Goals (e.g. Shorts/Reels, YouTube long-form, monthly volume, current challenges)`,
     `\u2022 Proposing a call naturally:`,
     `  "I'd love to set up a quick 15-minute discovery call with our sales manager to discuss your requirements and tailor the best package for you. What day and time works best for you, and what's the best email and name to send the invite to?"`,
     `\u2022 If the client provides their time and email:`,
-    `  Confirm naturally like a real human: "Got it, [Name]! I've noted down [Email] and [Preferred Time]. Our sales manager will review our schedule and send over the invite shortly. Looking forward to speaking!"`,
+    `  Confirm naturally: "Got it, [Name]! I've noted down [Email] and [Preferred Time]. Our sales manager will review our schedule and send over the invite shortly. Looking forward to speaking!"`,
     `\u2022 If the client gave their preferred time but forgot their email:`,
     `  Politely ask: "Perfect, [Time] sounds great! What's the best email address for our manager to send the invite to?"`,
     `\u2022 If the client gave their email but no time:`,
     `  Politely ask: "Thanks! What day and time would be most convenient for you for a quick 15-minute call?"`,
+    ``,
+    `=== DYNAMIC STATUS-BASED BEHAVIOR & FOLLOW-UP RULES ===`,
+    `Our sales executive / manager updates the client's lead status in the dashboard. Your conversation and follow-up style MUST adapt dynamically:`,
+    ``,
+    `1. *STATUS: 'not_attended' (Missed Call / Did Not Attend)*:`,
+    `   \u2022 Context: The client had a call scheduled but missed or did not show up.`,
+    `   \u2022 Tone: Empathetic, polite, zero judgment or guilt.`,
+    `   \u2022 Action: Follow up to reschedule. Ask what day and time works better for them.`,
+    `   \u2022 Example: "Hey [Name], hope everything is okay! Sorry we missed each other on our scheduled call earlier today. Would you like to reschedule for tomorrow or later this week? Let me know what time works best for you."`,
+    ``,
+    `2. *STATUS: 'not_interested' (Client Not Interested / No Follow-Up)*:`,
+    `   \u2022 Context: Client explicitly stated they are not interested or our team marked them as not interested.`,
+    `   \u2022 CRITICAL RULE: STRICTLY STOP ALL SALES FOLLOW-UPS. Do NOT pitch, push, or send promotional reminders.`,
+    `   \u2022 If the client messages first, be polite, respectful, and brief ("Thank you for letting us know! If you ever need editing support down the road, feel free to reach out anytime."). Never pressure them.`,
+    ``,
+    `3. *STATUS: 'buy_soon' (Buying in a Few Days / Deciding)*:`,
+    `   \u2022 Context: Client expressed interest and mentioned they will decide or purchase in a few days.`,
+    `   \u2022 Tone: Warm, helpful, consultative closing partner.`,
+    `   \u2022 Action: Check in on their decision timeline and answer any lingering questions regarding packages, dedicated editors, or turnaround.`,
+    `   \u2022 Example: "Hey [Name], hope you're having a productive week! Just following up to see if you had any questions on the Growth plan or if you're ready to get started. Happy to help whenever you're ready to roll!"`,
+    ``,
+    `4. *STATUS: 'booked' or 'confirmed'*:`,
+    `   \u2022 Context: Call is scheduled or confirmed.`,
+    `   \u2022 Action: Acknowledge the upcoming meeting and answer any quick preliminary questions.`,
+    ``,
+    `5. *STATUS: 'completed'*:`,
+    `   \u2022 Context: Call was completed or client is signed up.`,
+    `   \u2022 Action: Assist with onboarding via the intake brief link: https://vidmox.pages.dev/intake.`,
     ``,
     `=== BUSINESS OVERVIEW: VIDMOX ===`,
     `\u2022 What Vidmox is: A premier white-label video editing subscription service. We provide creators and agencies with dedicated video editors, a dedicated project manager (PM), quality control, and unlimited revisions \u2014 without hiring full-time.`,
@@ -401,7 +445,7 @@ function buildSystemPrompt(s, ctx) {
     `Current date/time (UTC): ${ctx.now.toISOString()}.`
   ];
   if (ctx.bookingContext) {
-    lines.push("", "Lead Booking Status:", ctx.bookingContext);
+    lines.push("", "Lead Booking & CRM Status:", ctx.bookingContext);
   }
   if (ctx.isGroup) {
     lines.push(
@@ -770,6 +814,12 @@ function extractBookingDetails(text, history) {
       time = sentence ? sentence.trim() : looseMatch[0].trim();
     }
   }
+  const tzRegex = /\b(EST|PST|CST|MST|EDT|PDT|CDT|MDT|GMT|BST|UTC|CET|AEST|Dhaka(?:\s+time)?|BD(?:\s+time)?)\b/i;
+  const tzMatch = text.match(tzRegex);
+  const timezone = tzMatch ? tzMatch[0].toUpperCase() : null;
+  const siteRegex = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|io|net|co|app|agency|tv)|youtube\.com\/@[a-zA-Z0-9_.-]+|instagram\.com\/[a-zA-Z0-9_.-]+)/i;
+  const siteMatch = text.match(siteRegex);
+  const companyOrWebsite = siteMatch ? siteMatch[0] : null;
   const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), text].join(" ").toLowerCase();
   const reqsList = [];
   if (allUserText.includes("short") || allUserText.includes("reel") || allUserText.includes("tiktok") || allUserText.includes("shorts")) {
@@ -800,7 +850,24 @@ function extractBookingDetails(text, history) {
     reqsList.push("Premium Tier ($1,590/mo)");
   }
   const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
-  return { email, phone, time, requirements, clientName };
+  return { email, phone, time, timezone, companyOrWebsite, requirements, clientName };
+}
+function generateFollowupText(b) {
+  const name = b.client_name?.trim() || "there";
+  switch (b.status) {
+    case "not_attended":
+      return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+    case "buy_soon":
+      return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready!`;
+    case "booked":
+      return `Hi ${name}! Looking forward to our call${b.scheduled_at ? ` on ${b.scheduled_at}` : ""}! Please let me know if you need to adjust the time or have any questions beforehand.`;
+    case "not_interested":
+      return `Hi ${name}! Thank you for considering Vidmox. If your editing needs ever change down the road, feel free to reach out anytime!`;
+    case "completed":
+      return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+    default:
+      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step!`;
+  }
 }
 async function generateReply(env, s, rules, c) {
   const [history, userNotes, userTodos] = await Promise.all([
@@ -811,21 +878,37 @@ async function generateReply(env, s, rules, c) {
   const guidelines = rules.filter((r) => r.type === "ai_guideline").map((r) => r.response);
   const notesText = userNotes.slice(0, 10).map((n) => n.content);
   const todosText = userTodos.slice(0, 10).map((t) => t.task);
+  const existing = await findLatestBookingForChat(env, c.chatId).catch(() => null);
   let bookingContext = "";
+  if (existing) {
+    if (existing.status === "not_interested") {
+      bookingContext = `[LEAD STATUS: NOT INTERESTED]. Client is marked as NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
+    } else if (existing.status === "not_attended") {
+      bookingContext = `[LEAD STATUS: MISSED CALL / NOT ATTENDED]. Client missed our scheduled call earlier (${existing.scheduled_at || "previously"}). Follow up gently and warmly offering to reschedule at their convenience.`;
+    } else if (existing.status === "buy_soon") {
+      bookingContext = `[LEAD STATUS: BUYING IN FEW DAYS / CONSIDERING]. Client is considering purchasing soon. Check in warmly on their decision timeline and answer any lingering questions without being pushy.`;
+    } else if (existing.status === "booked" || existing.status === "confirmed") {
+      bookingContext = `[LEAD STATUS: CALL SCHEDULED FOR ${existing.scheduled_at}]. The discovery call is already scheduled. Reconfirm and answer any preliminary questions.`;
+    } else if (existing.status === "completed") {
+      bookingContext = `[LEAD STATUS: CALL COMPLETED / CLIENT ONBOARDED]. The call took place. If they need to submit project footage, guide them to our intake form: https://vidmox.pages.dev/intake.`;
+    }
+  }
   const bookingInfo = extractBookingDetails(c.userContent, history);
   if (bookingInfo.email || bookingInfo.time && (c.userContent.toLowerCase().includes("call") || c.userContent.toLowerCase().includes("meet") || c.userContent.toLowerCase().includes("book") || c.userContent.toLowerCase().includes("schedule"))) {
     try {
-      const existing = await findLatestBookingForChat(env, c.chatId);
       const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
       const computedPhone = bookingInfo.phone || c.senderPhone || null;
       if (existing) {
+        const nextStatus = existing.status === "not_interested" ? "booked" : (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at) ? "booked" : existing.status;
         await updateBooking(env, existing.id, {
           client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
           phone: computedPhone || existing.phone,
           email: bookingInfo.email || existing.email,
           scheduled_at: bookingInfo.time || existing.scheduled_at,
+          timezone: bookingInfo.timezone || existing.timezone,
+          company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
           requirements: bookingInfo.requirements || existing.requirements,
-          status: (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at) ? "booked" : existing.status
+          status: nextStatus
         });
         const effEmail = bookingInfo.email || existing.email;
         const effTime = bookingInfo.time || existing.scheduled_at;
@@ -843,6 +926,8 @@ async function generateReply(env, s, rules, c) {
           phone: computedPhone,
           email: bookingInfo.email,
           scheduled_at: bookingInfo.time,
+          timezone: bookingInfo.timezone,
+          company_or_website: bookingInfo.companyOrWebsite,
           requirements: bookingInfo.requirements,
           status: "booked",
           source: c.source
@@ -1217,6 +1302,8 @@ async function dashboardRoutes(request, env, url) {
         phone: body.phone,
         email: body.email,
         scheduled_at: body.scheduledAt,
+        timezone: body.timezone,
+        company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
         status: body.status || "booked",
         source: body.source || "dashboard",
@@ -1229,6 +1316,44 @@ async function dashboardRoutes(request, env, url) {
       if (!body?.id) return json({ error: "id is required" }, 400);
       const booking = await updateBooking(env, body.id, body);
       return json({ booking });
+    }
+    case "POST /api/bookings/followup": {
+      const body = await request.json();
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all();
+      const b = results?.[0];
+      if (!b) return json({ error: "Booking not found" }, 404);
+      if (b.status === "not_interested") {
+        return json(
+          {
+            error: "Follow-ups are disabled for this lead because their status is 'Not Interested'.",
+            disabled: true
+          },
+          400
+        );
+      }
+      const message = generateFollowupText(b);
+      const cleanPhone = (b.phone || b.chat_id?.split("@")[0] || "").replace(/[^0-9]/g, "");
+      const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
+      let updatedBooking = b;
+      if (body.markSent) {
+        const nextCount = (b.followup_count || 0) + 1;
+        const now = Date.now();
+        const patched = await updateBooking(env, b.id, {
+          last_followup_at: now,
+          followup_count: nextCount
+        });
+        if (patched) updatedBooking = patched;
+      }
+      return json({
+        message,
+        waLink,
+        status: updatedBooking.status,
+        clientName: updatedBooking.client_name,
+        phone: updatedBooking.phone,
+        followupCount: updatedBooking.followup_count,
+        lastFollowupAt: updatedBooking.last_followup_at
+      });
     }
     case "DELETE /api/bookings": {
       const id = url.searchParams.get("id");

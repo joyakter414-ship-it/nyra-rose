@@ -1,6 +1,6 @@
 import type { AppEnv } from "./env";
 import { getLiveNeuronUsage } from "./analytics";
-import { handleDashboardChat, handleIncoming, type IncomingMessage } from "./brain";
+import { generateFollowupText, handleDashboardChat, handleIncoming, type IncomingMessage } from "./brain";
 import {
   createBooking,
   createNote,
@@ -385,8 +385,10 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         phone?: string;
         email?: string;
         scheduledAt?: string;
+        timezone?: string;
+        companyOrWebsite?: string;
         requirements?: string;
-        status?: "booked" | "confirmed" | "pending" | "rescheduled" | "completed" | "cancelled";
+        status?: "booked" | "confirmed" | "not_attended" | "buy_soon" | "not_interested" | "completed" | "cancelled";
         source?: string;
         notes?: string;
       };
@@ -396,6 +398,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         phone: body.phone,
         email: body.email,
         scheduled_at: body.scheduledAt,
+        timezone: body.timezone,
+        company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
         status: body.status || "booked",
         source: body.source || "dashboard",
@@ -411,13 +415,60 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         phone?: string;
         email?: string;
         scheduled_at?: string;
+        timezone?: string;
+        company_or_website?: string;
         requirements?: string;
-        status?: "booked" | "confirmed" | "pending" | "rescheduled" | "completed" | "cancelled";
+        status?: "booked" | "confirmed" | "not_attended" | "buy_soon" | "not_interested" | "completed" | "cancelled";
         notes?: string;
+        last_followup_at?: number;
+        followup_count?: number;
       };
       if (!body?.id) return json({ error: "id is required" }, 400);
       const booking = await updateBooking(env, body.id, body);
       return json({ booking });
+    }
+
+    case "POST /api/bookings/followup": {
+      const body = (await request.json()) as { id: string; markSent?: boolean };
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all<Booking>();
+      const b = results?.[0];
+      if (!b) return json({ error: "Booking not found" }, 404);
+
+      if (b.status === "not_interested") {
+        return json(
+          {
+            error: "Follow-ups are disabled for this lead because their status is 'Not Interested'.",
+            disabled: true,
+          },
+          400,
+        );
+      }
+
+      const message = generateFollowupText(b);
+      const cleanPhone = (b.phone || b.chat_id?.split("@")[0] || "").replace(/[^0-9]/g, "");
+      const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
+
+      let updatedBooking = b;
+      if (body.markSent) {
+        const nextCount = (b.followup_count || 0) + 1;
+        const now = Date.now();
+        const patched = await updateBooking(env, b.id, {
+          last_followup_at: now,
+          followup_count: nextCount,
+        });
+        if (patched) updatedBooking = patched;
+      }
+
+      return json({
+        message,
+        waLink,
+        status: updatedBooking.status,
+        clientName: updatedBooking.client_name,
+        phone: updatedBooking.phone,
+        followupCount: updatedBooking.followup_count,
+        lastFollowupAt: updatedBooking.last_followup_at,
+      });
     }
 
     case "DELETE /api/bookings": {

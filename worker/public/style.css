@@ -168,6 +168,9 @@ code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; font-si
 
 .badge-booked { background: #d9770633; color: #fbbf24; border: 1px solid #d97706; }
 .badge-confirmed { background: #05966933; color: #34d399; border: 1px solid #059669; }
+.badge-not_attended { background: #ef444433; color: #f87171; border: 1px solid #dc2626; }
+.badge-buy_soon { background: #0284c733; color: #38bdf8; border: 1px solid #0284c7; }
+.badge-not_interested { background: #37415133; color: #9ca3af; border: 1px solid #4b5563; }
 .badge-completed { background: #2563eb33; color: #60a5fa; border: 1px solid #2563eb; }
 .badge-cancelled { background: #4b556333; color: #9ca3af; border: 1px solid #4b5563; }
 .badge-source { background: #120c15; color: var(--muted); border: 1px solid var(--line); }

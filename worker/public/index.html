@@ -124,22 +124,30 @@
     <!-- Booked Calls CRM Sheet -->
     <section id="tab-bookings" class="page hidden">
       <!-- Stats bar -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 16px;">
-        <div class="card" style="padding: 14px 18px;">
-          <div class="muted small-text">Total Calls Logged</div>
-          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 26px;">0</div>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 16px;">
+        <div class="card" style="padding: 12px 16px;">
+          <div class="muted small-text">Total Leads</div>
+          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 14px 18px;">
-          <div class="muted small-text">Booked / Pending</div>
-          <div class="big" id="stat-bookings-pending" style="color: #f59e0b; font-size: 26px;">0</div>
+        <div class="card" style="padding: 12px 16px;">
+          <div class="muted small-text">📅 Booked Calls</div>
+          <div class="big" id="stat-bookings-booked" style="color: #f59e0b; font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 14px 18px;">
-          <div class="muted small-text">Confirmed Calls</div>
-          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 26px;">0</div>
+        <div class="card" style="padding: 12px 16px;">
+          <div class="muted small-text">✅ Confirmed</div>
+          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 14px 18px;">
-          <div class="muted small-text">Completed Calls</div>
-          <div class="big" id="stat-bookings-completed" style="color: #60a5fa; font-size: 26px;">0</div>
+        <div class="card" style="padding: 12px 16px;">
+          <div class="muted small-text">⚠️ Missed (No-Show)</div>
+          <div class="big" id="stat-bookings-not-attended" style="color: #f87171; font-size: 24px;">0</div>
+        </div>
+        <div class="card" style="padding: 12px 16px;">
+          <div class="muted small-text">⏳ Buy in Few Days</div>
+          <div class="big" id="stat-bookings-buy-soon" style="color: #38bdf8; font-size: 24px;">0</div>
+        </div>
+        <div class="card" style="padding: 12px 16px;">
+          <div class="muted small-text">🛑 Not Interested</div>
+          <div class="big" id="stat-bookings-not-interested" style="color: #9ca3af; font-size: 24px;">0</div>
         </div>
       </div>
 
@@ -149,7 +157,7 @@
           <div>
             <h2>Vidmox Lead & Call Booking CRM 📅</h2>
             <p class="muted small-text">
-              Nyra Rose automatically logs leads who send their email, phone, or preferred call time on WhatsApp or Web Chat.
+              Nyra automatically gathers lead details and adapts follow-ups dynamically based on status (Missed Call, Buying in Few Days, Not Interested).
             </p>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
@@ -160,31 +168,40 @@
 
         <!-- Manual Add Call Form -->
         <form id="new-booking-form" class="hidden" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px;">
-          <h3 style="margin-top: 0; color: var(--rose-light); font-size: 16px;">Log a Lead Call</h3>
+          <h3 style="margin-top: 0; color: var(--rose-light); font-size: 16px;">Log a Lead / Booking</h3>
           <div class="row">
             <label>Client Name
-              <input id="booking-client-name" placeholder="e.g. John Agency / Alex" />
+              <input id="booking-client-name" placeholder="e.g. Marcus / Alex Agency" />
             </label>
             <label>Client Email
-              <input id="booking-email" type="email" placeholder="e.g. john@company.com" />
+              <input id="booking-email" type="email" placeholder="e.g. marcus@company.com" />
             </label>
             <label>Phone / WhatsApp
               <input id="booking-phone" placeholder="e.g. +1 555 123 4567" />
             </label>
             <label>Scheduled Date & Time
-              <input id="booking-scheduled" placeholder="e.g. Tomorrow 4 PM EST / Oct 15 2:00 PM" />
+              <input id="booking-scheduled" placeholder="e.g. Tomorrow 4 PM / Oct 15 2:00 PM" />
             </label>
           </div>
           <div class="row" style="margin-top: 10px;">
-            <label>Video Requirements / Plan
-              <input id="booking-reqs" placeholder="e.g. Growth $490/mo, 10 YouTube Shorts, Motion FX" />
+            <label>Timezone
+              <input id="booking-timezone" placeholder="e.g. EST / PST / GMT / BD" />
             </label>
-            <label>Status
+            <label>Website / YouTube Channel
+              <input id="booking-website" placeholder="e.g. youtube.com/@channel or brand.io" />
+            </label>
+            <label>Video Scope / Package
+              <input id="booking-reqs" placeholder="e.g. Growth ($490/mo), 10 Shorts, Long-form" />
+            </label>
+            <label>Lead Status
               <select id="booking-status">
-                <option value="booked">Booked (Pending Confirmation)</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="booked">📅 Booked (Pending Call)</option>
+                <option value="confirmed">✅ Confirmed</option>
+                <option value="not_attended">⚠️ Not Attended (Missed Call)</option>
+                <option value="buy_soon">⏳ Buying in Few Days (Considering)</option>
+                <option value="not_interested">🛑 Not Interested (Stop Follow-ups)</option>
+                <option value="completed">🏆 Completed / Closed</option>
+                <option value="cancelled">❌ Cancelled</option>
               </select>
             </label>
           </div>
@@ -192,7 +209,7 @@
             <textarea id="booking-notes" rows="2" placeholder="e.g. Agency owner, wants trial first, likes Alex Hormozi captions style"></textarea>
           </label>
           <div class="actions" style="margin-top: 12px;">
-            <button type="submit">Save Call</button>
+            <button type="submit">Save Lead</button>
             <button type="button" id="cancel-booking-btn" class="ghost small">Cancel</button>
             <span id="booking-error" class="error"></span>
           </div>
@@ -201,15 +218,18 @@
         <!-- Filter & Search bar -->
         <div style="display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; align-items: center;">
           <div style="flex: 1; min-width: 220px;">
-            <input id="bookings-search" placeholder="Search by client, email, phone, or requirements..." style="margin: 0;" />
+            <input id="bookings-search" placeholder="Search by client, email, phone, website, or requirements..." style="margin: 0;" />
           </div>
-          <div style="width: 190px;">
+          <div style="width: 230px;">
             <select id="bookings-filter-status" style="margin: 0;">
-              <option value="all">All Statuses</option>
-              <option value="booked">Booked / Pending</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="all">All Lead Statuses</option>
+              <option value="booked">📅 Booked</option>
+              <option value="confirmed">✅ Confirmed</option>
+              <option value="not_attended">⚠️ Missed Call (Not Attended)</option>
+              <option value="buy_soon">⏳ Buying in Few Days</option>
+              <option value="not_interested">🛑 Not Interested (Stopped)</option>
+              <option value="completed">🏆 Completed / Closed</option>
+              <option value="cancelled">❌ Cancelled</option>
             </select>
           </div>
         </div>
@@ -218,10 +238,33 @@
       <!-- Bookings Table / List -->
       <div class="card">
         <div class="chat-head">
-          <h2 style="margin: 0;">Call Booking Records</h2>
+          <h2 style="margin: 0;">Lead Booking Records & Follow-up Center</h2>
           <span id="bookings-count-label" class="muted small-text"></span>
         </div>
         <div id="bookings-list" class="rules-list"></div>
+      </div>
+
+      <!-- Follow-up Modal -->
+      <div id="followup-modal" class="hidden" style="position: fixed; inset: 0; background: #000000cc; backdrop-filter: blur(8px); z-index: 100; place-items: center; padding: 16px;">
+        <div class="card" style="width: min(540px, 100%); margin: auto; max-height: 90vh; overflow-y: auto;">
+          <div class="chat-head">
+            <h2 id="followup-modal-title" style="margin: 0;">⚡ Dynamic Follow-up Composer</h2>
+            <button id="close-followup-modal" class="ghost small">✕</button>
+          </div>
+          <p class="muted small-text" id="followup-modal-subtitle" style="margin-top: 4px;"></p>
+          <div id="followup-status-alert" style="margin: 10px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;"></div>
+          <label style="margin-top: 10px;">Message (Tailored to Status)
+            <textarea id="followup-text" rows="5" style="font-family: inherit; font-size: 14px; line-height: 1.5;"></textarea>
+          </label>
+          <div class="actions" style="margin-top: 14px; flex-wrap: wrap;">
+            <a id="followup-send-wa-btn" href="#" target="_blank" rel="noopener noreferrer" style="background: #10b981; color: #fff; text-decoration: none; padding: 9px 16px; border-radius: 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              💬 Open in WhatsApp
+            </a>
+            <button id="followup-copy-btn" class="ghost small">📋 Copy Text</button>
+            <button id="followup-mark-sent-btn" class="small">✓ Mark as Sent</button>
+          </div>
+          <div id="followup-feedback" class="muted small-text" style="margin-top: 10px;"></div>
+        </div>
       </div>
     </section>
 
