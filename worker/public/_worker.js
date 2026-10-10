@@ -1454,9 +1454,12 @@ async function generateReply(env, s, rules, c) {
   if (!c.isGroup) {
     try {
       if (isBookingCallIntent || bookingInfo.isRescheduleRequest) {
-        const clientSpecifiedTz = Boolean(bookingInfo.timezone);
-        const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
-        const tzDisplayName = bookingInfo.timezone ? bookingInfo.timezone : existing?.timezone ? existing.timezone : phoneTz ? phoneTz.label : "Bangladesh Time (GMT+6)";
+        const wasAlreadyBooked = Boolean(existing && (existing.status === "booked" || existing.status === "confirmed"));
+        const useExplicitTz = Boolean(
+          bookingInfo.timezone && (!phoneTz || wasAlreadyBooked || bookingInfo.isRescheduleRequest)
+        );
+        const effTz = useExplicitTz ? bookingInfo.timezone : phoneTz?.code || existing?.timezone || bookingInfo.timezone || "BDT";
+        const tzDisplayName = useExplicitTz ? bookingInfo.timezone : phoneTz ? phoneTz.label : existing?.timezone || "Bangladesh Time (GMT+6)";
         const rawTimePhrase = bookingInfo.time || existing?.scheduled_at || null;
         const parsedCallMs = rawTimePhrase ? parseScheduledTimeToMs(rawTimePhrase, effTz, nowMs, computedPhone || c.chatId) : existing?.call_time_ms || null;
         const formattedScheduledAt = parsedCallMs ? formatTimeInTimezone(parsedCallMs, effTz, computedPhone || c.chatId, nowMs) : rawTimePhrase;
@@ -1465,16 +1468,17 @@ async function generateReply(env, s, rules, c) {
           const thirtyMinBefore = parsedCallMs - 30 * 60 * 1e3;
           if (thirtyMinBefore > nowMs) {
             reminderAt = thirtyMinBefore;
-          } else if (parsedCallMs > nowMs - 10 * 60 * 1e3) {
+          } else if (parsedCallMs > nowMs) {
             reminderAt = nowMs + 1e4;
+          } else {
+            reminderAt = null;
           }
         }
         const effEmail = bookingInfo.email || existing?.email || null;
         const hasBooked = Boolean(formattedScheduledAt);
         if (existing) {
-          const wasAlreadyBooked = existing.status === "booked" || existing.status === "confirmed";
           const timeOrTzChanged = Boolean(
-            bookingInfo.time && formattedScheduledAt !== existing.scheduled_at || bookingInfo.timezone && bookingInfo.timezone !== existing.timezone
+            bookingInfo.time && formattedScheduledAt !== existing.scheduled_at || useExplicitTz && bookingInfo.timezone !== existing.timezone
           );
           await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
@@ -1494,10 +1498,10 @@ async function generateReply(env, s, rules, c) {
           if (wasAlreadyBooked && timeOrTzChanged) {
             bookingContext = `The client updated their call time/timezone to "${formattedScheduledAt}" (${tzDisplayName}). Confirm warmly that you have updated their booked call to ${formattedScheduledAt} and will send a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
           } else if (effEmail && formattedScheduledAt) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone is right or if you meant another timezone!"` : "";
+            const tzConfirmNote = phoneTz && !useExplicitTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone works for you, or if you prefer another time/timezone!"` : "";
             bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and meeting time (${formattedScheduledAt}). Confirm naturally that their call is booked for ${formattedScheduledAt}, our sales manager will send the calendar invite to ${effEmail}, and you'll send a reminder 30 minutes before the meeting.${tzConfirmNote}`;
           } else if (formattedScheduledAt && !effEmail) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they meant another timezone.` : "";
+            const tzConfirmNote = phoneTz && !useExplicitTz ? ` Mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another time/timezone.` : "";
             bookingContext = `The client mentioned a preferred call time (${formattedScheduledAt}), which is now booked with a 30-minute reminder.${tzConfirmNote} Ask warmly for their best email address so our manager can send the calendar invite.`;
           } else if (effEmail && !formattedScheduledAt) {
             bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time yet. Acknowledge the email and ask what day and time works best for a quick 15-minute call${phoneTz ? ` (in their ${phoneTz.label} timezone)` : ""}.`;
@@ -1521,10 +1525,10 @@ async function generateReply(env, s, rules, c) {
             source: c.source
           });
           if (effEmail && formattedScheduledAt) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone works or if you meant another timezone!"` : "";
+            const tzConfirmNote = phoneTz && !useExplicitTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone works for you, or if you prefer another time/timezone!"` : "";
             bookingContext = `The client provided their name (${computedName}), email (${effEmail}), and preferred time (${formattedScheduledAt}). Confirm naturally that you've booked their call for ${formattedScheduledAt} and noted ${effEmail}, and you'll remind them 30 minutes before the meeting.${tzConfirmNote}`;
           } else if (formattedScheduledAt && !effEmail) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Explicitly mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another timezone.` : "";
+            const tzConfirmNote = phoneTz && !useExplicitTz ? ` Explicitly mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another time/timezone.` : "";
             bookingContext = `The client mentioned a preferred time (${formattedScheduledAt}).${tzConfirmNote} Ask what email address our manager should send the calendar invite to.`;
           } else if (effEmail && !formattedScheduledAt) {
             bookingContext = `The client provided their email (${effEmail}), but hasn't mentioned a time. Acknowledge their email and ask what day and time works best for a quick 15-minute call${phoneTz ? ` (in their ${phoneTz.label} timezone)` : ""}.`;
@@ -2040,7 +2044,7 @@ async function dashboardRoutes(request, env, url) {
           patch.followup_type = "call_reminder";
           if (patch.call_time_ms) {
             const thirtyBefore = patch.call_time_ms - 30 * 60 * 1e3;
-            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : patch.call_time_ms > now - 10 * 60 * 1e3 ? now + 1e4 : null;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : patch.call_time_ms > now ? now + 1e4 : null;
           } else {
             patch.next_followup_at = null;
           }
@@ -2074,9 +2078,9 @@ async function dashboardRoutes(request, env, url) {
           patch.followup_type = "call_reminder";
           if (cMs) {
             const thirtyBefore = cMs - 30 * 60 * 1e3;
-            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : cMs > now - 10 * 60 * 1e3 ? now + 1e4 : null;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : cMs > now ? now + 1e4 : null;
           } else {
-            patch.next_followup_at = now + 30 * 60 * 1e3;
+            patch.next_followup_at = null;
           }
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1") {

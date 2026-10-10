@@ -708,14 +708,21 @@ function formatNextFollowupTimer(b) {
   if (b.status === "fake_lead") {
     return "🕵️ Fake Lead (30d No Reply — Stopped)";
   }
+  const now = Date.now();
+  const isCallReminder = fType === "call_reminder" || b.status === "booked" || b.status === "confirmed";
+  if (isCallReminder && b.call_time_ms && b.call_time_ms <= now) {
+    return `⏰ Call Time Passed (${fmtTimeInBookingTz(b.call_time_ms, b.timezone)})`;
+  }
   if (!b.next_followup_at) {
-    if (b.status === "booked" || b.status === "confirmed" || fType === "call_reminder") {
+    if (isCallReminder) {
+      if (b.call_time_ms && b.call_time_ms > now) {
+        return `🔔 Call at ${fmtTimeInBookingTz(b.call_time_ms, b.timezone)}`;
+      }
       return "🔔 Call Booked (Sales Follow-Up Stopped)";
     }
     return "⏱️ No Timer Set";
   }
-  const diffMs = b.next_followup_at - Date.now();
-  const isCallReminder = fType === "call_reminder" || b.status === "booked" || b.status === "confirmed";
+  const diffMs = b.next_followup_at - now;
   const prefix = isCallReminder ? "🔔 30m Call Reminder" : "⏱️ Next Follow-Up";
   const tzTimeStr = fmtTimeInBookingTz(b.next_followup_at, b.timezone);
   if (diffMs <= 0) {
@@ -830,11 +837,17 @@ function renderBookings() {
       let schedBox = null;
       if (b.scheduled_at) {
         const isCall = b.status === "booked" || b.status === "confirmed" || fType === "call_reminder";
+        const isPastCall = isCall && b.call_time_ms && b.call_time_ms <= Date.now();
+        const tzSuffix = b.timezone && !b.scheduled_at.toUpperCase().includes(b.timezone.toUpperCase()) ? ` (${b.timezone})` : "";
         schedBox = el(
           "div",
           "booking-scheduled-box",
-          `${isCall ? "📅 Booked Call Time" : "📅 Client Follow-Up Date"}: ${b.scheduled_at}${b.timezone ? ` (${b.timezone})` : ""}${
-            isCall ? " · 🔔 Auto 30m Pre-Call Reminder Active (Sales Follow-Ups Paused)" : ""
+          `${isCall ? "📅 Booked Call Time" : "📅 Client Follow-Up Date"}: ${b.scheduled_at}${tzSuffix}${
+            isPastCall
+              ? " · ⏰ Call Time Passed (Update status or reschedule if needed)"
+              : isCall
+              ? " · 🔔 Auto 30m Pre-Call Reminder Active (Sales Follow-Ups Paused)"
+              : ""
           }`
         );
       }

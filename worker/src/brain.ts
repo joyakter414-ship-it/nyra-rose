@@ -1043,34 +1043,42 @@ async function generateReply(
     try {
       // CASE 1: Client is booking a call OR rescheduling/updating timezone of an existing booked call
       if (isBookingCallIntent || bookingInfo.isRescheduleRequest) {
-        const clientSpecifiedTz = Boolean(bookingInfo.timezone);
-        const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
-        const tzDisplayName = bookingInfo.timezone
-          ? bookingInfo.timezone
-          : existing?.timezone
-          ? existing.timezone
+        const wasAlreadyBooked = Boolean(existing && (existing.status === "booked" || existing.status === "confirmed"));
+        // Initial booking always uses the phone number's country code timezone (phoneTz) first!
+        // Only if the call was already booked and the client replies to change/correct the timezone (or if there is no phoneTz) do we use bookingInfo.timezone.
+        const useExplicitTz = Boolean(
+          bookingInfo.timezone &&
+          (!phoneTz || wasAlreadyBooked || bookingInfo.isRescheduleRequest)
+        );
+        const effTz = useExplicitTz
+          ? bookingInfo.timezone!
+          : phoneTz?.code || existing?.timezone || bookingInfo.timezone || "BDT";
+        const tzDisplayName = useExplicitTz
+          ? bookingInfo.timezone!
           : phoneTz
           ? phoneTz.label
-          : "Bangladesh Time (GMT+6)";
+          : existing?.timezone || "Bangladesh Time (GMT+6)";
 
         const rawTimePhrase = bookingInfo.time || existing?.scheduled_at || null;
         const parsedCallMs = rawTimePhrase
           ? parseScheduledTimeToMs(rawTimePhrase, effTz, nowMs, computedPhone || c.chatId)
           : existing?.call_time_ms || null;
 
-        // Format scheduled_at cleanly (e.g. "Today 1:30 PM AEST" or "Today 1:30 PM GMT")
+        // Format scheduled_at cleanly (e.g. "Today 1:30 PM BDT" or "Today 1:30 PM AEST")
         const formattedScheduledAt = parsedCallMs
           ? formatTimeInTimezone(parsedCallMs, effTz, computedPhone || c.chatId, nowMs)
           : rawTimePhrase;
 
-        // 30 minutes before the call (or 10s from now if the call is <30m away so the reminder still sends!)
+        // 30 minutes before the call (or 10s from now if the call is <30m away in the future; null if the call time already passed)
         let reminderAt: number | null = null;
         if (parsedCallMs) {
           const thirtyMinBefore = parsedCallMs - 30 * 60 * 1000;
           if (thirtyMinBefore > nowMs) {
             reminderAt = thirtyMinBefore;
-          } else if (parsedCallMs > nowMs - 10 * 60 * 1000) {
+          } else if (parsedCallMs > nowMs) {
             reminderAt = nowMs + 10_000;
+          } else {
+            reminderAt = null;
           }
         }
 
@@ -1078,10 +1086,9 @@ async function generateReply(
         const hasBooked = Boolean(formattedScheduledAt);
 
         if (existing) {
-          const wasAlreadyBooked = existing.status === "booked" || existing.status === "confirmed";
           const timeOrTzChanged = Boolean(
             (bookingInfo.time && formattedScheduledAt !== existing.scheduled_at) ||
-            (bookingInfo.timezone && bookingInfo.timezone !== existing.timezone)
+            (useExplicitTz && bookingInfo.timezone !== existing.timezone)
           );
 
           await updateBooking(env, existing.id, {
@@ -1103,13 +1110,13 @@ async function generateReply(
           if (wasAlreadyBooked && timeOrTzChanged) {
             bookingContext = `The client updated their call time/timezone to "${formattedScheduledAt}" (${tzDisplayName}). Confirm warmly that you have updated their booked call to ${formattedScheduledAt} and will send a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
           } else if (effEmail && formattedScheduledAt) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz
-              ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) — please let me know if that timezone is right or if you meant another timezone!"`
+            const tzConfirmNote = phoneTz && !useExplicitTz
+              ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) — please let me know if that timezone works for you, or if you prefer another time/timezone!"`
               : "";
             bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and meeting time (${formattedScheduledAt}). Confirm naturally that their call is booked for ${formattedScheduledAt}, our sales manager will send the calendar invite to ${effEmail}, and you'll send a reminder 30 minutes before the meeting.${tzConfirmNote}`;
           } else if (formattedScheduledAt && !effEmail) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz
-              ? ` Mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they meant another timezone.`
+            const tzConfirmNote = phoneTz && !useExplicitTz
+              ? ` Mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another time/timezone.`
               : "";
             bookingContext = `The client mentioned a preferred call time (${formattedScheduledAt}), which is now booked with a 30-minute reminder.${tzConfirmNote} Ask warmly for their best email address so our manager can send the calendar invite.`;
           } else if (effEmail && !formattedScheduledAt) {
@@ -1135,13 +1142,13 @@ async function generateReply(
           });
 
           if (effEmail && formattedScheduledAt) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz
-              ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) — please let me know if that timezone works or if you meant another timezone!"`
+            const tzConfirmNote = phoneTz && !useExplicitTz
+              ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) — please let me know if that timezone works for you, or if you prefer another time/timezone!"`
               : "";
             bookingContext = `The client provided their name (${computedName}), email (${effEmail}), and preferred time (${formattedScheduledAt}). Confirm naturally that you've booked their call for ${formattedScheduledAt} and noted ${effEmail}, and you'll remind them 30 minutes before the meeting.${tzConfirmNote}`;
           } else if (formattedScheduledAt && !effEmail) {
-            const tzConfirmNote = !clientSpecifiedTz && phoneTz
-              ? ` Explicitly mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another timezone.`
+            const tzConfirmNote = phoneTz && !useExplicitTz
+              ? ` Explicitly mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another time/timezone.`
               : "";
             bookingContext = `The client mentioned a preferred time (${formattedScheduledAt}).${tzConfirmNote} Ask what email address our manager should send the calendar invite to.`;
           } else if (effEmail && !formattedScheduledAt) {

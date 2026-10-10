@@ -528,7 +528,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           patch.followup_type = "call_reminder";
           if (patch.call_time_ms) {
             const thirtyBefore = patch.call_time_ms - 30 * 60 * 1000;
-            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : patch.call_time_ms > now - 10 * 60 * 1000 ? now + 10_000 : null;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : patch.call_time_ms > now ? now + 10_000 : null;
           } else {
             patch.next_followup_at = null;
           }
@@ -571,9 +571,9 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           patch.followup_type = "call_reminder";
           if (cMs) {
             const thirtyBefore = cMs - 30 * 60 * 1000;
-            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : cMs > now - 10 * 60 * 1000 ? now + 10_000 : null;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : cMs > now ? now + 10_000 : null;
           } else {
-            patch.next_followup_at = now + 30 * 60 * 1000;
+            patch.next_followup_at = null;
           }
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1") {
