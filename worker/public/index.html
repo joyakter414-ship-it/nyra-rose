@@ -32,6 +32,7 @@
         <button data-tab="home" class="tab active">Home</button>
         <button data-tab="chat" class="tab">Talk to her</button>
         <button data-tab="chats" class="tab">Conversations</button>
+        <button data-tab="bookings" class="tab">Booked Calls 📅</button>
         <button data-tab="rules" class="tab">Rule Book 📜</button>
         <button data-tab="notes" class="tab">Notes 📝</button>
         <button data-tab="todos" class="tab">Tasks ✅</button>
@@ -117,6 +118,110 @@
           </div>
           <div id="conv-log" class="chat-log"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- Booked Calls CRM Sheet -->
+    <section id="tab-bookings" class="page hidden">
+      <!-- Stats bar -->
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 16px;">
+        <div class="card" style="padding: 14px 18px;">
+          <div class="muted small-text">Total Calls Logged</div>
+          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 26px;">0</div>
+        </div>
+        <div class="card" style="padding: 14px 18px;">
+          <div class="muted small-text">Booked / Pending</div>
+          <div class="big" id="stat-bookings-pending" style="color: #f59e0b; font-size: 26px;">0</div>
+        </div>
+        <div class="card" style="padding: 14px 18px;">
+          <div class="muted small-text">Confirmed Calls</div>
+          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 26px;">0</div>
+        </div>
+        <div class="card" style="padding: 14px 18px;">
+          <div class="muted small-text">Completed Calls</div>
+          <div class="big" id="stat-bookings-completed" style="color: #60a5fa; font-size: 26px;">0</div>
+        </div>
+      </div>
+
+      <!-- Controls & Header -->
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2>Vidmox Lead & Call Booking CRM 📅</h2>
+            <p class="muted small-text">
+              Nyra Rose automatically logs leads who send their email, phone, or preferred call time on WhatsApp or Web Chat.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="toggle-add-booking-btn" class="small">+ Log Call Manually</button>
+            <button id="refresh-bookings-btn" class="ghost small">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Manual Add Call Form -->
+        <form id="new-booking-form" class="hidden" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px;">
+          <h3 style="margin-top: 0; color: var(--rose-light); font-size: 16px;">Log a Lead Call</h3>
+          <div class="row">
+            <label>Client Name
+              <input id="booking-client-name" placeholder="e.g. John Agency / Alex" />
+            </label>
+            <label>Client Email
+              <input id="booking-email" type="email" placeholder="e.g. john@company.com" />
+            </label>
+            <label>Phone / WhatsApp
+              <input id="booking-phone" placeholder="e.g. +1 555 123 4567" />
+            </label>
+            <label>Scheduled Date & Time
+              <input id="booking-scheduled" placeholder="e.g. Tomorrow 4 PM EST / Oct 15 2:00 PM" />
+            </label>
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <label>Video Requirements / Plan
+              <input id="booking-reqs" placeholder="e.g. Growth $490/mo, 10 YouTube Shorts, Motion FX" />
+            </label>
+            <label>Status
+              <select id="booking-status">
+                <option value="booked">Booked (Pending Confirmation)</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+          </div>
+          <label style="margin-top: 10px;">Internal Notes
+            <textarea id="booking-notes" rows="2" placeholder="e.g. Agency owner, wants trial first, likes Alex Hormozi captions style"></textarea>
+          </label>
+          <div class="actions" style="margin-top: 12px;">
+            <button type="submit">Save Call</button>
+            <button type="button" id="cancel-booking-btn" class="ghost small">Cancel</button>
+            <span id="booking-error" class="error"></span>
+          </div>
+        </form>
+
+        <!-- Filter & Search bar -->
+        <div style="display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; align-items: center;">
+          <div style="flex: 1; min-width: 220px;">
+            <input id="bookings-search" placeholder="Search by client, email, phone, or requirements..." style="margin: 0;" />
+          </div>
+          <div style="width: 190px;">
+            <select id="bookings-filter-status" style="margin: 0;">
+              <option value="all">All Statuses</option>
+              <option value="booked">Booked / Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bookings Table / List -->
+      <div class="card">
+        <div class="chat-head">
+          <h2 style="margin: 0;">Call Booking Records</h2>
+          <span id="bookings-count-label" class="muted small-text"></span>
+        </div>
+        <div id="bookings-list" class="rules-list"></div>
       </div>
     </section>
 

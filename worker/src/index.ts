@@ -2,12 +2,15 @@ import type { AppEnv } from "./env";
 import { getLiveNeuronUsage } from "./analytics";
 import { handleDashboardChat, handleIncoming, type IncomingMessage } from "./brain";
 import {
+  createBooking,
   createNote,
   createRule,
   createTodo,
+  deleteBooking,
   deleteNote,
   deleteRule,
   deleteTodo,
+  getBookings,
   getNotes,
   getRules,
   getTodos,
@@ -15,7 +18,9 @@ import {
   kvGet,
   kvSet,
   toggleTodo,
+  updateBooking,
   updateRule,
+  type Booking,
 } from "./db";
 import { getSettings, MODELS, saveSettings, type Settings } from "./settings";
 
@@ -365,6 +370,60 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const id = url.searchParams.get("id");
       if (!id) return json({ error: "id is required" }, 400);
       await deleteTodo(env, id);
+      return json({ ok: true });
+    }
+
+    case "GET /api/bookings": {
+      const status = url.searchParams.get("status") || undefined;
+      return json({ bookings: await getBookings(env, status) });
+    }
+
+    case "POST /api/bookings": {
+      const body = (await request.json()) as {
+        chatId?: string;
+        clientName?: string;
+        phone?: string;
+        email?: string;
+        scheduledAt?: string;
+        requirements?: string;
+        status?: "booked" | "confirmed" | "pending" | "rescheduled" | "completed" | "cancelled";
+        source?: string;
+        notes?: string;
+      };
+      const booking = await createBooking(env, {
+        chat_id: body.chatId || "manual_crm",
+        client_name: body.clientName,
+        phone: body.phone,
+        email: body.email,
+        scheduled_at: body.scheduledAt,
+        requirements: body.requirements,
+        status: body.status || "booked",
+        source: body.source || "dashboard",
+        notes: body.notes,
+      });
+      return json({ booking });
+    }
+
+    case "PATCH /api/bookings": {
+      const body = (await request.json()) as {
+        id: string;
+        client_name?: string;
+        phone?: string;
+        email?: string;
+        scheduled_at?: string;
+        requirements?: string;
+        status?: "booked" | "confirmed" | "pending" | "rescheduled" | "completed" | "cancelled";
+        notes?: string;
+      };
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const booking = await updateBooking(env, body.id, body);
+      return json({ booking });
+    }
+
+    case "DELETE /api/bookings": {
+      const id = url.searchParams.get("id");
+      if (!id) return json({ error: "id is required" }, 400);
+      await deleteBooking(env, id);
       return json({ ok: true });
     }
   }

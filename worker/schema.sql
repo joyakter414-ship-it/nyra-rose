@@ -71,3 +71,21 @@ CREATE TABLE IF NOT EXISTS todos (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_todos_chat ON todos (chat_id, completed, created_at);
+
+-- Booked Calls & Sales Leads CRM Sheet
+CREATE TABLE IF NOT EXISTS bookings (
+  id           TEXT PRIMARY KEY,
+  chat_id      TEXT NOT NULL,
+  client_name  TEXT,
+  phone        TEXT,
+  email        TEXT,
+  scheduled_at TEXT,
+  requirements TEXT,
+  status       TEXT NOT NULL DEFAULT 'booked', -- 'booked', 'confirmed', 'pending', 'rescheduled', 'completed', 'cancelled'
+  source       TEXT NOT NULL DEFAULT 'whatsapp',
+  notes        TEXT,
+  created_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_bookings_chat ON bookings (chat_id, created_at);
+

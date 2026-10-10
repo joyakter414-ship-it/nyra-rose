@@ -148,6 +148,88 @@ async function deleteTodo(env, id) {
   const res = await env.DB.prepare("DELETE FROM todos WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
 }
+async function getBookings(env, status) {
+  let query = "SELECT * FROM bookings";
+  const params = [];
+  if (status && status !== "all") {
+    query += " WHERE status = ?";
+    params.push(status);
+  }
+  query += " ORDER BY created_at DESC LIMIT 200";
+  const { results } = await env.DB.prepare(query).bind(...params).all();
+  return results;
+}
+async function createBooking(env, b) {
+  const id = `book_${crypto.randomUUID().slice(0, 8)}`;
+  const created_at = Date.now();
+  const status = b.status || "booked";
+  const source = b.source || "whatsapp";
+  await env.DB.prepare(
+    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, requirements, status, source, notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id,
+    b.chat_id,
+    b.client_name?.trim() ?? null,
+    b.phone?.trim() ?? null,
+    b.email?.trim() ?? null,
+    b.scheduled_at?.trim() ?? null,
+    b.requirements?.trim() ?? null,
+    status,
+    source,
+    b.notes?.trim() ?? null,
+    created_at
+  ).run();
+  return {
+    id,
+    chat_id: b.chat_id,
+    client_name: b.client_name?.trim() ?? null,
+    phone: b.phone?.trim() ?? null,
+    email: b.email?.trim() ?? null,
+    scheduled_at: b.scheduled_at?.trim() ?? null,
+    requirements: b.requirements?.trim() ?? null,
+    status,
+    source,
+    notes: b.notes?.trim() ?? null,
+    created_at
+  };
+}
+async function updateBooking(env, id, patch) {
+  const existing = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(id).first();
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    ...patch
+  };
+  await env.DB.prepare(
+    `UPDATE bookings SET
+       client_name = ?,
+       phone = ?,
+       email = ?,
+       scheduled_at = ?,
+       requirements = ?,
+       status = ?,
+       notes = ?
+     WHERE id = ?`
+  ).bind(
+    next.client_name,
+    next.phone,
+    next.email,
+    next.scheduled_at,
+    next.requirements,
+    next.status,
+    next.notes,
+    id
+  ).run();
+  return next;
+}
+async function deleteBooking(env, id) {
+  const res = await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+async function findLatestBookingForChat(env, chatId) {
+  return await env.DB.prepare("SELECT * FROM bookings WHERE chat_id = ? ORDER BY created_at DESC LIMIT 1").bind(chatId).first();
+}
 
 // src/analytics.ts
 var CLIENT_ID = "54d11594-84e4-41aa-b438-e81b8fa78ee7";
@@ -255,29 +337,68 @@ async function getLiveNeuronUsage(env) {
 
 // src/persona.ts
 function buildSystemPrompt(s, ctx) {
-  const owner = s.ownerName?.trim() || "my creator";
+  const owner = s.ownerName?.trim() || "Vidmox Team";
   const lines = [
-    `You are Nyra Rose \u{1F339}, an intelligent, personal AI assistant on WhatsApp created by and serving ${owner}.`,
-    `Your personality: warm, graceful, razor-sharp, quick-witted, and remarkably capable.`,
-    `You speak with effortless charm and clarity \u2014 friendly, poised, and genuinely helpful, never robotic or overly stiff.`,
+    `You are Nyra Rose \u{1F339}, the lead booking specialist and client relationship AI for Vidmox (https://vidmox.pages.dev).`,
+    `You serve ${owner} and communicate with creators, agency owners, and business leaders reaching out via WhatsApp.`,
     ``,
-    `Core Rules:`,
-    `- This is WhatsApp: keep replies concise and natural (typically 1\u20134 short sentences). Only provide long explanations or lists when the user explicitly asks for depth.`,
-    `- Formatting: use WhatsApp markdown (*bold*, _italic_, ~strike~, and simple "- " bullet points). Never use standard markdown headers (###), tables, or code fences unless outputting code.`,
-    `- Language: effortlessly match the exact language and dialect the user speaks (English, \u09AC\u09BE\u0982\u09B2\u09BE, Banglish).`,
-    `- Identity: You are Nyra Rose, a sophisticated AI assistant. If asked who you are, proudly introduce yourself as Nyra Rose \u{1F339}.`,
-    `- Trust: Never invent claims or make binding commitments on behalf of ${owner} (pricing, contracts, schedules) unless instructed. Offer to pass along the message.`,
-    `- Honesty: If you do not have live access to dynamic data or something is unknown, say so with grace.`,
+    `=== BUSINESS OVERVIEW: VIDMOX ===`,
+    `\u2022 What Vidmox is: A premier white-label video editing subscription service. We provide creators and agencies with dedicated video editors, a dedicated project manager (PM), quality control, and unlimited revisions \u2014 without hiring full-time.`,
+    `\u2022 Official Website: https://vidmox.pages.dev`,
+    `\u2022 Official Call Booking Link (Calendly): https://calendly.com/armaan-gineus/30min`,
+    `\u2022 Official WhatsApp: +8801889755665`,
+    `\u2022 Built-in Intake Brief System: https://vidmox.pages.dev/intake (clients submit questions -> auto-generates structured PDF brief for PM & editors -> zero back-and-forth).`,
+    `\u2022 Portfolios:`,
+    `  - General Portfolio: https://vidmox.pages.dev/portfolio`,
+    `  - High-End Premium Portfolio: https://vidmox.pages.dev/premium-portfolio`,
+    `\u2022 Reputation: 4.9/5 stars, trusted by 120+ creators and agencies, average 24-hour turnaround on first drafts.`,
+    `\u2022 Core Capabilities: Short-form (Reels, TikTok, Shorts, viral captions, hooks), Long-form (YouTube, Podcasts, Talking Head, VSLs, Documentaries), motion graphics, sound design, color grading, B-roll curation, and thumbnail design.`,
+    ``,
+    `=== APPROVED PRICING PLANS (DO NOT INVENT PRICES) ===`,
+    `1. *Kickstart / Paid Trial ($29)*: 1 trial video, unlimited revisions, 24/7 WhatsApp support. Try before committing to a monthly subscription.`,
+    `2. *Growth Plan ($490/mo)*: 25\u201330 short-form videos/month, 1 active request per day, dedicated PM, unlimited revisions, 24/7 WhatsApp & Slack. (Short-form only, not for long-form).`,
+    `3. *Scale Plan ($890/mo)*: 55\u201360 short-form videos/month OR 6\u20138 long-form videos (up to 10\u201312 min each), 2 active requests per day, priority delivery, dedicated PM, unlimited revisions, WhatsApp & Slack.`,
+    `4. *Advance Plan ($1,490/mo - Most popular for agencies)*: Up to 100 videos/month, 2 dedicated editors, 3 active requests, OR 10\u201312 long-form videos (up to 12\u201315 min each), priority queue, dedicated PM, unlimited revisions, WhatsApp & Slack.`,
+    `5. *High-End Premium Editing (From $1,590/mo)*: 50 premium videos or 5\u201310 high-end long-form, cinematic motion graphics, AI integration, 24\u201348h turnaround, premium B-roll.`,
+    `6. *Custom Packages / Discounts*: Can be tailored based on volume. Handled on a quick call with our sales executive.`,
+    ``,
+    `=== PRIMARY OBJECTIVE & SALES PLAYBOOK ===`,
+    `Your primary goal is to qualify incoming leads and convert them into *Booked Sales Calls* with our human sales team.`,
+    ``,
+    `1. *Consultative Approach*: Never rush to drop a booking link immediately without listening. First understand what type of videos they need (Shorts/Reels, YouTube long-form, ads) and their editing volume.`,
+    `2. *Answering Questions*:`,
+    `   - If they ask for pricing, state the approved prices clearly and ask what type of content they need.`,
+    `   - If they ask to see work, share the portfolio (https://vidmox.pages.dev/portfolio).`,
+    `   - If they want to try first, mention the $29 trial video.`,
+    `3. *Guiding to Call Booking*:`,
+    `   - Invite them to book a quick 30-min discovery call: https://calendly.com/armaan-gineus/30min`,
+    `   - OR encourage them: "If you prefer, you can also share your *email address and preferred date/time* right here, and I'll log it for our sales team!"`,
+    `4. *Price Objections / Negotiation*:`,
+    `   - NEVER negotiate price or promise discounts independently.`,
+    `   - Positive reframing: "I completely understand! Our pricing has flexibility depending on your scope and volume. Our sales executive can discuss tailored options on a quick call. Would you like to schedule one?"`,
+    `5. *When Client Says They Are Busy or Will Book Later*:`,
+    `   - Respect their schedule without pressure: "No worries at all! Take your time. Whenever you're ready, you can book via our link or drop your available day, time, and email right here and we'll arrange the meeting for you \u{1F339}"`,
+    `6. *When Client Provides Email & Time*:`,
+    `   - When a client sends their email and available time, warm and professionally confirm that you have recorded their request and our team will follow up with the calendar confirmation invite.`,
+    ``,
+    `=== COMMUNICATION STYLE ===`,
+    `\u2022 Tone: Warm, charismatic, sharp, consultative, professional. Like an elite creative agency partner.`,
+    `\u2022 Length: WhatsApp is fast. Keep replies short and readable (1\u20134 punchy sentences). Use line breaks.`,
+    `\u2022 Formatting: Use WhatsApp markdown only (*bold*, _italic_, ~strike~, bullet points \u2022). NEVER use Markdown headers (###), HTML, or tables.`,
+    `\u2022 Language: Seamlessly match the language the lead speaks (English, \u09AC\u09BE\u0982\u09B2\u09BE, Banglish).`,
     ``,
     `Current date/time (UTC): ${ctx.now.toISOString()}.`
   ];
+  if (ctx.bookingContext) {
+    lines.push("", "Booking Extraction Status:", ctx.bookingContext);
+  }
   if (ctx.isGroup) {
     lines.push(
       `You are in a WhatsApp group${ctx.chatName ? ` called "${ctx.chatName}"` : ""}. Messages are prefixed with the sender's name. Only respond to the person who addressed you.`
     );
   }
   if (ctx.notes && ctx.notes.length > 0) {
-    lines.push("", "User Stored Notes & Context:", ...ctx.notes.map((n) => `- ${n}`));
+    lines.push("", "Stored Notes & Context:", ...ctx.notes.map((n) => `- ${n}`));
   }
   if (ctx.todos && ctx.todos.length > 0) {
     lines.push("", "Active Tasks & To-Dos:", ...ctx.todos.map((t) => `- ${t}`));
@@ -550,6 +671,7 @@ async function handleIncoming(env, m) {
   return generateReply(env, s, rules, {
     chatId: m.chatId,
     chatName: m.chatName ?? void 0,
+    senderPhone: m.senderPhone ?? void 0,
     isGroup: m.isGroup,
     excludeId: msgId,
     userContent: m.isGroup && m.senderName ? `${m.senderName}: ${m.text}` : m.text,
@@ -593,7 +715,81 @@ async function handleDashboardChat(env, text) {
     });
     return { action: "reply", reply, model: "rulebook:instant", neurons: 0 };
   }
-  return generateReply(env, s, rules, { chatId, isGroup: false, excludeId: msgId, userContent: text, source: "dashboard" });
+  return generateReply(env, s, rules, {
+    chatId,
+    chatName: "Dashboard Lead",
+    senderPhone: void 0,
+    isGroup: false,
+    excludeId: msgId,
+    userContent: text,
+    source: "dashboard"
+  });
+}
+function extractBookingDetails(text, history) {
+  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+  const emailMatch = text.match(emailRegex);
+  let email = emailMatch ? emailMatch[0] : null;
+  if (!email) {
+    for (const h of history.slice(-4)) {
+      if (h.role === "user") {
+        const m = h.content.match(emailRegex);
+        if (m) {
+          email = m[0];
+          break;
+        }
+      }
+    }
+  }
+  const phoneRegex = /(?:\+?\d{1,4}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/;
+  const phoneMatch = text.match(phoneRegex);
+  const phone = phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7 ? phoneMatch[0].trim() : null;
+  const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i;
+  const nameMatch = text.match(nameRegex);
+  const clientName = nameMatch ? nameMatch[1].trim() : null;
+  const timePhraseRegex = /(?:(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|morning|evening|afternoon|noon|night))?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b(?:\s*[A-Z]{2,4})?|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+  const timePhraseMatch = text.match(timePhraseRegex);
+  let time = null;
+  if (timePhraseMatch) {
+    time = timePhraseMatch[0].trim();
+  } else {
+    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning)/i;
+    const looseMatch = text.match(looseTime);
+    if (looseMatch) {
+      const sentence = text.split(/[.?!,\n]/).find((s) => looseTime.test(s));
+      time = sentence ? sentence.trim() : looseMatch[0].trim();
+    }
+  }
+  const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), text].join(" ").toLowerCase();
+  const reqsList = [];
+  if (allUserText.includes("short") || allUserText.includes("reel") || allUserText.includes("tiktok") || allUserText.includes("shorts")) {
+    reqsList.push("Short-form (Reels/TikTok/Shorts)");
+  }
+  if (allUserText.includes("youtube") || allUserText.includes("long") || allUserText.includes("podcast") || allUserText.includes("vsl")) {
+    reqsList.push("Long-form (YouTube/Podcasts)");
+  }
+  if (allUserText.includes("motion") || allUserText.includes("vfx") || allUserText.includes("graphic")) {
+    reqsList.push("Motion Graphics & FX");
+  }
+  if (allUserText.includes("intake") || allUserText.includes("brief")) {
+    reqsList.push("Project Brief Intake");
+  }
+  if (allUserText.includes("trial") || allUserText.includes("kickstart") || allUserText.includes("29")) {
+    reqsList.push("Kickstart Trial ($29)");
+  }
+  if (allUserText.includes("growth") || allUserText.includes("490")) {
+    reqsList.push("Growth Plan ($490/mo)");
+  }
+  if (allUserText.includes("scale") || allUserText.includes("890")) {
+    reqsList.push("Scale Plan ($890/mo)");
+  }
+  if (allUserText.includes("advance") || allUserText.includes("1490") || allUserText.includes("1,490")) {
+    reqsList.push("Advance Plan ($1,490/mo)");
+  }
+  if (allUserText.includes("premium") || allUserText.includes("1590") || allUserText.includes("1,590")) {
+    reqsList.push("Premium Tier ($1,590/mo)");
+  }
+  const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
+  return { email, phone, time, requirements, clientName };
 }
 async function generateReply(env, s, rules, c) {
   const [history, userNotes, userTodos] = await Promise.all([
@@ -604,6 +800,40 @@ async function generateReply(env, s, rules, c) {
   const guidelines = rules.filter((r) => r.type === "ai_guideline").map((r) => r.response);
   const notesText = userNotes.slice(0, 10).map((n) => n.content);
   const todosText = userTodos.slice(0, 10).map((t) => t.task);
+  let bookingContext = "";
+  const bookingInfo = extractBookingDetails(c.userContent, history);
+  if (bookingInfo.email || bookingInfo.time && (c.userContent.toLowerCase().includes("call") || c.userContent.toLowerCase().includes("meet") || c.userContent.toLowerCase().includes("book") || c.userContent.toLowerCase().includes("schedule"))) {
+    try {
+      const existing = await findLatestBookingForChat(env, c.chatId);
+      const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
+      const computedPhone = bookingInfo.phone || c.senderPhone || null;
+      if (existing) {
+        await updateBooking(env, existing.id, {
+          client_name: existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name,
+          phone: computedPhone || existing.phone,
+          email: bookingInfo.email || existing.email,
+          scheduled_at: bookingInfo.time || existing.scheduled_at,
+          requirements: bookingInfo.requirements || existing.requirements,
+          status: (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at) ? "booked" : existing.status
+        });
+        bookingContext = `Call booking record updated in CRM Sheet: Client: ${computedName}, Email: ${bookingInfo.email || existing.email}, Time: ${bookingInfo.time || existing.scheduled_at}.`;
+      } else {
+        await createBooking(env, {
+          chat_id: c.chatId,
+          client_name: computedName,
+          phone: computedPhone,
+          email: bookingInfo.email,
+          scheduled_at: bookingInfo.time,
+          requirements: bookingInfo.requirements,
+          status: "booked",
+          source: c.source
+        });
+        bookingContext = `NEW CALL BOOKING SAVED IN CRM SHEET! Client: ${computedName}, Email: ${bookingInfo.email || "Pending"}, Scheduled Time: ${bookingInfo.time || "Pending"}. Warmly confirm to the client that their call request has been recorded into Vidmox's calendar schedule!`;
+      }
+    } catch (err) {
+      console.warn("Failed recording call booking lead:", err);
+    }
+  }
   const messages = [
     {
       role: "system",
@@ -613,7 +843,8 @@ async function generateReply(env, s, rules, c) {
         now: /* @__PURE__ */ new Date(),
         guidelines,
         notes: notesText,
-        todos: todosText
+        todos: todosText,
+        bookingContext
       })
     },
     ...history.map((h) => ({
@@ -945,6 +1176,37 @@ async function dashboardRoutes(request, env, url) {
       const id = url.searchParams.get("id");
       if (!id) return json({ error: "id is required" }, 400);
       await deleteTodo(env, id);
+      return json({ ok: true });
+    }
+    case "GET /api/bookings": {
+      const status = url.searchParams.get("status") || void 0;
+      return json({ bookings: await getBookings(env, status) });
+    }
+    case "POST /api/bookings": {
+      const body = await request.json();
+      const booking = await createBooking(env, {
+        chat_id: body.chatId || "manual_crm",
+        client_name: body.clientName,
+        phone: body.phone,
+        email: body.email,
+        scheduled_at: body.scheduledAt,
+        requirements: body.requirements,
+        status: body.status || "booked",
+        source: body.source || "dashboard",
+        notes: body.notes
+      });
+      return json({ booking });
+    }
+    case "PATCH /api/bookings": {
+      const body = await request.json();
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const booking = await updateBooking(env, body.id, body);
+      return json({ booking });
+    }
+    case "DELETE /api/bookings": {
+      const id = url.searchParams.get("id");
+      if (!id) return json({ error: "id is required" }, 400);
+      await deleteBooking(env, id);
       return json({ ok: true });
     }
   }

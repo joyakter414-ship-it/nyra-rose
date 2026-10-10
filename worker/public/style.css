@@ -165,3 +165,93 @@ legend { padding: 0 6px; color: var(--rose-light); font-size: 13px; font-weight:
 .rule-ctrls { display: flex; align-items: center; gap: 8px; }
 
 code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; font-size: 12px; border: 1px solid var(--line); color: var(--rose-light); }
+
+.badge-booked { background: #d9770633; color: #fbbf24; border: 1px solid #d97706; }
+.badge-confirmed { background: #05966933; color: #34d399; border: 1px solid #059669; }
+.badge-completed { background: #2563eb33; color: #60a5fa; border: 1px solid #2563eb; }
+.badge-cancelled { background: #4b556333; color: #9ca3af; border: 1px solid #4b5563; }
+.badge-source { background: #120c15; color: var(--muted); border: 1px solid var(--line); }
+
+.booking-item {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  gap: 12px;
+  transition: border-color 0.2s ease;
+}
+.booking-item:hover { border-color: var(--rose-dark); }
+.booking-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.booking-client-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.booking-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 13px;
+}
+.booking-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--rose-light);
+  text-decoration: none;
+  font-size: 12.5px;
+  transition: all 0.15s ease;
+}
+.booking-link-pill:hover {
+  background: var(--panel);
+  border-color: var(--rose);
+  color: #fff;
+}
+.booking-scheduled-box {
+  background: #311329;
+  border: 1px solid var(--rose-dark);
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fecdd3;
+}
+.booking-notes-box {
+  background: var(--bg);
+  border-left: 3px solid var(--rose);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  word-break: break-word;
+}
+.booking-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid #3b223a44;
+  padding-top: 10px;
+}
+

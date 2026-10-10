@@ -75,6 +75,7 @@ document.querySelectorAll(".tab").forEach((btn) =>
     if (btn.dataset.tab === "home") refreshOverview();
     if (btn.dataset.tab === "chat") loadDashboardChat();
     if (btn.dataset.tab === "chats") loadChats();
+    if (btn.dataset.tab === "bookings") loadBookings();
     if (btn.dataset.tab === "rules") loadRules();
     if (btn.dataset.tab === "notes") loadNotes();
     if (btn.dataset.tab === "todos") loadTodos();
@@ -570,6 +571,247 @@ $("#new-todo-form").addEventListener("submit", async (e) => {
   todos.unshift(res.todo);
   renderTodos();
   input.value = "";
+});
+
+// ─── Booked Calls CRM ────────────────────────────────────────────────────────
+
+let bookings = [];
+let bookingStatusFilter = "all";
+let bookingSearch = "";
+
+async function loadBookings() {
+  const statusParam = bookingStatusFilter !== "all" ? `?status=${encodeURIComponent(bookingStatusFilter)}` : "";
+  const res = await api("GET", `/api/bookings${statusParam}`);
+  bookings = res.bookings || [];
+  updateBookingStats();
+  renderBookings();
+}
+
+function updateBookingStats() {
+  const total = bookings.length;
+  const pending = bookings.filter((b) => b.status === "booked" || b.status === "pending").length;
+  const confirmed = bookings.filter((b) => b.status === "confirmed").length;
+  const completed = bookings.filter((b) => b.status === "completed").length;
+
+  const totalEl = $("#stat-bookings-total");
+  const pendingEl = $("#stat-bookings-pending");
+  const confirmedEl = $("#stat-bookings-confirmed");
+  const completedEl = $("#stat-bookings-completed");
+
+  if (totalEl) totalEl.textContent = total;
+  if (pendingEl) pendingEl.textContent = pending;
+  if (confirmedEl) confirmedEl.textContent = confirmed;
+  if (completedEl) completedEl.textContent = completed;
+}
+
+function renderBookings() {
+  const container = $("#bookings-list");
+  if (!container) return;
+  let filtered = bookings;
+
+  if (bookingSearch.trim()) {
+    const q = bookingSearch.toLowerCase().trim();
+    filtered = filtered.filter((b) =>
+      (b.client_name && b.client_name.toLowerCase().includes(q)) ||
+      (b.email && b.email.toLowerCase().includes(q)) ||
+      (b.phone && b.phone.toLowerCase().includes(q)) ||
+      (b.scheduled_at && b.scheduled_at.toLowerCase().includes(q)) ||
+      (b.requirements && b.requirements.toLowerCase().includes(q)) ||
+      (b.notes && b.notes.toLowerCase().includes(q))
+    );
+  }
+
+  const countLabel = $("#bookings-count-label");
+  if (countLabel) {
+    countLabel.textContent = `Showing ${filtered.length} of ${bookings.length} call${bookings.length === 1 ? "" : "s"}`;
+  }
+
+  if (filtered.length === 0) {
+    container.replaceChildren(
+      el(
+        "div",
+        "muted",
+        bookings.length === 0
+          ? "No calls recorded yet. Nyra Rose will automatically record leads whenever someone shares their email or call time on WhatsApp or Web Chat!"
+          : "No bookings match your search query."
+      )
+    );
+    return;
+  }
+
+  container.replaceChildren(
+    ...filtered.map((b) => {
+      const item = el("div", "booking-item");
+
+      // Top row: Title + badges
+      const top = el("div", "booking-top");
+      const clientTitle = el("div", "booking-client-title");
+      clientTitle.append(
+        el("span", null, "👤 " + (b.client_name || "Lead Prospect")),
+        el("span", `badge badge-${b.status || "booked"}`, (b.status || "booked").toUpperCase()),
+        el("span", "badge badge-source", b.source === "dashboard" ? "MANUAL" : "WHATSAPP")
+      );
+      top.appendChild(clientTitle);
+
+      // Contact row (Email + WhatsApp)
+      const contactRow = el("div", "booking-contact-row");
+      if (b.email) {
+        const emailLink = document.createElement("a");
+        emailLink.className = "booking-link-pill";
+        emailLink.href = `mailto:${b.email}`;
+        emailLink.textContent = `✉️ ${b.email}`;
+        contactRow.appendChild(emailLink);
+      }
+      if (b.phone || (b.chat_id && b.chat_id.includes("@"))) {
+        const cleanPhone = (b.phone || b.chat_id.split("@")[0]).replace(/[^0-9]/g, "");
+        if (cleanPhone) {
+          const waLink = document.createElement("a");
+          waLink.className = "booking-link-pill";
+          waLink.href = `https://wa.me/${cleanPhone}`;
+          waLink.target = "_blank";
+          waLink.rel = "noopener noreferrer";
+          waLink.textContent = `💬 WhatsApp (+${cleanPhone})`;
+          contactRow.appendChild(waLink);
+        }
+      }
+      if (b.chat_id && b.chat_id !== "dashboard" && b.chat_id !== "manual_crm") {
+        const chatPill = el("span", "booking-link-pill", `Chat: ${b.chat_id.split("@")[0]}`);
+        contactRow.appendChild(chatPill);
+      }
+
+      // Scheduled time banner
+      let schedBox = null;
+      if (b.scheduled_at) {
+        schedBox = el("div", "booking-scheduled-box", `📅 Scheduled Call: ${b.scheduled_at}`);
+      }
+
+      // Requirements
+      let reqsBox = null;
+      if (b.requirements) {
+        reqsBox = el("div", "rule-content");
+        reqsBox.append(
+          el("span", "rule-triggers", "🎬 Video Scope / Plan: "),
+          el("span", "muted", b.requirements)
+        );
+      }
+
+      // Notes
+      let notesBox = null;
+      if (b.notes) {
+        notesBox = el("div", "booking-notes-box", `📝 Notes: ${b.notes}`);
+      }
+
+      // Bottom actions
+      const actions = el("div", "booking-actions");
+      const loggedInfo = el("div", "muted small-text", `Logged: ${fmtTime(b.created_at)}`);
+
+      const rightControls = el("div", "rule-ctrls");
+      const statusSelect = document.createElement("select");
+      statusSelect.className = "small";
+      statusSelect.style.width = "auto";
+      statusSelect.style.margin = "0";
+      [
+        { val: "booked", label: "Status: Booked" },
+        { val: "confirmed", label: "Status: Confirmed" },
+        { val: "completed", label: "Status: Completed" },
+        { val: "cancelled", label: "Status: Cancelled" },
+      ].forEach((opt) => {
+        const o = document.createElement("option");
+        o.value = opt.val;
+        o.textContent = opt.label;
+        if (opt.val === b.status) o.selected = true;
+        statusSelect.appendChild(o);
+      });
+
+      statusSelect.addEventListener("change", async () => {
+        const newStatus = statusSelect.value;
+        await api("PATCH", "/api/bookings", { id: b.id, status: newStatus });
+        b.status = newStatus;
+        updateBookingStats();
+        renderBookings();
+      });
+
+      const delBtn = el("button", "danger small", "Delete");
+      delBtn.addEventListener("click", async () => {
+        if (!confirm(`Delete booking record for ${b.client_name || b.email || "this client"}?`)) return;
+        await api("DELETE", `/api/bookings?id=${b.id}`);
+        bookings = bookings.filter((x) => x.id !== b.id);
+        updateBookingStats();
+        renderBookings();
+      });
+
+      rightControls.append(statusSelect, delBtn);
+      actions.append(loggedInfo, rightControls);
+
+      item.append(top, contactRow);
+      if (schedBox) item.appendChild(schedBox);
+      if (reqsBox) item.appendChild(reqsBox);
+      if (notesBox) item.appendChild(notesBox);
+      item.appendChild(actions);
+
+      return item;
+    })
+  );
+}
+
+// Bookings form & control bindings
+$("#toggle-add-booking-btn")?.addEventListener("click", () => {
+  $("#new-booking-form")?.classList.toggle("hidden");
+});
+
+$("#cancel-booking-btn")?.addEventListener("click", () => {
+  $("#new-booking-form")?.classList.add("hidden");
+});
+
+$("#refresh-bookings-btn")?.addEventListener("click", () => {
+  loadBookings();
+});
+
+$("#bookings-search")?.addEventListener("input", (e) => {
+  bookingSearch = e.target.value;
+  renderBookings();
+});
+
+$("#bookings-filter-status")?.addEventListener("change", (e) => {
+  bookingStatusFilter = e.target.value;
+  loadBookings();
+});
+
+$("#new-booking-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const clientName = $("#booking-client-name").value.trim();
+  const email = $("#booking-email").value.trim();
+  const phone = $("#booking-phone").value.trim();
+  const scheduledAt = $("#booking-scheduled").value.trim();
+  const requirements = $("#booking-reqs").value.trim();
+  const status = $("#booking-status").value;
+  const notes = $("#booking-notes").value.trim();
+
+  if (!email && !phone && !clientName) {
+    $("#booking-error").textContent = "Please provide at least a name, email, or phone.";
+    return;
+  }
+  $("#booking-error").textContent = "";
+
+  try {
+    const res = await api("POST", "/api/bookings", {
+      clientName,
+      email,
+      phone,
+      scheduledAt,
+      requirements,
+      status,
+      notes,
+      source: "dashboard",
+    });
+    bookings.unshift(res.booking);
+    updateBookingStats();
+    renderBookings();
+    $("#new-booking-form").reset();
+    $("#new-booking-form").classList.add("hidden");
+  } catch (err) {
+    $("#booking-error").textContent = err.message || "Failed to save booking";
+  }
 });
 
 // ─── Settings ────────────────────────────────────────────────────────────────
