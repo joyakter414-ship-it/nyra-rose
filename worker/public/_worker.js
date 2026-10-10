@@ -601,6 +601,8 @@ function getProvider(id) {
 // src/settings.ts
 var DEFAULT_SETTINGS = {
   enabled: true,
+  instantReplyPaused: false,
+  pausedInstantChats: [],
   provider: "workers-ai",
   model: "@cf/meta/llama-4-scout-17b-16e-instruct",
   publicModelName: "Nyra Rose Intelligence \u{1F339}",
@@ -640,6 +642,12 @@ function sanitize(s) {
   };
   return {
     enabled: Boolean(s.enabled),
+    instantReplyPaused: Boolean(s.instantReplyPaused),
+    pausedInstantChats: [
+      ...new Set(
+        (Array.isArray(s.pausedInstantChats) ? s.pausedInstantChats : []).map((p) => String(p).replace(/\D/g, "")).filter((p) => p.length >= 6)
+      )
+    ],
     provider: s.provider === "workers-ai" ? s.provider : "workers-ai",
     model: MODELS.some((m) => m.id === s.model) ? s.model : DEFAULT_SETTINGS.model,
     publicModelName: String(s.publicModelName ?? "").trim().slice(0, 80) || DEFAULT_SETTINGS.publicModelName,
@@ -775,6 +783,15 @@ function matchesTriggers(text, triggers) {
   const lower = text.toLowerCase();
   return words.some((word) => lower.includes(word));
 }
+function isInstantReplyPaused(s, chatId, senderPhone) {
+  if (s.instantReplyPaused) return true;
+  if (!Array.isArray(s.pausedInstantChats) || s.pausedInstantChats.length === 0) return false;
+  const cleanChatPhone = (chatId?.includes("@") ? chatId.split("@")[0] : chatId || "").replace(/\D/g, "");
+  const cleanSender = (senderPhone || "").replace(/\D/g, "");
+  return s.pausedInstantChats.some(
+    (p) => cleanChatPhone && p === cleanChatPhone || cleanSender && p === cleanSender
+  );
+}
 function shouldAnswer(s, m) {
   if (!s.enabled) return { ok: false, reason: "disabled" };
   if (!m.text.trim()) return { ok: false, reason: "empty" };
@@ -796,9 +813,12 @@ async function handleIncoming(env, m) {
   if (!verdict.ok) return { action: "ignore", reason: verdict.reason };
   const { muted } = await upsertChat(env, m.chatId, m.chatName ?? m.senderName ?? null, m.isGroup);
   if (muted) return { action: "ignore", reason: "chat muted" };
-  const cmdResult = await handleCommand(env, m.chatId, m.text);
-  if (cmdResult.handled && cmdResult.reply) {
-    return { action: "reply", reply: cmdResult.reply, model: "system:command", neurons: 0 };
+  const instantPaused = isInstantReplyPaused(s, m.chatId, m.senderPhone);
+  if (!instantPaused) {
+    const cmdResult = await handleCommand(env, m.chatId, m.text);
+    if (cmdResult.handled && cmdResult.reply) {
+      return { action: "reply", reply: cmdResult.reply, model: "system:command", neurons: 0 };
+    }
   }
   const msgId = `wa:${m.chatId}:${m.id}`;
   const isNew = await insertMessage(env, {
@@ -813,22 +833,24 @@ async function handleIncoming(env, m) {
   });
   if (!isNew) return { action: "ignore", reason: "duplicate delivery" };
   const rules = await getEnabledRules(env);
-  const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(m.text, r.triggers));
-  if (instantMatch) {
-    const reply = instantMatch.response;
-    await insertMessage(env, {
-      id: `rule:${crypto.randomUUID()}`,
-      chat_id: m.chatId,
-      role: "assistant",
-      sender: null,
-      sender_name: "Nyra Rose",
-      content: reply,
-      source: "whatsapp",
-      model: "rulebook:instant",
-      neurons: 0,
-      created_at: Date.now()
-    });
-    return { action: "reply", reply, model: "rulebook:instant", neurons: 0 };
+  if (!instantPaused) {
+    const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(m.text, r.triggers));
+    if (instantMatch) {
+      const reply = instantMatch.response;
+      await insertMessage(env, {
+        id: `rule:${crypto.randomUUID()}`,
+        chat_id: m.chatId,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: reply,
+        source: "whatsapp",
+        model: "rulebook:instant",
+        neurons: 0,
+        created_at: Date.now()
+      });
+      return { action: "reply", reply, model: "rulebook:instant", neurons: 0 };
+    }
   }
   return generateReply(env, s, rules, {
     chatId: m.chatId,
@@ -1783,6 +1805,9 @@ async function generateReply(env, s, rules, c) {
       console.warn("Failed updating lead / follow-up timer:", err);
     }
   }
+  if (c.source === "whatsapp" && isInstantReplyPaused(s, c.chatId, c.senderPhone)) {
+    return { action: "ignore", reason: "instant-reply-paused (follow-ups active)" };
+  }
   const memorySummary = analyzeConversationMemory({
     userContent: c.userContent,
     history,
@@ -1924,6 +1949,8 @@ async function dashboardRoutes(request, env, url) {
       if (role === "client") {
         const clientSettings = {
           enabled: settings.enabled,
+          instantReplyPaused: settings.instantReplyPaused,
+          pausedInstantChats: settings.pausedInstantChats,
           provider: "workers-ai",
           model: settings.publicModelName || "Nyra Rose Intelligence \u{1F339}",
           modelLabel: settings.publicModelName || "Nyra Rose Intelligence \u{1F339}",

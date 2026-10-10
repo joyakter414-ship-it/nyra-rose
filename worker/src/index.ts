@@ -148,6 +148,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         // - Cannot see client password
         const clientSettings: Partial<Settings> & { modelLabel: string } = {
           enabled: settings.enabled,
+          instantReplyPaused: settings.instantReplyPaused,
+          pausedInstantChats: settings.pausedInstantChats,
           provider: "workers-ai",
           model: settings.publicModelName || "Nyra Rose Intelligence 🌹",
           modelLabel: settings.publicModelName || "Nyra Rose Intelligence 🌹",

@@ -6,6 +6,17 @@ export type ReplyMode = "self" | "allowlist" | "everyone";
 export interface Settings {
   /** Master switch. When off, Nyra Rose stays silent on WhatsApp (dashboard chat still works). */
   enabled: boolean;
+  /**
+   * When true, Nyra Rose does NOT send instant replies to incoming WhatsApp messages
+   * (allowing human team members to chat manually), while keeping ALL automated follow-ups
+   * and 30-minute call reminders 100% active!
+   */
+  instantReplyPaused: boolean;
+  /**
+   * Specific phone numbers (digits only) or chat IDs where instant AI replies are paused
+   * while automated follow-ups remain active.
+   */
+  pausedInstantChats: string[];
   /** AI provider id — default "workers-ai". */
   provider: string;
   model: string;
@@ -34,6 +45,8 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
+  instantReplyPaused: false,
+  pausedInstantChats: [],
   provider: "workers-ai",
   model: "@cf/meta/llama-4-scout-17b-16e-instruct",
   publicModelName: "Nyra Rose Intelligence 🌹",
@@ -79,6 +92,14 @@ function sanitize(s: Settings): Settings {
   };
   return {
     enabled: Boolean(s.enabled),
+    instantReplyPaused: Boolean(s.instantReplyPaused),
+    pausedInstantChats: [
+      ...new Set(
+        (Array.isArray(s.pausedInstantChats) ? s.pausedInstantChats : [])
+          .map((p) => String(p).replace(/\D/g, ""))
+          .filter((p) => p.length >= 6)
+      ),
+    ],
     provider: s.provider === "workers-ai" ? s.provider : "workers-ai",
     model: MODELS.some((m) => m.id === s.model) ? s.model : DEFAULT_SETTINGS.model,
     publicModelName: String(s.publicModelName ?? "").trim().slice(0, 80) || DEFAULT_SETTINGS.publicModelName,

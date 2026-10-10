@@ -247,12 +247,208 @@ async function refreshOverview() {
     const m = (models || []).find((x) => x.id === settings.model);
     $("#quick-model").textContent = m ? m.label.split("—")[0].trim() : settings.model;
   }
+
+  renderInstantReplyControls();
+}
+
+function cleanPhoneDigits(raw) {
+  return String(raw || "")
+    .split("@")[0]
+    .replace(/\D/g, "");
+}
+
+function isChatInstantPaused(phoneOrChatId) {
+  const digits = cleanPhoneDigits(phoneOrChatId);
+  if (!digits) return false;
+  const list = overview?.settings?.pausedInstantChats || [];
+  return list.some((p) => {
+    const cleanP = cleanPhoneDigits(p);
+    return cleanP && (digits === cleanP || digits.endsWith(cleanP) || cleanP.endsWith(digits));
+  });
+}
+
+function renderInstantReplyControls() {
+  const s = overview?.settings || {};
+  const paused = Boolean(s.instantReplyPaused);
+  const pausedChats = Array.isArray(s.pausedInstantChats) ? s.pausedInstantChats : [];
+
+  const quickPaused = $("#quick-instant-paused");
+  if (quickPaused) quickPaused.checked = paused;
+
+  const quickPill = $("#quick-instant-status-pill");
+  if (quickPill) {
+    if (paused) {
+      quickPill.textContent = "⏸️ PAUSED (Follow-Ups Active)";
+      quickPill.style.background = "#eab30822";
+      quickPill.style.color = "#fde047";
+      quickPill.style.borderColor = "#eab30866";
+    } else {
+      quickPill.textContent = `⚡ Instant AI Active${pausedChats.length ? ` (${pausedChats.length} chat${pausedChats.length > 1 ? "s" : ""} paused)` : ""}`;
+      quickPill.style.background = "#10b98122";
+      quickPill.style.color = "#34d399";
+      quickPill.style.borderColor = "#10b98144";
+    }
+  }
+
+  const topbarBtn = $("#topbar-instant-pause-btn");
+  if (topbarBtn) {
+    topbarBtn.classList.remove("hidden");
+    if (paused) {
+      topbarBtn.textContent = "▶️ Instant Reply: PAUSED (Follow-Ups ON)";
+      topbarBtn.style.background = "#854d0e";
+      topbarBtn.style.color = "#fef08a";
+      topbarBtn.style.borderColor = "#eab308";
+    } else {
+      topbarBtn.textContent = `⏸️ Pause Instant Reply${pausedChats.length ? ` (${pausedChats.length})` : ""}`;
+      topbarBtn.style.background = "var(--panel-2)";
+      topbarBtn.style.color = "var(--text)";
+      topbarBtn.style.borderColor = "var(--line)";
+    }
+  }
+
+  const homeState = $("#home-instant-reply-state");
+  if (homeState) {
+    homeState.textContent = paused
+      ? "⏸️ Global Instant AI Reply is PAUSED — Nyra will NOT send instant replies so you can chat manually, while Scheduled Follow-Ups & 30m Call Reminders remain 100% ACTIVE."
+      : "⚡ Global Instant AI Reply is ACTIVE — Nyra replies immediately to incoming chats AND sends scheduled follow-ups.";
+    homeState.style.color = paused ? "#fde047" : "#34d399";
+  }
+
+  const homeBtn = $("#home-toggle-instant-pause-btn");
+  if (homeBtn) {
+    homeBtn.textContent = paused ? "▶️ Resume Global Instant AI Reply" : "⏸️ Pause All Instant AI Replies";
+    homeBtn.style.background = paused ? "#15803d" : "#854d0e";
+    homeBtn.style.color = "#fff";
+    homeBtn.style.borderColor = paused ? "#22c55e" : "#eab308";
+  }
+
+  const crmTitle = $("#crm-instant-reply-banner-title");
+  if (crmTitle) {
+    crmTitle.textContent = paused
+      ? "⏸️ Instant AI Reply Control — GLOBAL PAUSE ACTIVE (Follow-Ups Still Running)"
+      : "⏸️ Instant AI Reply Control (Human Takeover Mode)";
+  }
+
+  const crmBtn = $("#crm-toggle-instant-pause-btn");
+  if (crmBtn) {
+    crmBtn.textContent = paused ? "▶️ Resume All Instant Replies" : "⏸️ Pause All Instant Replies";
+    crmBtn.style.background = paused ? "#15803d" : "#854d0e";
+    crmBtn.style.color = "#fff";
+    crmBtn.style.borderColor = paused ? "#22c55e" : "#eab308";
+  }
+
+  const listEl = $("#home-paused-chats-list");
+  if (listEl) {
+    if (pausedChats.length === 0) {
+      listEl.replaceChildren(
+        el(
+          "span",
+          "muted small-text",
+          "No individual client chats paused. Add a WhatsApp number above or click '⏸️ Pause Instant Chat' on any client in Booked Calls CRM."
+        )
+      );
+    } else {
+      listEl.replaceChildren(
+        ...pausedChats.map((num) => {
+          const matchedBooking = (typeof bookings !== "undefined" ? bookings : []).find((b) => {
+            const bDigits = cleanPhoneDigits(b.phone || b.chat_id);
+            return bDigits && (bDigits === num || bDigits.endsWith(num) || num.endsWith(bDigits));
+          });
+          const label = matchedBooking?.client_name ? `${matchedBooking.client_name} (+${num})` : `+${num}`;
+          const pill = el("span", "badge");
+          pill.style.background = "#422006";
+          pill.style.color = "#fde047";
+          pill.style.border = "1px solid #eab30866";
+          pill.style.display = "inline-flex";
+          pill.style.alignItems = "center";
+          pill.style.gap = "8px";
+          pill.style.padding = "5px 10px";
+          pill.append(el("span", null, `⏸️ ${label} (Follow-Ups ON)`));
+          const resumeBtn = el("button", "small", "▶️ Resume");
+          resumeBtn.style.padding = "2px 6px";
+          resumeBtn.style.fontSize = "11px";
+          resumeBtn.style.background = "#15803d";
+          resumeBtn.style.color = "#fff";
+          resumeBtn.style.border = "none";
+          resumeBtn.addEventListener("click", () => toggleChatInstantPause(num));
+          pill.appendChild(resumeBtn);
+          return pill;
+        })
+      );
+    }
+  }
+}
+
+async function setGlobalInstantPause(nextPaused) {
+  const res = await api("PUT", "/api/settings", { instantReplyPaused: Boolean(nextPaused) });
+  if (overview?.settings) {
+    overview.settings.instantReplyPaused = Boolean(res.settings?.instantReplyPaused ?? nextPaused);
+  }
+  renderInstantReplyControls();
+  if (typeof fillSettings === "function") fillSettings();
+  if (typeof renderBookings === "function") renderBookings();
+}
+
+async function toggleChatInstantPause(phoneOrChatId) {
+  const digits = cleanPhoneDigits(phoneOrChatId);
+  if (!digits || digits.length < 6) {
+    alert("Please provide a valid WhatsApp phone number (at least 6 digits) to pause or resume instant AI replies.");
+    return;
+  }
+  const current = Array.isArray(overview?.settings?.pausedInstantChats) ? [...overview.settings.pausedInstantChats] : [];
+  const existsIdx = current.findIndex((p) => {
+    const cleanP = cleanPhoneDigits(p);
+    return cleanP && (digits === cleanP || digits.endsWith(cleanP) || cleanP.endsWith(digits));
+  });
+  let nextList;
+  if (existsIdx >= 0) {
+    nextList = current.filter((_, i) => i !== existsIdx);
+  } else {
+    nextList = [...current, digits];
+  }
+  const res = await api("PUT", "/api/settings", { pausedInstantChats: nextList });
+  if (overview?.settings) {
+    overview.settings.pausedInstantChats = res.settings?.pausedInstantChats || nextList;
+  }
+  renderInstantReplyControls();
+  if (typeof fillSettings === "function") fillSettings();
+  if (typeof renderBookings === "function") renderBookings();
 }
 
 $("#quick-enabled").addEventListener("change", async (e) => {
   const enabled = e.target.checked;
   await api("PUT", "/api/settings", { enabled });
   overview.settings.enabled = enabled;
+});
+
+$("#quick-instant-paused")?.addEventListener("change", async (e) => {
+  await setGlobalInstantPause(e.target.checked);
+});
+
+$("#topbar-instant-pause-btn")?.addEventListener("click", async () => {
+  await setGlobalInstantPause(!overview?.settings?.instantReplyPaused);
+});
+
+$("#home-toggle-instant-pause-btn")?.addEventListener("click", async () => {
+  await setGlobalInstantPause(!overview?.settings?.instantReplyPaused);
+});
+
+$("#crm-toggle-instant-pause-btn")?.addEventListener("click", async () => {
+  await setGlobalInstantPause(!overview?.settings?.instantReplyPaused);
+});
+
+$("#home-add-paused-chat-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#home-paused-chat-input");
+  const digits = cleanPhoneDigits(input?.value || "");
+  if (!digits || digits.length < 6) {
+    alert("Enter a valid WhatsApp phone number with country code (e.g. 8801873877905).");
+    return;
+  }
+  if (!isChatInstantPaused(digits)) {
+    await toggleChatInstantPause(digits);
+  }
+  if (input) input.value = "";
 });
 
 async function wakeGateway(btn) {
@@ -344,7 +540,11 @@ async function loadChats() {
     ...chats.map((c) => {
       const item = el("div", `chat-item ${currentChat === c.chat_id ? "active" : ""}`);
       const info = el("div");
-      info.append(el("div", "title", c.name || c.chat_id), el("div", "sub", `${c.message_count} messages · ${fmtTime(c.last_at)}`));
+      const paused = isChatInstantPaused(c.chat_id) || Boolean(overview?.settings?.instantReplyPaused);
+      info.append(
+        el("div", "title", `${c.name || c.chat_id}${paused ? " ⏸️" : ""}`),
+        el("div", "sub", `${c.message_count} messages · ${fmtTime(c.last_at)}${paused ? " · Instant AI Paused (Follow-Ups ON)" : ""}`)
+      );
       item.append(info);
       item.addEventListener("click", () => selectChat(c));
       return item;
@@ -355,10 +555,23 @@ async function loadChats() {
 
 async function selectChat(c) {
   currentChat = c.chat_id;
-  $("#conv-title").textContent = c.name || c.chat_id;
+  const chatPaused = isChatInstantPaused(c.chat_id);
+  $("#conv-title").textContent = `${c.name || c.chat_id}${chatPaused ? " (⏸️ Instant AI Paused · Follow-Ups Active)" : ""}`;
+  const pauseInstantBtn = $("#conv-pause-instant");
+  if (pauseInstantBtn) {
+    pauseInstantBtn.classList.remove("hidden");
+    pauseInstantBtn.textContent = chatPaused ? "▶️ Resume Instant Reply" : "⏸️ Pause Instant Reply (Keep Follow-Ups)";
+    pauseInstantBtn.style.background = chatPaused ? "#15803d" : "#854d0e";
+    pauseInstantBtn.style.color = "#fff";
+    pauseInstantBtn.onclick = async () => {
+      await toggleChatInstantPause(c.chat_id);
+      await loadChats();
+      selectChat(c);
+    };
+  }
   const muteBtn = $("#conv-mute");
   muteBtn.classList.remove("hidden");
-  muteBtn.textContent = c.muted ? "Unmute" : "Mute";
+  muteBtn.textContent = c.muted ? "Unmute All (Stop Everything)" : "Mute All";
   muteBtn.onclick = async () => {
     await api("PATCH", "/api/chats", { chat: c.chat_id, muted: !c.muted });
     c.muted = !c.muted;
@@ -790,6 +1003,9 @@ function renderBookings() {
       const top = el("div", "booking-top");
       const clientTitle = el("div", "booking-client-title");
       clientTitle.style.flexWrap = "wrap";
+      const clientDigits = cleanPhoneDigits(b.phone || b.chat_id);
+      const isClientChatPaused = isChatInstantPaused(clientDigits);
+      const isGlobalInstantPaused = Boolean(overview?.settings?.instantReplyPaused);
       clientTitle.append(
         el("span", null, "👤 " + (b.client_name || "Lead Client")),
         el("span", `badge badge-${b.status || "booked"}`, STATUS_LABELS[b.status] || b.status),
@@ -797,6 +1013,17 @@ function renderBookings() {
         el("span", "badge badge-timer", formatNextFollowupTimer(b)),
         el("span", "badge badge-source", b.source === "dashboard" ? "MANUAL" : "WHATSAPP")
       );
+      if (isClientChatPaused || isGlobalInstantPaused) {
+        const pausedBadge = el(
+          "span",
+          "badge",
+          isClientChatPaused ? "⏸️ Instant Chat Paused (Follow-Ups ON)" : "⏸️ Global Instant Pause (Follow-Ups ON)"
+        );
+        pausedBadge.style.background = "#854d0e";
+        pausedBadge.style.color = "#fef08a";
+        pausedBadge.style.border = "1px solid #eab308";
+        clientTitle.appendChild(pausedBadge);
+      }
       top.appendChild(clientTitle);
 
       // Contact row (Email, WhatsApp, Timezone, Website)
@@ -1085,6 +1312,23 @@ function renderBookings() {
       }
       followupBtn.addEventListener("click", () => openFollowupModal(b));
 
+      // Per-client Pause Instant Chat button (keeps follow-ups active)
+      let pauseChatBtn = null;
+      if (clientDigits && clientDigits.length >= 6) {
+        pauseChatBtn = el(
+          "button",
+          "small",
+          isClientChatPaused ? "▶️ Resume Instant Chat" : "⏸️ Pause Instant Chat"
+        );
+        pauseChatBtn.title = "Pause instant AI replies for this client so a human can chat manually, while keeping scheduled follow-ups active";
+        pauseChatBtn.style.background = isClientChatPaused ? "#15803d" : "#854d0e";
+        pauseChatBtn.style.color = "#fff";
+        pauseChatBtn.style.border = isClientChatPaused ? "1px solid #22c55e" : "1px solid #eab308";
+        pauseChatBtn.addEventListener("click", async () => {
+          await toggleChatInstantPause(clientDigits);
+        });
+      }
+
       const delBtn = el("button", "danger small", "Delete");
       delBtn.addEventListener("click", async () => {
         if (!confirm(`Delete booking record for ${b.client_name || b.email || "this client"}?`)) return;
@@ -1094,7 +1338,11 @@ function renderBookings() {
         renderBookings();
       });
 
-      rightControls.append(followupBtn, timerSelect, followupSelect, statusSelect, delBtn);
+      if (pauseChatBtn) {
+        rightControls.append(followupBtn, pauseChatBtn, timerSelect, followupSelect, statusSelect, delBtn);
+      } else {
+        rightControls.append(followupBtn, timerSelect, followupSelect, statusSelect, delBtn);
+      }
       actions.append(loggedInfo, rightControls);
 
       item.append(top, contactRow);
@@ -1485,6 +1733,8 @@ async function fillSettings() {
   }
 
   f.enabled.checked = Boolean(s.enabled);
+  if (f.instantReplyPaused) f.instantReplyPaused.checked = Boolean(s.instantReplyPaused);
+  if (f.pausedInstantChats) f.pausedInstantChats.value = (s.pausedInstantChats || []).join("\n");
   f.ownerName.value = s.ownerName || "";
   f.replyMode.value = s.replyMode || "self";
   f.allowlist.value = (s.allowlist || []).join("\n");
@@ -1511,6 +1761,13 @@ $("#settings-form").addEventListener("submit", async (e) => {
     const isClient = overview?.role === "client";
     const payload = {
       enabled: f.enabled.checked,
+      instantReplyPaused: f.instantReplyPaused ? f.instantReplyPaused.checked : Boolean(overview?.settings?.instantReplyPaused),
+      pausedInstantChats: f.pausedInstantChats
+        ? f.pausedInstantChats.value
+            .split(/[\n,]/)
+            .map((x) => cleanPhoneDigits(x))
+            .filter((x) => x.length >= 6)
+        : overview?.settings?.pausedInstantChats || [],
       ownerName: f.ownerName.value,
       replyMode: f.replyMode.value,
       allowlist: f.allowlist.value.split(/[\n,]/).map((x) => x.trim()).filter(Boolean),
@@ -1531,6 +1788,8 @@ $("#settings-form").addEventListener("submit", async (e) => {
     const { settings } = await api("PUT", "/api/settings", payload);
     overview.settings = { ...overview.settings, ...settings };
     fillSettings();
+    renderInstantReplyControls();
+    if (typeof renderBookings === "function") renderBookings();
     $("#settings-saved").textContent = "Saved ✓";
     setTimeout(() => ($("#settings-saved").textContent = ""), 2500);
   } catch (err) {

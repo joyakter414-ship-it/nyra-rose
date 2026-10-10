@@ -38,7 +38,12 @@
         <button data-tab="todos" class="tab">Tasks ✅</button>
         <button data-tab="settings" class="tab">Settings</button>
       </nav>
-      <button id="logout" class="ghost small">Sign out</button>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <button id="topbar-instant-pause-btn" type="button" class="small ghost" title="Toggle Instant AI Reply while keeping Automated Follow-Ups Active" style="font-weight: 600;">
+          ⚡ Instant Reply: ON
+        </button>
+        <button id="logout" class="ghost small">Sign out</button>
+      </div>
     </header>
 
     <!-- Home -->
@@ -80,8 +85,53 @@
         <div class="card">
           <h2>Quick switches</h2>
           <label class="switch"><input type="checkbox" id="quick-enabled" /> <span>Nyra Rose answers on WhatsApp</span></label>
-          <p class="muted">Reply mode: <b id="quick-mode"></b></p>
+          <label class="switch" style="margin-top: 10px;">
+            <input type="checkbox" id="quick-instant-paused" />
+            <span>⏸️ Pause Instant AI Reply <small class="muted">(Follow-Ups Stay Active)</small></span>
+          </label>
+          <div id="quick-instant-status-pill" style="margin-top: 8px; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;"></div>
+          <p class="muted" style="margin-top: 10px;">Reply mode: <b id="quick-mode"></b></p>
           <p class="muted">Model: <b id="quick-model"></b></p>
+        </div>
+      </div>
+
+      <!-- Dedicated Pause Instant Reply & Active Follow-Up Section on Home -->
+      <div class="card" style="margin-top: 16px;">
+        <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 style="margin: 0;">⏸️ Instant AI Reply & Active Follow-Up Control</h2>
+            <p class="muted small-text" style="margin-top: 4px;">
+              When <b>Pause Instant AI Reply</b> is ON, Nyra will <b>NOT</b> reply instantly to incoming WhatsApp messages (so you or your sales team can chat manually), while <b>Automated Follow-Ups & 30-Min Call Reminders stay 100% ACTIVE</b>.
+            </p>
+          </div>
+          <button id="home-toggle-instant-pause-btn" type="button" class="small" style="font-weight: 600;">
+            ⏸️ Pause Instant AI Reply
+          </button>
+        </div>
+
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+          <div style="flex: 1; min-width: 240px; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
+            <div class="muted small-text">Instant WhatsApp Chat Reply</div>
+            <div id="home-instant-reply-state" style="font-size: 15px; font-weight: 700; margin-top: 4px;">🟢 Active (Replying Instantly)</div>
+          </div>
+          <div style="flex: 1; min-width: 240px; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
+            <div class="muted small-text">Automated Follow-Ups & 30m Call Reminders</div>
+            <div style="font-size: 15px; font-weight: 700; color: #34d399; margin-top: 4px;">🔔 Always Active (Never Stopped by Pause)</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <b style="font-size: 13.5px;">Paused Individual Chats (No Instant Reply · Follow-Ups Active)</b>
+              <p class="muted small-text" style="margin: 2px 0 0;">Pause instant AI replies for specific client numbers while keeping their scheduled follow-ups running.</p>
+            </div>
+            <form id="home-add-paused-chat-form" style="display: flex; gap: 8px; align-items: center; margin: 0;">
+              <input id="home-paused-chat-input" placeholder="Phone e.g. 8801873877905" style="margin: 0; width: 200px; padding: 6px 10px; font-size: 13px;" />
+              <button type="submit" class="small ghost" style="white-space: nowrap;">+ Pause Chat</button>
+            </form>
+          </div>
+          <div id="home-paused-chats-list" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;"></div>
         </div>
       </div>
     </section>
@@ -109,9 +159,10 @@
           <div id="chat-list"></div>
         </div>
         <div class="card">
-          <div class="chat-head">
+          <div class="chat-head" style="flex-wrap: wrap; gap: 8px;">
             <h2 id="conv-title">Select a conversation</h2>
-            <div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button id="conv-pause-instant" class="ghost small hidden" title="Pause instant AI replies for this chat while keeping automated follow-ups active"></button>
               <button id="conv-mute" class="ghost small hidden"></button>
               <button id="conv-clear" class="danger small hidden">Clear history</button>
             </div>
@@ -123,6 +174,21 @@
 
     <!-- Booked Calls CRM Sheet -->
     <section id="tab-bookings" class="page hidden">
+      <!-- Management Instant AI Reply & Active Follow-Up Bar -->
+      <div class="card" style="margin-bottom: 16px; padding: 12px 16px; border-left: 4px solid var(--rose);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div style="font-weight: 700; font-size: 14.5px;" id="crm-instant-reply-banner-title">⚡ Instant AI Reply: ACTIVE · 🔔 Automated Follow-Ups: ACTIVE</div>
+            <div class="muted small-text" id="crm-instant-reply-banner-sub">
+              Turn on "Pause Instant AI Reply" if you want to reply to clients manually on WhatsApp without stopping scheduled follow-ups or 30m call reminders.
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button id="crm-toggle-instant-pause-btn" type="button" class="small">⏸️ Pause Instant AI Reply</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Stats bar -->
       <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); margin-bottom: 16px;">
         <div class="card" style="padding: 12px 14px;">
@@ -460,7 +526,18 @@
       <form id="settings-form" class="card settings">
         <h2>Settings</h2>
 
-        <label class="switch"><input type="checkbox" name="enabled" /> <span>Nyra Rose answers on WhatsApp</span></label>
+        <label class="switch"><input type="checkbox" name="enabled" /> <span>Nyra Rose answers on WhatsApp (Master Switch)</span></label>
+
+        <fieldset style="margin-top: 14px; border-color: var(--rose);">
+          <legend>⏸️ Pause Instant AI Reply & Paused Chats (Follow-Ups Stay Active)</legend>
+          <label class="switch">
+            <input type="checkbox" name="instantReplyPaused" />
+            <span><b>Pause Instant AI Replies Globally</b> — Do NOT send instant chat replies, but keep all automated follow-ups & 30m call reminders 100% active</span>
+          </label>
+          <label style="margin-top: 10px;">Paused Chat Numbers <span class="muted">(one phone number per line, e.g. 8801873877905 — pauses instant replies for these specific chats while keeping their follow-ups active)</span>
+            <textarea name="pausedInstantChats" rows="3" placeholder="e.g. 8801873877905"></textarea>
+          </label>
+        </fieldset>
 
         <label>Your name <span class="muted">(she serves you)</span>
           <input name="ownerName" placeholder="e.g. Akter" />

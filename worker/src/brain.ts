@@ -49,6 +49,16 @@ function matchesTriggers(text: string, triggers: string): boolean {
   return words.some((word) => lower.includes(word));
 }
 
+export function isInstantReplyPaused(s: Settings, chatId?: string | null, senderPhone?: string | null): boolean {
+  if (s.instantReplyPaused) return true;
+  if (!Array.isArray(s.pausedInstantChats) || s.pausedInstantChats.length === 0) return false;
+  const cleanChatPhone = (chatId?.includes("@") ? chatId.split("@")[0] : chatId || "").replace(/\D/g, "");
+  const cleanSender = (senderPhone || "").replace(/\D/g, "");
+  return s.pausedInstantChats.some(
+    (p) => (cleanChatPhone && p === cleanChatPhone) || (cleanSender && p === cleanSender),
+  );
+}
+
 /** Decide whether Nyra Rose should answer, without touching the DB or AI. */
 export function shouldAnswer(s: Settings, m: IncomingMessage): { ok: true } | { ok: false; reason: string } {
   if (!s.enabled) return { ok: false, reason: "disabled" };
@@ -76,10 +86,14 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
   const { muted } = await upsertChat(env, m.chatId, m.chatName ?? m.senderName ?? null, m.isGroup);
   if (muted) return { action: "ignore", reason: "chat muted" };
 
+  const instantPaused = isInstantReplyPaused(s, m.chatId, m.senderPhone);
+
   // 1. Built-in command dispatcher (/help, /note, /todo, /status, /reset)
-  const cmdResult = await handleCommand(env, m.chatId, m.text);
-  if (cmdResult.handled && cmdResult.reply) {
-    return { action: "reply", reply: cmdResult.reply, model: "system:command", neurons: 0 };
+  if (!instantPaused) {
+    const cmdResult = await handleCommand(env, m.chatId, m.text);
+    if (cmdResult.handled && cmdResult.reply) {
+      return { action: "reply", reply: cmdResult.reply, model: "system:command", neurons: 0 };
+    }
   }
 
   const msgId = `wa:${m.chatId}:${m.id}`;
@@ -95,24 +109,26 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
   });
   if (!isNew) return { action: "ignore", reason: "duplicate delivery" };
 
-  // 2. Rule Book check: instant reply triggers (free, 0 Neurons)
+  // 2. Rule Book check: instant reply triggers (free, 0 Neurons) — skipped if instant reply is paused
   const rules = await getEnabledRules(env);
-  const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(m.text, r.triggers));
-  if (instantMatch) {
-    const reply = instantMatch.response;
-    await insertMessage(env, {
-      id: `rule:${crypto.randomUUID()}`,
-      chat_id: m.chatId,
-      role: "assistant",
-      sender: null,
-      sender_name: "Nyra Rose",
-      content: reply,
-      source: "whatsapp",
-      model: "rulebook:instant",
-      neurons: 0,
-      created_at: Date.now(),
-    });
-    return { action: "reply", reply, model: "rulebook:instant", neurons: 0 };
+  if (!instantPaused) {
+    const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(m.text, r.triggers));
+    if (instantMatch) {
+      const reply = instantMatch.response;
+      await insertMessage(env, {
+        id: `rule:${crypto.randomUUID()}`,
+        chat_id: m.chatId,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: reply,
+        source: "whatsapp",
+        model: "rulebook:instant",
+        neurons: 0,
+        created_at: Date.now(),
+      });
+      return { action: "reply", reply, model: "rulebook:instant", neurons: 0 };
+    }
   }
 
   return generateReply(env, s, rules, {
@@ -1470,6 +1486,12 @@ async function generateReply(
     } catch (err) {
       console.warn("Failed updating lead / follow-up timer:", err);
     }
+  }
+
+  // If Instant AI Reply is paused (globally or for this chat), we already logged the message
+  // and updated the CRM lead & follow-up timers above — now skip sending an instant AI reply!
+  if (c.source === "whatsapp" && isInstantReplyPaused(s, c.chatId, c.senderPhone)) {
+    return { action: "ignore", reason: "instant-reply-paused (follow-ups active)" };
   }
 
   const memorySummary = analyzeConversationMemory({
