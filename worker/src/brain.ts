@@ -615,6 +615,8 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   clientName: string | null;
   isClientChoiceFollowup: boolean;
   isRescheduleRequest: boolean;
+  inferredStatus: BookingStatus | null;
+  inferredFollowupType: FollowupType | null;
 } {
   // Normalize spaces around time colons ("1: 30 pm" -> "1:30 pm") and "latter" -> "later"
   const normalizedText = text
@@ -647,21 +649,27 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   const nameMatch = normalizedText.match(nameRegex);
   const clientName = nameMatch ? nameMatch[1].trim() : null;
 
-  // Detect time/date mentions and relative phrases ("today 1:30 pm", "in 1:30", "21 min later", "tomorrow at 4pm")
+  // Detect time/date mentions and relative phrases ("today 1:30 pm", "in 1:30", "2 hour later", "tomorrow at 4pm", "at 2 pm")
   const timePhraseRegex =
-    /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)|(?:in|after)\s+\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+    /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
   const timePhraseMatch = normalizedText.match(timePhraseRegex);
   let time: string | null = null;
   if (timePhraseMatch) {
-    // Also include "today" / "tomorrow" / weekday if it precedes a bare time like "today 1:30 pm"
-    const dayPrefixMatch = normalizedText.match(/\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    // Avoid matching package numbers like "30 days" unless accompanied by in/after/later
     const rawMatched = timePhraseMatch[0].trim();
-    if (dayPrefixMatch && !rawMatched.toLowerCase().includes(dayPrefixMatch[1].toLowerCase())) {
-      time = `${dayPrefixMatch[1]} ${rawMatched}`;
-    } else {
-      time = rawMatched;
+    const isBareUnitWithoutCue =
+      /^\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?$/i.test(rawMatched) &&
+      !/\b(in|after|later|free|msg|message|text|talk|call|ping|remind|back)\b/i.test(normalizedText);
+    if (!isBareUnitWithoutCue) {
+      const dayPrefixMatch = normalizedText.match(/\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+      if (dayPrefixMatch && !rawMatched.toLowerCase().includes(dayPrefixMatch[1].toLowerCase())) {
+        time = `${dayPrefixMatch[1]} ${rawMatched}`;
+      } else {
+        time = rawMatched;
+      }
     }
-  } else {
+  }
+  if (!time) {
     const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning|next week)/i;
     const looseMatch = normalizedText.match(looseTime);
     if (looseMatch) {
@@ -696,22 +704,60 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
       lower.startsWith("no ") ||
       lower.startsWith("no,"));
 
+  const hasExplicitCallWord =
+    lower.includes("book") ||
+    lower.includes("call") ||
+    lower.includes("meet") ||
+    lower.includes("zoom") ||
+    lower.includes("schedule") ||
+    lower.includes("slot");
+
+  // Client says when they are free or will message later ("i msg you 2 hour later", "i am free at 2 pm", "busy now talk in 2 hours")
   const isClientChoiceFollowup =
     Boolean(time) &&
     !isRescheduleRequest &&
-    !lower.includes("book") &&
-    !lower.includes("call") &&
-    (lower.includes("follow up") ||
+    !hasExplicitCallWord &&
+    !email &&
+    (lower.includes("msg") ||
+      lower.includes("message") ||
+      lower.includes("text") ||
+      lower.includes("free") ||
+      lower.includes("available") ||
+      lower.includes("follow up") ||
       lower.includes("followup") ||
-      lower.includes("message me") ||
-      lower.includes("text me") ||
-      lower.includes("contact me") ||
+      lower.includes("contact") ||
       lower.includes("reach out") ||
-      lower.includes("ping me") ||
-      lower.includes("remind me") ||
+      lower.includes("ping") ||
+      lower.includes("remind") ||
       lower.includes("busy") ||
-      lower.includes("talk later") ||
+      lower.includes("talk") ||
+      lower.includes("chat") ||
+      lower.includes("later") ||
+      lower.includes("after") ||
       lower.includes("check back"));
+
+  // Automatically infer lead status updates from client's message
+  let inferredStatus: BookingStatus | null = null;
+  let inferredFollowupType: FollowupType | null = null;
+
+  if (
+    /\b(not interested|no interest|stop messaging|don't message|dont message|remove me|unsubscribe|don't need|dont need|no need|already hired|already have an editor)\b/i.test(lower)
+  ) {
+    inferredStatus = "not_interested";
+    inferredFollowupType = "rejected";
+  } else if (
+    /\b(missed the call|missed our call|sorry i missed|couldn't join|couldnt join|wasn't able to join)\b/i.test(lower)
+  ) {
+    inferredStatus = "not_attended";
+    inferredFollowupType = "not_attended";
+  } else if (
+    /\b(buy in a few days|start in a few days|start next week|buy next week|still deciding|thinking about the package|will order soon|buy soon)\b/i.test(lower)
+  ) {
+    inferredStatus = "buy_soon";
+    inferredFollowupType = "buy_soon";
+  } else if (/\b(on hold|pause for now|maybe next month|not right now)\b/i.test(lower)) {
+    inferredFollowupType = "on_hold";
+  }
 
   // Extract requirements from user text and recent conversation history
   const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), normalizedText].join(" ").toLowerCase();
@@ -755,6 +801,8 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
     clientName,
     isClientChoiceFollowup,
     isRescheduleRequest,
+    inferredStatus,
+    inferredFollowupType,
   };
 }
 
@@ -818,9 +866,10 @@ export function generateFollowupText(b: {
     return longTermTemplates[count % longTermTemplates.length];
   }
 
-  // Stage 4: Client Choice Date Follow-Up
+  // Stage 4: Client Choice Time / Date Follow-Up ("i msg you 2 hour later", "i am free at 2 pm")
   if (type === "client_date") {
-    return `Hi ${name}! Hope you're doing well. You mentioned following up around today${b.scheduled_at ? ` (${b.scheduled_at})` : ""} — would now be a convenient time to arrange a quick call and discuss your video editing requirements?`;
+    const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
+    return `Hi ${name}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a convenient time to chat or arrange a quick call about your video editing requirements?`;
   }
 
   // Stage 5: Custom Management Timer Follow-Up
@@ -1156,11 +1205,12 @@ async function generateReply(
           }
         }
       }
-      // CASE 2: Client asks to follow up on a specific date ("Client Choice Follow-Up")
+      // CASE 2: Client says when they are free / will message later ("i msg you 2 hour later", "i am free at 2 pm", "follow up tomorrow")
       else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
         const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
-        const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 24 * 3600 * 1000;
+        const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 2 * 3600 * 1000;
         const formattedFollowupTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
+        const nextStatus = bookingInfo.inferredStatus || (existing?.status && existing.status !== "fake_lead" ? existing.status : "lead");
 
         if (existing) {
           await updateBooking(env, existing.id, {
@@ -1169,8 +1219,10 @@ async function generateReply(
             email: bookingInfo.email || existing.email,
             scheduled_at: `Follow-up: ${formattedFollowupTime}`,
             timezone: effTz,
+            status: nextStatus,
             followup_type: "client_date",
             next_followup_at: targetFollowupMs,
+            followup_interval_hours: Math.max(0.5, Math.round(((targetFollowupMs - nowMs) / (3600 * 1000)) * 10) / 10),
             last_client_reply_at: nowMs,
           });
         } else {
@@ -1183,35 +1235,75 @@ async function generateReply(
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite,
             requirements: bookingInfo.requirements,
-            status: "lead",
+            status: nextStatus,
             followup_type: "client_date",
             next_followup_at: targetFollowupMs,
+            followup_interval_hours: Math.max(0.5, Math.round(((targetFollowupMs - nowMs) / (3600 * 1000)) * 10) / 10),
             last_client_reply_at: nowMs,
             source: c.source,
           });
         }
 
-        bookingContext = `The client requested that you follow up with them at "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll reach back out to them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
+        bookingContext = `The client mentioned they will be free or message around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
       }
-      // CASE 3: General lead message (or client saying "ok / yes / book this time" to an already booked call)
+      // CASE 3: General lead message + automatic status detection ("not interested", "buy in few days", "confirmed", etc.)
       else {
+        const isConfirmingBookedCall =
+          existing?.status === "booked" &&
+          /\b(yes|yeah|yep|ok|okay|sure|sounds good|works for me|confirmed|confirm|perfect|great|see you|book this time)\b/i.test(lowerContent);
+
         if (existing) {
-          const isBooked = existing.status === "booked" || existing.status === "confirmed";
-          const isStopped = existing.followup_type === "rejected" || existing.status === "not_interested" || existing.status === "fake_lead";
+          const nextStatus: BookingStatus =
+            bookingInfo.inferredStatus ||
+            (isConfirmingBookedCall ? "confirmed" : existing.status === "fake_lead" ? "lead" : existing.status);
+          const isBooked = nextStatus === "booked" || nextStatus === "confirmed";
+          const isStopped =
+            bookingInfo.inferredFollowupType === "rejected" ||
+            nextStatus === "not_interested" ||
+            existing.followup_type === "rejected";
+
+          let nextFollowupType: FollowupType = existing.followup_type;
+          let nextFollowupAt: number | null = existing.next_followup_at;
+          let nextInterval = existing.followup_interval_hours ?? 3.5;
+
+          if (isStopped) {
+            nextFollowupType = "rejected";
+            nextFollowupAt = null;
+            nextInterval = 0;
+          } else if (bookingInfo.inferredFollowupType) {
+            nextFollowupType = bookingInfo.inferredFollowupType;
+            nextInterval = bookingInfo.inferredFollowupType === "on_hold" ? 48 : 24;
+            nextFollowupAt = nowMs + nextInterval * 3600 * 1000;
+          } else if (isBooked) {
+            nextFollowupType = "call_reminder";
+            nextFollowupAt = existing.next_followup_at;
+            nextInterval = 0;
+          } else {
+            nextFollowupType = "auto_day1";
+            nextFollowupAt = nowMs + 3.5 * 3600 * 1000;
+            nextInterval = 3.5;
+          }
+
           await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
             timezone: existing.timezone || phoneTz?.code || "BDT",
             company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
             requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
+            status: nextStatus,
             last_client_reply_at: nowMs,
-            // If lead hasn't booked and isn't stopped, reset to Day 1 Auto Follow-up (3.5 hours later)
-            followup_type: isBooked ? "call_reminder" : isStopped ? existing.followup_type : "auto_day1",
-            next_followup_at: isBooked ? existing.next_followup_at : isStopped ? null : nowMs + 3.5 * 3600 * 1000,
-            followup_interval_hours: isBooked ? 0 : 3.5,
+            followup_type: nextFollowupType,
+            next_followup_at: nextFollowupAt,
+            followup_interval_hours: nextInterval,
           });
         } else if (c.chatId !== "dashboard") {
-          // New WhatsApp lead -> automatically register for Day 1 Auto Follow-Up (every 3.5 hours) with phone timezone
+          const nextStatus: BookingStatus = bookingInfo.inferredStatus || "lead";
+          const isStopped = bookingInfo.inferredFollowupType === "rejected" || nextStatus === "not_interested";
+          const nextFollowupType: FollowupType = isStopped
+            ? "rejected"
+            : bookingInfo.inferredFollowupType || "auto_day1";
+          const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 3.5;
+
           await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
@@ -1221,10 +1313,10 @@ async function generateReply(
             timezone: bookingInfo.timezone || phoneTz?.code || "BDT",
             company_or_website: bookingInfo.companyOrWebsite,
             requirements: bookingInfo.requirements,
-            status: "lead",
-            followup_type: "auto_day1",
-            next_followup_at: nowMs + 3.5 * 3600 * 1000,
-            followup_interval_hours: 3.5,
+            status: nextStatus,
+            followup_type: nextFollowupType,
+            next_followup_at: isStopped ? null : nowMs + nextInterval * 3600 * 1000,
+            followup_interval_hours: nextInterval,
             last_client_reply_at: nowMs,
             source: c.source,
           });
