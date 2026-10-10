@@ -293,14 +293,23 @@ async function generateReply(
 
       if (existing) {
         await updateBooking(env, existing.id, {
-          client_name: existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name,
+          client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
           phone: computedPhone || existing.phone,
           email: bookingInfo.email || existing.email,
           scheduled_at: bookingInfo.time || existing.scheduled_at,
           requirements: bookingInfo.requirements || existing.requirements,
           status: (bookingInfo.email || existing.email) && (bookingInfo.time || existing.scheduled_at) ? "booked" : existing.status,
         });
-        bookingContext = `Call booking record updated in CRM Sheet: Client: ${computedName}, Email: ${bookingInfo.email || existing.email}, Time: ${bookingInfo.time || existing.scheduled_at}.`;
+
+        const effEmail = bookingInfo.email || existing.email;
+        const effTime = bookingInfo.time || existing.scheduled_at;
+        if (effEmail && effTime) {
+          bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and preferred time (${effTime}). Acknowledge these details naturally as a human sales representative: let them know you've noted it down and our sales manager will review our schedule and send over the invite shortly. NEVER say "CRM", "app", "database", "sheet", or that you are an AI.`;
+        } else if (effTime && !effEmail) {
+          bookingContext = `The client mentioned a preferred time (${effTime}), but hasn't shared their email yet. Acknowledge the time naturally and ask for their email address so our manager can send the calendar invite.`;
+        } else if (effEmail && !effTime) {
+          bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time. Acknowledge the email and ask what day and time works best for a quick 15-minute call.`;
+        }
       } else {
         await createBooking(env, {
           chat_id: c.chatId,
@@ -312,7 +321,16 @@ async function generateReply(
           status: "booked",
           source: c.source,
         });
-        bookingContext = `NEW CALL BOOKING SAVED IN CRM SHEET! Client: ${computedName}, Email: ${bookingInfo.email || "Pending"}, Scheduled Time: ${bookingInfo.time || "Pending"}. Warmly confirm to the client that their call request has been recorded into Vidmox's calendar schedule!`;
+
+        if (bookingInfo.email && bookingInfo.time) {
+          bookingContext = `The client provided their name (${computedName}), email (${bookingInfo.email}), and preferred time (${bookingInfo.time}). Acknowledge these details naturally as a human sales representative: let them know you've noted down their time and email, and our sales manager will review our calendar and send over the invite shortly. NEVER say "CRM", "app", "database", "sheet", or that you are an AI.`;
+        } else if (bookingInfo.time && !bookingInfo.email) {
+          bookingContext = `The client mentioned a preferred time (${bookingInfo.time}), but hasn't given their email. Acknowledge the time warmly and ask what email address our manager should send the invite to.`;
+        } else if (bookingInfo.email && !bookingInfo.time) {
+          bookingContext = `The client provided their email (${bookingInfo.email}), but hasn't mentioned a time. Acknowledge their email and ask what day and time works best for a quick 15-minute call.`;
+        } else {
+          bookingContext = `The client is interested in discussing their project. Suggest arranging a quick 15-minute discovery call with our sales manager and ask for their preferred day/time and email address.`;
+        }
       }
     } catch (err) {
       console.warn("Failed recording call booking lead:", err);
