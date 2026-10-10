@@ -2,6 +2,8 @@ import type { AppEnv } from "./env";
 import { getLiveNeuronUsage } from "./analytics";
 import {
   computeNextFollowupState,
+  detectTimezoneFromPhone,
+  formatTimeInTimezone,
   generateFollowupText,
   handleDashboardChat,
   handleIncoming,
@@ -425,7 +427,9 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const now = Date.now();
       const status: BookingStatus = body.status || "booked";
       const rawType: FollowupType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
-      const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, body.timezone, now) : null;
+      const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BDT";
+      const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
+      const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
 
       let nextFollowupAt: number | null = null;
       let intervalHours = 3.5;
@@ -441,9 +445,11 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           {
             status,
             followup_type: rawType,
-            scheduled_at: body.scheduledAt,
+            scheduled_at: formattedScheduledAt,
             call_time_ms: callTimeMs,
-            timezone: body.timezone,
+            timezone: effTz,
+            phone: body.phone,
+            chat_id: body.chatId,
             created_at: now,
             last_client_reply_at: now,
           },
@@ -458,9 +464,9 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         client_name: body.clientName,
         phone: body.phone,
         email: body.email,
-        scheduled_at: body.scheduledAt,
+        scheduled_at: formattedScheduledAt,
         call_time_ms: callTimeMs,
-        timezone: body.timezone,
+        timezone: effTz,
         company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
         status,
@@ -505,13 +511,27 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const patch: Partial<Booking> = { ...body };
       const nextStatus = body.status ?? existing.status;
       const nextType = body.followup_type ?? existing.followup_type;
+      const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BDT";
+      patch.timezone = effTz;
 
-      // If scheduled_at changed, re-parse call_time_ms
-      if (body.scheduled_at !== undefined && body.scheduled_at !== existing.scheduled_at) {
-        patch.call_time_ms = parseScheduledTimeToMs(body.scheduled_at, body.timezone ?? existing.timezone, now);
+      // If scheduled_at or timezone changed, re-parse call_time_ms and format scheduled_at cleanly
+      if (
+        (body.scheduled_at !== undefined && body.scheduled_at !== existing.scheduled_at) ||
+        (body.timezone !== undefined && body.timezone !== existing.timezone)
+      ) {
+        const rawSched = body.scheduled_at ?? existing.scheduled_at;
+        patch.call_time_ms = parseScheduledTimeToMs(rawSched, effTz, now, body.phone || existing.phone || existing.chat_id);
+        if (patch.call_time_ms && !body.customFollowupAt) {
+          patch.scheduled_at = formatTimeInTimezone(patch.call_time_ms, effTz, body.phone || existing.phone || existing.chat_id, now);
+        }
         if (nextStatus === "booked" || nextStatus === "confirmed" || nextType === "call_reminder") {
           patch.followup_type = "call_reminder";
-          patch.next_followup_at = patch.call_time_ms ? patch.call_time_ms - 30 * 60 * 1000 : null;
+          if (patch.call_time_ms) {
+            const thirtyBefore = patch.call_time_ms - 30 * 60 * 1000;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : patch.call_time_ms > now - 10 * 60 * 1000 ? now + 10_000 : null;
+          } else {
+            patch.next_followup_at = null;
+          }
           patch.followup_interval_hours = 0;
         }
       }
@@ -546,10 +566,15 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
             patch.followup_type = "rejected";
           }
         } else if (nextType === "call_reminder" || nextStatus === "booked" || nextStatus === "confirmed") {
-          const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, existing.timezone, now);
+          const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, effTz, now, existing.phone || existing.chat_id);
           patch.call_time_ms = cMs;
           patch.followup_type = "call_reminder";
-          patch.next_followup_at = cMs ? cMs - 30 * 60 * 1000 : now + 30 * 60 * 1000;
+          if (cMs) {
+            const thirtyBefore = cMs - 30 * 60 * 1000;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : cMs > now - 10 * 60 * 1000 ? now + 10_000 : null;
+          } else {
+            patch.next_followup_at = now + 30 * 60 * 1000;
+          }
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1") {
           patch.followup_interval_hours = 3.5;

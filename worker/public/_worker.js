@@ -419,16 +419,22 @@ function buildSystemPrompt(s, ctx) {
     `  -> Guide the conversation naturally to collect their booking details so our sales manager can review and schedule it:`,
     `     1. Full Name`,
     `     2. Best Email Address`,
-    `     3. Preferred Date & Time (e.g. "Tomorrow at 4pm", "Monday afternoon")`,
-    `     4. Timezone (e.g. EST, GMT, PST, BST, or city/country)`,
+    `     3. Preferred Date & Time (e.g. "Tomorrow at 4pm", "Today 1:30pm")`,
+    `     4. Timezone (automatically inferred from their phone number country code, e.g. +61 = Australian Time AEST, +880 = Bangladesh Time GMT+6, +44 = UK Time GMT, +1 = US Eastern Time EST, +91 = India Time IST, +971 = UAE Time GST)`,
     `     5. Website, YouTube channel, or Instagram link (to review their current video style)`,
     `     6. Video Requirements & Goals (Shorts/Reels, YouTube long-form, monthly volume)`,
+    `\u2022 PHONE NUMBER TIMEZONE INFERENCE & CONFIRMATION RULE:`,
+    `  - You automatically know the client's default timezone from their WhatsApp phone number country code (shown in your context).`,
+    `  - When a client gives a time to book a call without stating a timezone, set the call in their phone-number timezone and confirm: "I've set your call for [Time] [Detected Timezone, e.g. Australian Time (AEST)] \u2014 please let me know if that timezone works for you, or if you prefer another time/timezone!"`,
+    `  - If the client says "ok", "book this time", or doesn't say "no, another time", keep it booked for that time and timezone.`,
+    `  - If the client says "no, another time" or specifies a different timezone (e.g. "no, 1:30 PM GMT" or "no, EST"), immediately confirm the updated time and timezone.`,
+    `  - For any booked call, you will send a meeting reminder 30 minutes before the call (and no sales follow-ups).`,
     `\u2022 Proposing a call naturally:`,
     `  "I'd love to set up a quick 15-minute discovery call with our sales manager to discuss your requirements and tailor the best package for you. What day and time works best for you, and what's the best email and name to send the invite to?"`,
     `\u2022 When the client provides their time and email:`,
-    `  Confirm naturally: "Got it, [Name]! I've noted down [Email] and [Preferred Time]. Our sales manager will review our schedule and send over the calendar invite shortly. Looking forward to speaking!"`,
+    `  Confirm naturally: "Got it, [Name]! I've set your call for [Preferred Time & Timezone] and noted [Email]. Please let me know if that timezone works or if you meant another timezone! I'll also send a quick reminder 30 minutes before our meeting."`,
     `\u2022 If the client gave their preferred time but forgot their email:`,
-    `  Politely ask: "Perfect, [Time] sounds great! What's the best email address for our manager to send the invite to?"`,
+    `  Politely ask: "Perfect, I've set that for [Time & Timezone] (let me know if you prefer a different timezone)! What's the best email address for our manager to send the invite to?"`,
     `\u2022 If the client gave their email but no time:`,
     `  Politely ask: "Thanks! What day and time would be most convenient for you for a quick 15-minute call?"`,
     ``,
@@ -856,26 +862,135 @@ async function handleDashboardChat(env, text) {
     source: "dashboard"
   });
 }
-function getTimezoneOffsetHours(tz) {
+var PHONE_PREFIX_TIMEZONES = [
+  // 3-digit country codes first
+  { prefix: "880", tz: { code: "BDT", label: "Bangladesh Time (GMT+6)", country: "Bangladesh", offsetHours: 6 } },
+  { prefix: "971", tz: { code: "GST", label: "UAE / Dubai Time (GMT+4)", country: "UAE", offsetHours: 4 } },
+  { prefix: "966", tz: { code: "AST", label: "Saudi Arabia Time (GMT+3)", country: "Saudi Arabia", offsetHours: 3 } },
+  { prefix: "974", tz: { code: "AST", label: "Qatar Time (GMT+3)", country: "Qatar", offsetHours: 3 } },
+  { prefix: "965", tz: { code: "AST", label: "Kuwait Time (GMT+3)", country: "Kuwait", offsetHours: 3 } },
+  { prefix: "968", tz: { code: "GST", label: "Oman Time (GMT+4)", country: "Oman", offsetHours: 4 } },
+  { prefix: "973", tz: { code: "AST", label: "Bahrain Time (GMT+3)", country: "Bahrain", offsetHours: 3 } },
+  { prefix: "234", tz: { code: "WAT", label: "Nigeria Time (WAT, GMT+1)", country: "Nigeria", offsetHours: 1 } },
+  { prefix: "254", tz: { code: "EAT", label: "Kenya Time (EAT, GMT+3)", country: "Kenya", offsetHours: 3 } },
+  { prefix: "353", tz: { code: "GMT", label: "Ireland Time (GMT)", country: "Ireland", offsetHours: 0 } },
+  { prefix: "351", tz: { code: "WET", label: "Portugal Time (GMT)", country: "Portugal", offsetHours: 0 } },
+  { prefix: "358", tz: { code: "EET", label: "Finland Time (EET, GMT+2)", country: "Finland", offsetHours: 2 } },
+  { prefix: "852", tz: { code: "HKT", label: "Hong Kong Time (HKT, GMT+8)", country: "Hong Kong", offsetHours: 8 } },
+  { prefix: "886", tz: { code: "CST", label: "Taiwan Time (GMT+8)", country: "Taiwan", offsetHours: 8 } },
+  // 2-digit country codes
+  { prefix: "61", tz: { code: "AEST", label: "Australian Time (AEST, GMT+10)", country: "Australia", offsetHours: 10 } },
+  { prefix: "64", tz: { code: "NZST", label: "New Zealand Time (NZST, GMT+12)", country: "New Zealand", offsetHours: 12 } },
+  { prefix: "44", tz: { code: "GMT", label: "UK Time (GMT)", country: "United Kingdom", offsetHours: 0 } },
+  { prefix: "91", tz: { code: "IST", label: "India Time (IST, GMT+5:30)", country: "India", offsetHours: 5.5 } },
+  { prefix: "92", tz: { code: "PKT", label: "Pakistan Time (PKT, GMT+5)", country: "Pakistan", offsetHours: 5 } },
+  { prefix: "65", tz: { code: "SGT", label: "Singapore Time (SGT, GMT+8)", country: "Singapore", offsetHours: 8 } },
+  { prefix: "60", tz: { code: "MYT", label: "Malaysia Time (MYT, GMT+8)", country: "Malaysia", offsetHours: 8 } },
+  { prefix: "63", tz: { code: "PHT", label: "Philippines Time (PHT, GMT+8)", country: "Philippines", offsetHours: 8 } },
+  { prefix: "62", tz: { code: "WIB", label: "Indonesia Time (WIB, GMT+7)", country: "Indonesia", offsetHours: 7 } },
+  { prefix: "66", tz: { code: "ICT", label: "Thailand Time (ICT, GMT+7)", country: "Thailand", offsetHours: 7 } },
+  { prefix: "84", tz: { code: "ICT", label: "Vietnam Time (ICT, GMT+7)", country: "Vietnam", offsetHours: 7 } },
+  { prefix: "81", tz: { code: "JST", label: "Japan Time (JST, GMT+9)", country: "Japan", offsetHours: 9 } },
+  { prefix: "82", tz: { code: "KST", label: "South Korea Time (KST, GMT+9)", country: "South Korea", offsetHours: 9 } },
+  { prefix: "86", tz: { code: "CST", label: "China Time (CST, GMT+8)", country: "China", offsetHours: 8 } },
+  { prefix: "49", tz: { code: "CET", label: "German / Central European Time (CET, GMT+1)", country: "Germany", offsetHours: 1 } },
+  { prefix: "33", tz: { code: "CET", label: "French / Central European Time (CET, GMT+1)", country: "France", offsetHours: 1 } },
+  { prefix: "39", tz: { code: "CET", label: "Italian / Central European Time (CET, GMT+1)", country: "Italy", offsetHours: 1 } },
+  { prefix: "34", tz: { code: "CET", label: "Spanish / Central European Time (CET, GMT+1)", country: "Spain", offsetHours: 1 } },
+  { prefix: "31", tz: { code: "CET", label: "Netherlands Time (CET, GMT+1)", country: "Netherlands", offsetHours: 1 } },
+  { prefix: "32", tz: { code: "CET", label: "Belgium Time (CET, GMT+1)", country: "Belgium", offsetHours: 1 } },
+  { prefix: "41", tz: { code: "CET", label: "Switzerland Time (CET, GMT+1)", country: "Switzerland", offsetHours: 1 } },
+  { prefix: "43", tz: { code: "CET", label: "Austria Time (CET, GMT+1)", country: "Austria", offsetHours: 1 } },
+  { prefix: "46", tz: { code: "CET", label: "Sweden Time (CET, GMT+1)", country: "Sweden", offsetHours: 1 } },
+  { prefix: "47", tz: { code: "CET", label: "Norway Time (CET, GMT+1)", country: "Norway", offsetHours: 1 } },
+  { prefix: "45", tz: { code: "CET", label: "Denmark Time (CET, GMT+1)", country: "Denmark", offsetHours: 1 } },
+  { prefix: "48", tz: { code: "CET", label: "Poland Time (CET, GMT+1)", country: "Poland", offsetHours: 1 } },
+  { prefix: "90", tz: { code: "TRT", label: "Turkey Time (TRT, GMT+3)", country: "Turkey", offsetHours: 3 } },
+  { prefix: "20", tz: { code: "EET", label: "Egypt Time (EET, GMT+2)", country: "Egypt", offsetHours: 2 } },
+  { prefix: "27", tz: { code: "SAST", label: "South Africa Time (SAST, GMT+2)", country: "South Africa", offsetHours: 2 } },
+  { prefix: "55", tz: { code: "BRT", label: "Brazil Time (BRT, GMT-3)", country: "Brazil", offsetHours: -3 } },
+  { prefix: "52", tz: { code: "CST", label: "Mexico Time (CST, GMT-6)", country: "Mexico", offsetHours: -6 } },
+  { prefix: "54", tz: { code: "ART", label: "Argentina Time (ART, GMT-3)", country: "Argentina", offsetHours: -3 } },
+  { prefix: "57", tz: { code: "COT", label: "Colombia Time (COT, GMT-5)", country: "Colombia", offsetHours: -5 } },
+  // 1-digit country codes
+  { prefix: "1", tz: { code: "EST", label: "US/Canada Eastern Time (EST, GMT-5)", country: "USA/Canada", offsetHours: -5 } }
+];
+function detectTimezoneFromPhone(phoneOrChatId) {
+  if (!phoneOrChatId) return null;
+  const raw = phoneOrChatId.split("@")[0].replace(/\D/g, "");
+  if (raw.length < 7) return null;
+  const digits = raw.startsWith("00") ? raw.slice(2) : raw;
+  for (const item of PHONE_PREFIX_TIMEZONES) {
+    if (digits.startsWith(item.prefix)) {
+      return item.tz;
+    }
+  }
+  return null;
+}
+function getTimezoneOffsetHours(tz, phoneFallback) {
   const u = (tz || "").toUpperCase().trim();
-  if (u === "EST" || u === "EDT") return -4;
-  if (u === "CST" || u === "CDT") return -5;
-  if (u === "MST" || u === "MDT") return -6;
-  if (u === "PST" || u === "PDT") return -7;
-  if (u === "GMT" || u === "UTC") return 0;
-  if (u === "CET") return 1;
-  if (u === "AEST") return 10;
+  if (u) {
+    const offsetMatch = u.match(/(?:GMT|UTC)\s*([+-]\d{1,2})(?::(\d{2}))?/i);
+    if (offsetMatch) {
+      const hrs = parseInt(offsetMatch[1], 10);
+      const mins = offsetMatch[2] ? parseInt(offsetMatch[2], 10) / 60 : 0;
+      return hrs >= 0 ? hrs + mins : hrs - mins;
+    }
+    if (u.includes("AEDT")) return 11;
+    if (u.includes("AEST") || u.includes("AUSTRAL") || u.includes("SYDNEY") || u.includes("MELBOURNE")) return 10;
+    if (u.includes("ACST")) return 9.5;
+    if (u.includes("AWST") || u.includes("PERTH")) return 8;
+    if (u.includes("NZST") || u.includes("NEW ZEALAND")) return 12;
+    if (u.includes("JST") || u.includes("JAPAN") || u.includes("KST") || u.includes("KOREA")) return 9;
+    if (u.includes("SGT") || u.includes("SINGAPORE") || u.includes("MYT") || u.includes("MALAYSIA") || u.includes("PHT") || u.includes("HKT")) return 8;
+    if (u.includes("ICT") || u.includes("WIB") || u.includes("THAI") || u.includes("INDONESIA")) return 7;
+    if (u.includes("BDT") || u === "BD" || u.includes("BANGLADESH") || u.includes("DHAKA")) return 6;
+    if (u.includes("IST") || u.includes("INDIA")) return 5.5;
+    if (u.includes("PKT") || u.includes("PAKISTAN")) return 5;
+    if (u.includes("GST") || u.includes("UAE") || u.includes("DUBAI")) return 4;
+    if (u.includes("AST") || u.includes("SAUDI") || u.includes("QATAR") || u.includes("KUWAIT") || u.includes("TRT") || u.includes("EAT")) return 3;
+    if (u.includes("EET") || u.includes("SAST")) return 2;
+    if (u.includes("CET") || u.includes("EUROPE") || u.includes("GERMAN") || u.includes("FRANCE") || u.includes("WAT")) return 1;
+    if (u === "GMT" || u === "UTC" || u.includes("UK") || u.includes("LONDON") || u.includes("WET")) return 0;
+    if (u.includes("BRT") || u.includes("BRAZIL") || u.includes("ART")) return -3;
+    if (u === "EDT") return -4;
+    if (u === "EST" || u.includes("EASTERN") || u === "US" || u === "USA" || u === "CDT" || u.includes("COT")) return -5;
+    if (u === "CST" || u.includes("CENTRAL") || u === "MDT") return -6;
+    if (u === "MST" || u.includes("MOUNTAIN") || u === "PDT") return -7;
+    if (u === "PST" || u.includes("PACIFIC")) return -8;
+  }
+  const fromPhone = detectTimezoneFromPhone(phoneFallback);
+  if (fromPhone) return fromPhone.offsetHours;
   return 6;
 }
-function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now()) {
+function formatTimeInTimezone(utcMs, tz, phoneFallback, nowMs = Date.now()) {
+  const offsetHours = getTimezoneOffsetHours(tz, phoneFallback);
+  const localMs = utcMs + offsetHours * 3600 * 1e3;
+  const localNowMs = nowMs + offsetHours * 3600 * 1e3;
+  const d = new Date(localMs);
+  const nowD = new Date(localNowMs);
+  let h = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  const timeStr = `${h}:${m.toString().padStart(2, "0")} ${ampm}`;
+  const sameDay = d.getUTCFullYear() === nowD.getUTCFullYear() && d.getUTCMonth() === nowD.getUTCMonth() && d.getUTCDate() === nowD.getUTCDate();
+  const tmrwD = new Date(localNowMs + 24 * 3600 * 1e3);
+  const isTomorrow = d.getUTCFullYear() === tmrwD.getUTCFullYear() && d.getUTCMonth() === tmrwD.getUTCMonth() && d.getUTCDate() === tmrwD.getUTCDate();
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dayPrefix = sameDay ? "Today" : isTomorrow ? "Tomorrow" : `${months[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  const tzLabel = (tz || detectTimezoneFromPhone(phoneFallback)?.code || "BDT").toUpperCase();
+  return `${dayPrefix} ${timeStr} ${tzLabel}`;
+}
+function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallback) {
   if (!phrase || !phrase.trim()) return null;
-  const p = phrase.toLowerCase().trim();
+  const p = phrase.toLowerCase().replace(/\blatter\b/g, "later").replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2").trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(p)) {
     const parsed = Date.parse(phrase);
     if (!Number.isNaN(parsed) && parsed > nowMs - 864e5) return parsed;
   }
   const relMatch = p.match(/(?:in|after)?\s*(\d+(?:\.\d+)?)\s*(hour|hr|minute|min|day|week)s?(?:\s+later)?/i);
-  if (relMatch && (p.includes("in ") || p.includes("after ") || p.includes("later"))) {
+  if (relMatch) {
     const val = parseFloat(relMatch[1]);
     const unit = relMatch[2].toLowerCase();
     if (unit.startsWith("min")) return Math.round(nowMs + val * 60 * 1e3);
@@ -883,7 +998,7 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now()) {
     if (unit.startsWith("day")) return Math.round(nowMs + val * 24 * 3600 * 1e3);
     if (unit.startsWith("week")) return Math.round(nowMs + val * 7 * 24 * 3600 * 1e3);
   }
-  const tzOffsetHours = getTimezoneOffsetHours(timezone);
+  const tzOffsetHours = getTimezoneOffsetHours(timezone, phoneFallback);
   const localNowMs = nowMs + tzOffsetHours * 3600 * 1e3;
   const localDate = new Date(localNowMs);
   let dayOffset = 0;
@@ -908,14 +1023,31 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now()) {
   }
   let hour = 15;
   let minute = 0;
-  const timeMatch = p.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) || p.match(/(?:at\s+)(\d{1,2})(?::(\d{2}))?\b/i);
-  if (timeMatch) {
-    let h = parseInt(timeMatch[1], 10);
-    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-    const mer = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+  const ampmMatch = p.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  const colonMatch = p.match(/\b(\d{1,2}):(\d{2})\b/);
+  const prepMatch = p.match(/(?:at|on|for|in|around|by|today|tomorrow)\s+(\d{1,2})(?::(\d{2}))?\b/i);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    const m = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+    const mer = ampmMatch[3].toLowerCase();
     if (mer === "pm" && h < 12) h += 12;
     if (mer === "am" && h === 12) h = 0;
-    if (!mer && h >= 1 && h <= 7) h += 12;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  } else if (colonMatch) {
+    let h = parseInt(colonMatch[1], 10);
+    const m = parseInt(colonMatch[2], 10);
+    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  } else if (prepMatch) {
+    let h = parseInt(prepMatch[1], 10);
+    const m = prepMatch[2] ? parseInt(prepMatch[2], 10) : 0;
+    if (h >= 1 && h <= 8) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;
@@ -933,7 +1065,7 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now()) {
   targetLocal.setUTCDate(targetLocal.getUTCDate() + dayOffset);
   targetLocal.setUTCHours(hour, minute, 0, 0);
   let targetUtcMs = targetLocal.getTime() - tzOffsetHours * 3600 * 1e3;
-  if (dayOffset === 0 && targetUtcMs <= nowMs) {
+  if (dayOffset === 0 && targetUtcMs <= nowMs - 15 * 60 * 1e3 && !p.includes("today")) {
     targetUtcMs += 24 * 3600 * 1e3;
   }
   return targetUtcMs;
@@ -950,14 +1082,14 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
     };
   }
   if (curStatus === "booked" || curStatus === "confirmed") {
-    const callMs = b.call_time_ms || parseScheduledTimeToMs(b.scheduled_at, b.timezone, nowMs);
+    const callMs = b.call_time_ms || parseScheduledTimeToMs(b.scheduled_at, b.timezone, nowMs, b.phone || b.chat_id);
     let reminderAt = null;
     if (callMs) {
       const thirtyMinBefore = callMs - 30 * 60 * 1e3;
       if (thirtyMinBefore > nowMs) {
         reminderAt = thirtyMinBefore;
-      } else if (callMs > nowMs && (!b.last_followup_at || b.last_followup_at < thirtyMinBefore)) {
-        reminderAt = nowMs + 15e3;
+      } else if (callMs > nowMs - 10 * 60 * 1e3 && (!b.last_followup_at || b.last_followup_at < thirtyMinBefore)) {
+        reminderAt = nowMs + 5e3;
       }
     }
     return {
@@ -1016,9 +1148,36 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
     followup_interval_hours: 3.5
   };
 }
+function normalizeTimezoneMention(rawTz) {
+  const u = rawTz.toUpperCase().trim();
+  if (/^(?:GMT|UTC)\s*[+-]\d{1,2}/.test(u)) return u.replace(/\s+/g, "");
+  if (u.includes("AUSTRAL") || u.includes("SYDNEY") || u.includes("MELBOURNE") || u === "AEST") return "AEST";
+  if (u === "AEDT") return "AEDT";
+  if (u === "AWST" || u.includes("PERTH")) return "AWST";
+  if (u.includes("NEW ZEALAND") || u === "NZST") return "NZST";
+  if (u.includes("BANGLADESH") || u.includes("DHAKA") || u.startsWith("BD")) return "BDT";
+  if (u.includes("INDIA") || u === "IST") return "IST";
+  if (u.includes("PAKISTAN") || u === "PKT") return "PKT";
+  if (u.includes("DUBAI") || u.includes("UAE") || u === "GST") return "GST";
+  if (u.includes("SAUDI") || u === "AST") return "AST";
+  if (u.includes("SINGAPORE") || u === "SGT") return "SGT";
+  if (u.includes("MALAYSIA") || u === "MYT") return "MYT";
+  if (u.includes("UK") || u.includes("LONDON") || u === "GMT") return "GMT";
+  if (u === "UTC") return "UTC";
+  if (u.includes("EUROPE") || u.includes("GERMAN") || u.includes("FRANCE") || u === "CET") return "CET";
+  if (u.includes("EASTERN") || u === "EST" || u === "US" || u === "USA") return "EST";
+  if (u === "EDT") return "EDT";
+  if (u.includes("PACIFIC") || u === "PST") return "PST";
+  if (u === "PDT") return "PDT";
+  if (u.includes("CENTRAL") || u === "CST") return "CST";
+  if (u === "CDT") return "CDT";
+  if (u.includes("MOUNTAIN") || u === "MST") return "MST";
+  return u;
+}
 function extractBookingDetails(text, history) {
+  const normalizedText = text.replace(/\blatter\b/gi, "later").replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2");
   const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
-  const emailMatch = text.match(emailRegex);
+  const emailMatch = normalizedText.match(emailRegex);
   let email = emailMatch ? emailMatch[0] : null;
   if (!email) {
     for (const h of history.slice(-4)) {
@@ -1032,34 +1191,41 @@ function extractBookingDetails(text, history) {
     }
   }
   const phoneRegex = /(?:\+?\d{1,4}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/;
-  const phoneMatch = text.match(phoneRegex);
+  const phoneMatch = normalizedText.match(phoneRegex);
   const phone = phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7 ? phoneMatch[0].trim() : null;
   const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+(?!from|at|with|the|and|here|of\b)[A-Z][a-z]+)?)/i;
-  const nameMatch = text.match(nameRegex);
+  const nameMatch = normalizedText.match(nameRegex);
   const clientName = nameMatch ? nameMatch[1].trim() : null;
-  const timePhraseRegex = /(?:(?:in|after)\s+\d+\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|morning|evening|afternoon|noon|night))?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b(?:\s*[A-Z]{2,4})?|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
-  const timePhraseMatch = text.match(timePhraseRegex);
+  const timePhraseRegex = /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)|(?:in|after)\s+\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+  const timePhraseMatch = normalizedText.match(timePhraseRegex);
   let time = null;
   if (timePhraseMatch) {
-    time = timePhraseMatch[0].trim();
+    const dayPrefixMatch = normalizedText.match(/\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    const rawMatched = timePhraseMatch[0].trim();
+    if (dayPrefixMatch && !rawMatched.toLowerCase().includes(dayPrefixMatch[1].toLowerCase())) {
+      time = `${dayPrefixMatch[1]} ${rawMatched}`;
+    } else {
+      time = rawMatched;
+    }
   } else {
     const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning|next week)/i;
-    const looseMatch = text.match(looseTime);
+    const looseMatch = normalizedText.match(looseTime);
     if (looseMatch) {
-      const sentence = text.split(/[.?!,\n]/).find((s) => looseTime.test(s));
+      const sentence = normalizedText.split(/[.?!,\n]/).find((s) => looseTime.test(s));
       time = sentence ? sentence.trim() : looseMatch[0].trim();
     }
   }
-  const tzRegex = /\b(EST|PST|CST|MST|EDT|PDT|CDT|MDT|GMT|BST|UTC|CET|AEST|Dhaka(?:\s+time)?|BD(?:\s+time)?)\b/i;
-  const tzMatch = text.match(tzRegex);
-  const timezone = tzMatch ? tzMatch[0].toUpperCase() : null;
-  const siteRegex = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|io|net|co|app|agency|tv)|youtube\.com\/@[a-zA-Z0-9_.-]+|instagram\.com\/[a-zA-Z0-9_.-]+)/i;
-  const siteMatch = text.match(siteRegex);
+  const tzRegex = /\b((?:GMT|UTC)\s*[+-]\d{1,2}(?::\d{2})?|EST|PST|CST|MST|EDT|PDT|CDT|MDT|GMT|BST|BDT|UTC|CET|AEST|AEDT|AWST|ACST|NZST|IST|PKT|GST|AST|SGT|MYT|PHT|HKT|JST|KST|Australi(?:an|a)(?:\s+time(?:\s*zone)?)?|Sydney(?:\s+time)?|Melbourne(?:\s+time)?|Dhaka(?:\s+time)?|Bangladesh(?:\s+time)?|BD(?:\s+time)?|UK(?:\s+time)?|London(?:\s+time)?|India(?:\s+time)?|Pakistan(?:\s+time)?|Dubai(?:\s+time)?|UAE(?:\s+time)?|Eastern(?:\s+time)?|Pacific(?:\s+time)?|Central(?:\s+time)?)\b/i;
+  const tzMatch = normalizedText.match(tzRegex);
+  const timezone = tzMatch ? normalizeTimezoneMention(tzMatch[1]) : null;
+  const textWithoutEmails = normalizedText.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "");
+  const siteRegex = /(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|io|net|co|app|agency|tv|dev)|youtube\.com\/@[a-zA-Z0-9_.-]+|instagram\.com\/[a-zA-Z0-9_.-]+)/i;
+  const siteMatch = textWithoutEmails.match(siteRegex);
   const companyOrWebsite = siteMatch ? siteMatch[0] : null;
-  const lower = text.toLowerCase();
-  const isRescheduleRequest = Boolean(time) && (lower.includes("change") || lower.includes("reschedule") || lower.includes("move") || lower.includes("shift") || lower.includes("instead") || lower.includes("postpone") || lower.includes("another time") || lower.includes("new time"));
-  const isClientChoiceFollowup = Boolean(time) && !isRescheduleRequest && (lower.includes("follow up") || lower.includes("followup") || lower.includes("message me") || lower.includes("text me") || lower.includes("contact me") || lower.includes("reach out") || lower.includes("ping me") || lower.includes("remind me") || lower.includes("busy") || lower.includes("book later") || lower.includes("talk later") || lower.includes("check back"));
-  const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), text].join(" ").toLowerCase();
+  const lower = normalizedText.toLowerCase();
+  const isRescheduleRequest = (Boolean(time) || Boolean(timezone)) && (lower.includes("change") || lower.includes("reschedule") || lower.includes("move") || lower.includes("shift") || lower.includes("instead") || lower.includes("postpone") || lower.includes("another time") || lower.includes("new time") || lower.startsWith("no ") || lower.startsWith("no,"));
+  const isClientChoiceFollowup = Boolean(time) && !isRescheduleRequest && !lower.includes("book") && !lower.includes("call") && (lower.includes("follow up") || lower.includes("followup") || lower.includes("message me") || lower.includes("text me") || lower.includes("contact me") || lower.includes("reach out") || lower.includes("ping me") || lower.includes("remind me") || lower.includes("busy") || lower.includes("talk later") || lower.includes("check back"));
+  const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), normalizedText].join(" ").toLowerCase();
   const reqsList = [];
   if (allUserText.includes("short") || allUserText.includes("reel") || allUserText.includes("tiktok") || allUserText.includes("shorts")) {
     reqsList.push("Short-form (Reels/TikTok/Shorts)");
@@ -1109,7 +1275,12 @@ function generateFollowupText(b) {
     return null;
   }
   if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
-    return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in 30 minutes${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
+    let minsText = "30 minutes";
+    if (b.call_time_ms && b.call_time_ms > Date.now()) {
+      const diffMins = Math.max(1, Math.round((b.call_time_ms - Date.now()) / 6e4));
+      if (diffMins <= 35) minsText = `${diffMins} minute${diffMins === 1 ? "" : "s"}`;
+    }
+    return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
   }
   if (type === "auto_day1" || type === "auto") {
     const day1Templates = [
@@ -1249,22 +1420,26 @@ async function generateReply(env, s, rules, c) {
   const todosText = userTodos.slice(0, 10).map((t) => t.task);
   const nowMs = Date.now();
   const existing = await findLatestBookingForChat(env, c.chatId).catch(() => null);
+  const phoneTz = detectTimezoneFromPhone(c.senderPhone || c.chatId);
   let bookingContext = "";
+  if (phoneTz) {
+    bookingContext += `[CLIENT PHONE TIMEZONE DETECTED: ${phoneTz.label} (${phoneTz.country})]. `;
+  }
   if (existing) {
     if (existing.followup_type === "rejected" || existing.status === "not_interested" || existing.status === "fake_lead") {
-      bookingContext = `[LEAD STATUS: REJECTED / NOT INTERESTED]. Client is marked as REJECTED / NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
+      bookingContext += `[LEAD STATUS: REJECTED / NOT INTERESTED]. Client is marked as REJECTED / NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
     } else if (existing.followup_type === "on_hold") {
-      bookingContext = `[LEAD STATUS: ON HOLD]. Client is currently on hold. Be warm, friendly, and helpful. Do not pressure them to book right away.`;
+      bookingContext += `[LEAD STATUS: ON HOLD]. Client is currently on hold. Be warm, friendly, and helpful. Do not pressure them to book right away.`;
     } else if (existing.followup_type === "not_attended" || existing.status === "not_attended") {
-      bookingContext = `[LEAD STATUS: MISSED CALL / NOT ATTENDED]. Client missed our scheduled call earlier (${existing.scheduled_at || "previously"}). Follow up gently and warmly offering to reschedule at their convenience.`;
+      bookingContext += `[LEAD STATUS: MISSED CALL / NOT ATTENDED]. Client missed our scheduled call earlier (${existing.scheduled_at || "previously"}). Follow up gently and warmly offering to reschedule at their convenience.`;
     } else if (existing.followup_type === "buy_soon" || existing.status === "buy_soon") {
-      bookingContext = `[LEAD STATUS: BUYING IN FEW DAYS / CONSIDERING]. Client is considering purchasing soon. Check in warmly on their decision timeline and answer any lingering questions without being pushy.`;
+      bookingContext += `[LEAD STATUS: BUYING IN FEW DAYS / CONSIDERING]. Client is considering purchasing soon. Check in warmly on their decision timeline and answer any lingering questions without being pushy.`;
     } else if (existing.followup_type === "nurture") {
-      bookingContext = `[LEAD STATUS: NURTURE]. Client wants to see more work. Share our portfolio (https://vidmox.pages.dev/portfolio) and provide helpful creative advice.`;
+      bookingContext += `[LEAD STATUS: NURTURE]. Client wants to see more work. Share our portfolio (https://vidmox.pages.dev/portfolio) and provide helpful creative advice.`;
     } else if (existing.status === "booked" || existing.status === "confirmed") {
-      bookingContext = `[LEAD STATUS: CALL SCHEDULED FOR ${existing.scheduled_at}]. The discovery call is already scheduled. Reconfirm and answer any preliminary questions.`;
+      bookingContext += `[LEAD STATUS: CALL SCHEDULED FOR ${existing.scheduled_at}]. The discovery call is already scheduled. Reconfirm and answer any preliminary questions.`;
     } else if (existing.status === "completed") {
-      bookingContext = `[LEAD STATUS: CALL COMPLETED / CLIENT ONBOARDED]. The call took place. If they need to submit project footage, guide them to our intake form: https://vidmox.pages.dev/intake.`;
+      bookingContext += `[LEAD STATUS: CALL COMPLETED / CLIENT ONBOARDED]. The call took place. If they need to submit project footage, guide them to our intake form: https://vidmox.pages.dev/intake.`;
     }
   }
   const lowerContent = c.userContent.toLowerCase();
@@ -1275,24 +1450,37 @@ async function generateReply(env, s, rules, c) {
   const bookingInfo = extractBookingDetails(c.userContent, history);
   const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
   const computedPhone = bookingInfo.phone || c.senderPhone || null;
-  const isBookingCallIntent = Boolean(bookingInfo.email) || Boolean(bookingInfo.time) && !bookingInfo.isClientChoiceFollowup && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule") || lowerContent.includes("slot") || lowerContent.includes("free at") || lowerContent.includes("available at") || existing?.status === "booked" || existing?.status === "confirmed");
+  const isBookingCallIntent = Boolean(bookingInfo.email) || existing?.status === "booked" && Boolean(bookingInfo.timezone) || Boolean(bookingInfo.time) && !bookingInfo.isClientChoiceFollowup && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule") || lowerContent.includes("slot") || lowerContent.includes("free") || lowerContent.includes("available") || lowerContent.includes("today") || lowerContent.includes("tomorrow") || existing?.status === "booked" || existing?.status === "confirmed");
   if (!c.isGroup) {
     try {
       if (isBookingCallIntent || bookingInfo.isRescheduleRequest) {
-        const effTimeText = bookingInfo.time || existing?.scheduled_at || null;
-        const effTz = bookingInfo.timezone || existing?.timezone || null;
-        const parsedCallMs = effTimeText ? parseScheduledTimeToMs(effTimeText, effTz, nowMs) : existing?.call_time_ms || null;
-        const reminderAt = parsedCallMs ? parsedCallMs - 30 * 60 * 1e3 : null;
+        const clientSpecifiedTz = Boolean(bookingInfo.timezone);
+        const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
+        const tzDisplayName = bookingInfo.timezone ? bookingInfo.timezone : existing?.timezone ? existing.timezone : phoneTz ? phoneTz.label : "Bangladesh Time (GMT+6)";
+        const rawTimePhrase = bookingInfo.time || existing?.scheduled_at || null;
+        const parsedCallMs = rawTimePhrase ? parseScheduledTimeToMs(rawTimePhrase, effTz, nowMs, computedPhone || c.chatId) : existing?.call_time_ms || null;
+        const formattedScheduledAt = parsedCallMs ? formatTimeInTimezone(parsedCallMs, effTz, computedPhone || c.chatId, nowMs) : rawTimePhrase;
+        let reminderAt = null;
+        if (parsedCallMs) {
+          const thirtyMinBefore = parsedCallMs - 30 * 60 * 1e3;
+          if (thirtyMinBefore > nowMs) {
+            reminderAt = thirtyMinBefore;
+          } else if (parsedCallMs > nowMs - 10 * 60 * 1e3) {
+            reminderAt = nowMs + 1e4;
+          }
+        }
         const effEmail = bookingInfo.email || existing?.email || null;
-        const hasBooked = Boolean(effTimeText);
+        const hasBooked = Boolean(formattedScheduledAt);
         if (existing) {
           const wasAlreadyBooked = existing.status === "booked" || existing.status === "confirmed";
-          const timeChanged = Boolean(bookingInfo.time && bookingInfo.time !== existing.scheduled_at);
+          const timeOrTzChanged = Boolean(
+            bookingInfo.time && formattedScheduledAt !== existing.scheduled_at || bookingInfo.timezone && bookingInfo.timezone !== existing.timezone
+          );
           await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
             email: effEmail,
-            scheduled_at: effTimeText,
+            scheduled_at: formattedScheduledAt,
             call_time_ms: parsedCallMs,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
@@ -1303,14 +1491,16 @@ async function generateReply(env, s, rules, c) {
             followup_interval_hours: hasBooked ? 0 : 3.5,
             last_client_reply_at: nowMs
           });
-          if (wasAlreadyBooked && timeChanged && bookingInfo.time) {
-            bookingContext = `The client has changed/rescheduled their call time to "${bookingInfo.time}". Confirm warmly that you have updated their meeting time to ${bookingInfo.time}${effTz ? ` (${effTz})` : ""} and that you will send them a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
-          } else if (effEmail && effTimeText) {
-            bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and meeting time (${effTimeText}). Confirm naturally that their call is scheduled for ${effTimeText}, our sales manager will send the calendar invite to ${effEmail}, and you'll send a quick reminder 30 minutes before the meeting.`;
-          } else if (effTimeText && !effEmail) {
-            bookingContext = `The client mentioned a preferred call time (${effTimeText}), which is now noted, and a reminder is set for 30 minutes before. Ask warmly for their best email address so our manager can send the calendar invite.`;
-          } else if (effEmail && !effTimeText) {
-            bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time yet. Acknowledge the email and ask what day and time works best for a quick 15-minute call.`;
+          if (wasAlreadyBooked && timeOrTzChanged) {
+            bookingContext = `The client updated their call time/timezone to "${formattedScheduledAt}" (${tzDisplayName}). Confirm warmly that you have updated their booked call to ${formattedScheduledAt} and will send a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
+          } else if (effEmail && formattedScheduledAt) {
+            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone is right or if you meant another timezone!"` : "";
+            bookingContext = `The client has provided their name (${computedName}), email (${effEmail}), and meeting time (${formattedScheduledAt}). Confirm naturally that their call is booked for ${formattedScheduledAt}, our sales manager will send the calendar invite to ${effEmail}, and you'll send a reminder 30 minutes before the meeting.${tzConfirmNote}`;
+          } else if (formattedScheduledAt && !effEmail) {
+            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they meant another timezone.` : "";
+            bookingContext = `The client mentioned a preferred call time (${formattedScheduledAt}), which is now booked with a 30-minute reminder.${tzConfirmNote} Ask warmly for their best email address so our manager can send the calendar invite.`;
+          } else if (effEmail && !formattedScheduledAt) {
+            bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time yet. Acknowledge the email and ask what day and time works best for a quick 15-minute call${phoneTz ? ` (in their ${phoneTz.label} timezone)` : ""}.`;
           }
         } else {
           await createBooking(env, {
@@ -1318,7 +1508,7 @@ async function generateReply(env, s, rules, c) {
             client_name: computedName,
             phone: computedPhone,
             email: effEmail,
-            scheduled_at: effTimeText,
+            scheduled_at: formattedScheduledAt,
             call_time_ms: parsedCallMs,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite,
@@ -1330,23 +1520,26 @@ async function generateReply(env, s, rules, c) {
             last_client_reply_at: nowMs,
             source: c.source
           });
-          if (effEmail && effTimeText) {
-            bookingContext = `The client provided their name (${computedName}), email (${effEmail}), and preferred time (${effTimeText}). Confirm naturally that you've noted down ${effTimeText} and ${effEmail}, our sales manager will send over the calendar invite shortly, and you'll remind them 30 minutes before the meeting.`;
-          } else if (effTimeText && !effEmail) {
-            bookingContext = `The client mentioned a preferred time (${effTimeText}). Acknowledge the time warmly and ask what email address our manager should send the calendar invite to.`;
-          } else if (effEmail && !effTimeText) {
-            bookingContext = `The client provided their email (${effEmail}), but hasn't mentioned a time. Acknowledge their email and ask what day and time works best for a quick 15-minute call.`;
+          if (effEmail && formattedScheduledAt) {
+            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone works or if you meant another timezone!"` : "";
+            bookingContext = `The client provided their name (${computedName}), email (${effEmail}), and preferred time (${formattedScheduledAt}). Confirm naturally that you've booked their call for ${formattedScheduledAt} and noted ${effEmail}, and you'll remind them 30 minutes before the meeting.${tzConfirmNote}`;
+          } else if (formattedScheduledAt && !effEmail) {
+            const tzConfirmNote = !clientSpecifiedTz && phoneTz ? ` Explicitly mention that you set it for ${formattedScheduledAt} (${phoneTz.label}, based on their number) and ask them to let you know if they prefer another timezone.` : "";
+            bookingContext = `The client mentioned a preferred time (${formattedScheduledAt}).${tzConfirmNote} Ask what email address our manager should send the calendar invite to.`;
+          } else if (effEmail && !formattedScheduledAt) {
+            bookingContext = `The client provided their email (${effEmail}), but hasn't mentioned a time. Acknowledge their email and ask what day and time works best for a quick 15-minute call${phoneTz ? ` (in their ${phoneTz.label} timezone)` : ""}.`;
           }
         }
       } else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
-        const effTz = bookingInfo.timezone || existing?.timezone || null;
-        const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs) || nowMs + 24 * 3600 * 1e3;
+        const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
+        const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 24 * 3600 * 1e3;
+        const formattedFollowupTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
         if (existing) {
           await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || existing.client_name,
             phone: computedPhone || existing.phone,
             email: bookingInfo.email || existing.email,
-            scheduled_at: `Follow-up requested: ${bookingInfo.time}`,
+            scheduled_at: `Follow-up: ${formattedFollowupTime}`,
             timezone: effTz,
             followup_type: "client_date",
             next_followup_at: targetFollowupMs,
@@ -1358,7 +1551,7 @@ async function generateReply(env, s, rules, c) {
             client_name: computedName,
             phone: computedPhone,
             email: bookingInfo.email,
-            scheduled_at: `Follow-up requested: ${bookingInfo.time}`,
+            scheduled_at: `Follow-up: ${formattedFollowupTime}`,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite,
             requirements: bookingInfo.requirements,
@@ -1369,7 +1562,7 @@ async function generateReply(env, s, rules, c) {
             source: c.source
           });
         }
-        bookingContext = `The client requested that you follow up with them at "${bookingInfo.time}". Respect their schedule warmly, confirm that you'll reach back out to them on ${bookingInfo.time}, and don't push for an immediate call right now.`;
+        bookingContext = `The client requested that you follow up with them at "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll reach back out to them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
       } else {
         if (existing) {
           const isBooked = existing.status === "booked" || existing.status === "confirmed";
@@ -1377,6 +1570,7 @@ async function generateReply(env, s, rules, c) {
           await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
+            timezone: existing.timezone || phoneTz?.code || "BDT",
             company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
             requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
             last_client_reply_at: nowMs,
@@ -1392,7 +1586,7 @@ async function generateReply(env, s, rules, c) {
             phone: computedPhone,
             email: null,
             scheduled_at: null,
-            timezone: bookingInfo.timezone,
+            timezone: bookingInfo.timezone || phoneTz?.code || "BDT",
             company_or_website: bookingInfo.companyOrWebsite,
             requirements: bookingInfo.requirements,
             status: "lead",
@@ -1775,7 +1969,9 @@ async function dashboardRoutes(request, env, url) {
       const now = Date.now();
       const status = body.status || "booked";
       const rawType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
-      const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, body.timezone, now) : null;
+      const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BDT";
+      const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
+      const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
       let nextFollowupAt = null;
       let intervalHours = 3.5;
       if (body.customFollowupAt) {
@@ -1789,9 +1985,11 @@ async function dashboardRoutes(request, env, url) {
           {
             status,
             followup_type: rawType,
-            scheduled_at: body.scheduledAt,
+            scheduled_at: formattedScheduledAt,
             call_time_ms: callTimeMs,
-            timezone: body.timezone,
+            timezone: effTz,
+            phone: body.phone,
+            chat_id: body.chatId,
             created_at: now,
             last_client_reply_at: now
           },
@@ -1805,9 +2003,9 @@ async function dashboardRoutes(request, env, url) {
         client_name: body.clientName,
         phone: body.phone,
         email: body.email,
-        scheduled_at: body.scheduledAt,
+        scheduled_at: formattedScheduledAt,
         call_time_ms: callTimeMs,
-        timezone: body.timezone,
+        timezone: effTz,
         company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
         status,
@@ -1830,11 +2028,22 @@ async function dashboardRoutes(request, env, url) {
       const patch = { ...body };
       const nextStatus = body.status ?? existing.status;
       const nextType = body.followup_type ?? existing.followup_type;
-      if (body.scheduled_at !== void 0 && body.scheduled_at !== existing.scheduled_at) {
-        patch.call_time_ms = parseScheduledTimeToMs(body.scheduled_at, body.timezone ?? existing.timezone, now);
+      const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BDT";
+      patch.timezone = effTz;
+      if (body.scheduled_at !== void 0 && body.scheduled_at !== existing.scheduled_at || body.timezone !== void 0 && body.timezone !== existing.timezone) {
+        const rawSched = body.scheduled_at ?? existing.scheduled_at;
+        patch.call_time_ms = parseScheduledTimeToMs(rawSched, effTz, now, body.phone || existing.phone || existing.chat_id);
+        if (patch.call_time_ms && !body.customFollowupAt) {
+          patch.scheduled_at = formatTimeInTimezone(patch.call_time_ms, effTz, body.phone || existing.phone || existing.chat_id, now);
+        }
         if (nextStatus === "booked" || nextStatus === "confirmed" || nextType === "call_reminder") {
           patch.followup_type = "call_reminder";
-          patch.next_followup_at = patch.call_time_ms ? patch.call_time_ms - 30 * 60 * 1e3 : null;
+          if (patch.call_time_ms) {
+            const thirtyBefore = patch.call_time_ms - 30 * 60 * 1e3;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : patch.call_time_ms > now - 10 * 60 * 1e3 ? now + 1e4 : null;
+          } else {
+            patch.next_followup_at = null;
+          }
           patch.followup_interval_hours = 0;
         }
       }
@@ -1860,10 +2069,15 @@ async function dashboardRoutes(request, env, url) {
             patch.followup_type = "rejected";
           }
         } else if (nextType === "call_reminder" || nextStatus === "booked" || nextStatus === "confirmed") {
-          const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, existing.timezone, now);
+          const cMs = patch.call_time_ms ?? existing.call_time_ms ?? parseScheduledTimeToMs(existing.scheduled_at, effTz, now, existing.phone || existing.chat_id);
           patch.call_time_ms = cMs;
           patch.followup_type = "call_reminder";
-          patch.next_followup_at = cMs ? cMs - 30 * 60 * 1e3 : now + 30 * 60 * 1e3;
+          if (cMs) {
+            const thirtyBefore = cMs - 30 * 60 * 1e3;
+            patch.next_followup_at = thirtyBefore > now ? thirtyBefore : cMs > now - 10 * 60 * 1e3 ? now + 1e4 : null;
+          } else {
+            patch.next_followup_at = now + 30 * 60 * 1e3;
+          }
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1") {
           patch.followup_interval_hours = 3.5;

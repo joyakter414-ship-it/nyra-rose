@@ -653,6 +653,53 @@ const FOLLOWUP_LABELS = {
   custom: "🎯 Custom Strategy",
 };
 
+function getTzOffsetHours(tz) {
+  const u = (tz || "").toUpperCase().trim();
+  if (!u) return 6;
+  const m = u.match(/(?:GMT|UTC)\s*([+-]\d{1,2})(?::(\d{2}))?/i);
+  if (m) {
+    const hrs = parseInt(m[1], 10);
+    const mins = m[2] ? parseInt(m[2], 10) / 60 : 0;
+    return hrs >= 0 ? hrs + mins : hrs - mins;
+  }
+  if (u.includes("AEDT")) return 11;
+  if (u.includes("AEST") || u.includes("AUSTRAL")) return 10;
+  if (u.includes("ACST")) return 9.5;
+  if (u.includes("AWST")) return 8;
+  if (u.includes("NZST")) return 12;
+  if (u.includes("JST") || u.includes("KST")) return 9;
+  if (u.includes("SGT") || u.includes("MYT") || u.includes("PHT") || u.includes("HKT")) return 8;
+  if (u.includes("ICT") || u.includes("WIB")) return 7;
+  if (u.includes("BDT") || u === "BD" || u.includes("DHAKA") || u.includes("BANGLADESH")) return 6;
+  if (u.includes("IST") || u.includes("INDIA")) return 5.5;
+  if (u.includes("PKT")) return 5;
+  if (u.includes("GST") || u.includes("UAE") || u.includes("DUBAI")) return 4;
+  if (u.includes("AST") || u.includes("TRT") || u.includes("EAT")) return 3;
+  if (u.includes("EET") || u.includes("SAST")) return 2;
+  if (u.includes("CET") || u.includes("WAT")) return 1;
+  if (u === "GMT" || u === "UTC" || u.includes("UK") || u.includes("WET")) return 0;
+  if (u.includes("BRT") || u.includes("ART")) return -3;
+  if (u === "EDT") return -4;
+  if (u === "EST" || u === "CDT" || u.includes("COT")) return -5;
+  if (u === "CST" || u === "MDT") return -6;
+  if (u === "MST" || u === "PDT") return -7;
+  if (u === "PST") return -8;
+  return 6;
+}
+
+function fmtTimeInBookingTz(ms, tz) {
+  if (!tz) return fmtTime(ms);
+  const offsetHours = getTzOffsetHours(tz);
+  const localMs = ms + offsetHours * 3600 * 1000;
+  const d = new Date(localMs);
+  let h = d.getUTCHours();
+  const min = d.getUTCMinutes();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${h}:${String(min).padStart(2, "0")} ${ampm} ${tz.toUpperCase()}`;
+}
+
 function formatNextFollowupTimer(b) {
   const fType = b.followup_type || "auto";
   if (fType === "rejected" || b.status === "not_interested" || b.status === "cancelled" || b.status === "completed") {
@@ -670,21 +717,22 @@ function formatNextFollowupTimer(b) {
   const diffMs = b.next_followup_at - Date.now();
   const isCallReminder = fType === "call_reminder" || b.status === "booked" || b.status === "confirmed";
   const prefix = isCallReminder ? "🔔 30m Call Reminder" : "⏱️ Next Follow-Up";
+  const tzTimeStr = fmtTimeInBookingTz(b.next_followup_at, b.timezone);
   if (diffMs <= 0) {
-    return `${prefix}: Due Now (${fmtTime(b.next_followup_at)})`;
+    return `${prefix}: Due Now (${tzTimeStr})`;
   }
   const mins = Math.round(diffMs / 60000);
   if (mins < 60) {
-    return `${prefix}: in ${mins}m (${fmtTime(b.next_followup_at)})`;
+    return `${prefix}: ${tzTimeStr} (in ${mins}m)`;
   }
   const hours = Math.floor(mins / 60);
   const remMins = mins % 60;
   if (hours < 48) {
-    return `${prefix}: in ${hours}h${remMins > 0 ? ` ${remMins}m` : ""} (${fmtTime(b.next_followup_at)})`;
+    return `${prefix}: ${tzTimeStr} (in ${hours}h${remMins > 0 ? ` ${remMins}m` : ""})`;
   }
   const days = Math.floor(hours / 24);
   const remHours = hours % 24;
-  return `${prefix}: in ${days}d${remHours > 0 ? ` ${remHours}h` : ""} (${fmtTime(b.next_followup_at)})`;
+  return `${prefix}: ${tzTimeStr} (in ${days}d${remHours > 0 ? ` ${remHours}h` : ""})`;
 }
 
 function renderBookings() {
