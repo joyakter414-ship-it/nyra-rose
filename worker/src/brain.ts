@@ -759,7 +759,7 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
     inferredFollowupType = "on_hold";
   }
 
-  // Extract requirements from user text and recent conversation history
+  // Extract requirements, niche, and volume from user text and recent conversation history
   const allUserText = [...history.filter((h) => h.role === "user").map((h) => h.content), normalizedText].join(" ").toLowerCase();
   const reqsList: string[] = [];
   if (allUserText.includes("short") || allUserText.includes("reel") || allUserText.includes("tiktok") || allUserText.includes("shorts")) {
@@ -768,11 +768,24 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   if (allUserText.includes("youtube") || allUserText.includes("long") || allUserText.includes("podcast") || allUserText.includes("vsl")) {
     reqsList.push("Long-form (YouTube/Podcasts)");
   }
-  if (allUserText.includes("motion") || allUserText.includes("vfx") || allUserText.includes("graphic")) {
+  if (allUserText.includes("talking head") || allUserText.includes("coach") || allUserText.includes("course")) {
+    reqsList.push("Talking-Head / Coaching");
+  }
+  if (allUserText.includes("agency") || allUserText.includes("white label") || allUserText.includes("whitelabel") || allUserText.includes("clients")) {
+    reqsList.push("Agency White-Label");
+  }
+  if (allUserText.includes("motion") || allUserText.includes("vfx") || allUserText.includes("graphic") || allUserText.includes("cinematic")) {
     reqsList.push("Motion Graphics & FX");
   }
-  if (allUserText.includes("intake") || allUserText.includes("brief")) {
-    reqsList.push("Project Brief Intake");
+  if (allUserText.includes("real estate") || allUserText.includes("property")) {
+    reqsList.push("Real Estate Niche");
+  }
+  if (allUserText.includes("ecom") || allUserText.includes("ad") || allUserText.includes("ugc")) {
+    reqsList.push("Ad Creatives / E-com");
+  }
+  const volMatch = allUserText.match(/\b(\d{1,3})\s*(?:-\s*\d{1,3}\s*)?(?:videos?|reels?|shorts?|edits?)\s*(?:a|per|\/)?\s*(?:month|mo|week|wk|day)?\b/i);
+  if (volMatch) {
+    reqsList.push(`Volume: ~${volMatch[0].trim()}`);
   }
   if (allUserText.includes("trial") || allUserText.includes("kickstart") || allUserText.includes("29")) {
     reqsList.push("Kickstart Trial ($29)");
@@ -806,6 +819,125 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   };
 }
 
+/**
+ * Deeply analyzes the client's past conversation, remembered profile, and current message intent
+ * so Nyra talks like an elite human salesperson who remembers everything and knows what to say next.
+ */
+function analyzeConversationMemory(params: {
+  userContent: string;
+  history: StoredMessage[];
+  existing: Booking | null;
+  bookingInfo: ReturnType<typeof extractBookingDetails>;
+  phoneTz: { code: string; offsetHours: number; label: string; country: string } | null;
+  computedName: string;
+}): string {
+  const { userContent, history, existing, bookingInfo, phoneTz, computedName } = params;
+  const lower = userContent.toLowerCase();
+  const userMsgs = history.filter((m) => m.role === "user");
+  const assistantMsgs = history.filter((m) => m.role === "assistant");
+  const allAssistantText = assistantMsgs.map((m) => m.content.toLowerCase()).join("\n");
+
+  const alreadySharedPricing =
+    allAssistantText.includes("$490") || allAssistantText.includes("$890") || allAssistantText.includes("growth plan");
+  const alreadySharedPortfolio = allAssistantText.includes("vidmox.pages.dev/portfolio");
+  const alreadySharedCalendly = allAssistantText.includes("calendly.com/armaan-gineus");
+  const knownScope =
+    bookingInfo.requirements !== "Video Editing Consultation"
+      ? bookingInfo.requirements
+      : existing?.requirements && existing.requirements !== "Video Editing Consultation"
+      ? existing.requirements
+      : null;
+  const knownEmail = bookingInfo.email || existing?.email || null;
+  const knownWebsite = bookingInfo.companyOrWebsite || existing?.company_or_website || null;
+  const knownScheduledAt = existing?.scheduled_at || null;
+
+  // Detect specific conversational intent in the current message
+  let detectedIntent = "GENERAL CONVERSATION / DISCOVERY";
+  let nextSalesObjective = "";
+
+  if (bookingInfo.inferredStatus === "not_interested") {
+    detectedIntent = "CLIENT DECLINING / NOT INTERESTED";
+    nextSalesObjective =
+      "Be 100% polite, warm, and zero-pressure ('Totally understand! Thanks for letting me know, and feel free to reach out anytime in the future if your editing needs change.'). Do NOT pitch or push.";
+  } else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
+    detectedIntent = `CLIENT BUSY / WILL TALK AT SPECIFIED TIME (${bookingInfo.time})`;
+    nextSalesObjective =
+      "Acknowledge warmly without any pressure. Confirm you've noted their time and will check back in with them then.";
+  } else if (/\b(are you a bot|are you ai|is this a bot|automated|chatting with a bot|real person)\b/i.test(lower)) {
+    detectedIntent = "ASKING IF YOU ARE HUMAN OR AI";
+    nextSalesObjective =
+      "Reassure them warmly and naturally like a real human at your desk ('Haha no, I'm Nyra from the Vidmox team! Just at my desk right now so I reply fast.') and continue helping with their videos.";
+  } else if (/\b(expensive|high|out of budget|budget|cheaper|discount|lower price|too much|cant afford|can't afford)\b/i.test(lower)) {
+    detectedIntent = "PRICE / BUDGET OBJECTION";
+    nextSalesObjective =
+      "Validate their concern warmly. Never invent discounts on your own — explain that if they need fewer videos per month, our sales manager can build a custom lower-volume package tailored to their budget, OR they can start with our $29 Trial edit (https://vidmox.pages.dev/29-video). Invite them to a quick 10–15 min call with our sales manager to work out a custom rate.";
+  } else if (/\b(free sample|free trial|free test|free edit|sample edit|test edit|try first)\b/i.test(lower)) {
+    detectedIntent = "ASKING FOR FREE SAMPLE / TRIAL EDIT";
+    nextSalesObjective =
+      "Explain warmly that because we assign a dedicated senior editor and PM to every project, we offer a risk-free $29 Kickstart Trial (https://vidmox.pages.dev/29-video) with unlimited revisions — or we can hop on a quick 15-minute call first to show live edits in their niche. Ask which they prefer.";
+  } else if (/\b(price|pricing|cost|how much|package|plan|rate|charge|per video|monthly)\b/i.test(lower)) {
+    detectedIntent = "ASKING ABOUT PRICING / PACKAGES";
+    nextSalesObjective = knownScope
+      ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching plan ($490/mo Growth for 25–30 Shorts, $890/mo Scale for 55–60 Shorts or 6–8 YouTube videos, $1,490/mo Advance for agencies, plus $29 Trial) and ask what day/time works for a quick 15-minute call to tailor their workflow.`
+      : `Give a clear, concise overview of our main plans ($490/mo Growth for 25–30 short-form videos, $890/mo Scale for 55–60 shorts or 6–8 long-form YouTube videos, and $29 Trial edit) and ask what type of videos they mainly want edited.`;
+  } else if (/\b(portfolio|sample|work|previous edit|example|show me|quality|reel|demo)\b/i.test(lower)) {
+    detectedIntent = "ASKING FOR PORTFOLIO / PREVIOUS WORK";
+    nextSalesObjective =
+      "Share https://vidmox.pages.dev/portfolio (and https://vidmox.pages.dev/premium-portfolio if they want high-end motion graphics) and ask what style of videos they are currently creating so you can point out the best match.";
+  } else if (/\b(turnaround|how fast|delivery time|revisions|workflow|how does it work|how do i send|footage|slack)\b/i.test(lower)) {
+    detectedIntent = "ASKING ABOUT WORKFLOW / TURNAROUND / REVISIONS";
+    nextSalesObjective =
+      "Explain clearly: 24-hour average turnaround on short-form first drafts (24–48h for long-form), unlimited revisions, dedicated editor + PM on WhatsApp/Slack, and a 60-second intake brief (https://vidmox.pages.dev/intake). Then ask if they'd like to hop on a quick 15-min call to see how we'd plug into their workflow.";
+  } else if (existing?.status === "booked" || existing?.status === "confirmed") {
+    detectedIntent = "CLIENT HAS A BOOKED CALL";
+    nextSalesObjective = knownEmail
+      ? `Their call is already scheduled for ${knownScheduledAt || "their chosen slot"} and we have their email (${knownEmail}). Do NOT pitch or ask them to book again — just confirm warmly or answer their question.`
+      : `Their call time is set for ${knownScheduledAt || "their chosen slot"}, but we still need their email address for the calendar invite. Politely ask for their best email address.`;
+  } else if (!knownScope) {
+    detectedIntent = userMsgs.length === 0 ? "FIRST CONTACT / NEW LEAD" : "EARLY DISCOVERY";
+    nextSalesObjective =
+      "Answer what the client just asked warmly and ask ONE natural discovery question to learn what kind of videos they create (Reels/Shorts vs. YouTube long-form) and roughly how many per month.";
+  } else {
+    detectedIntent = "QUALIFIED LEAD — READY TO GUIDE TO CALL";
+    nextSalesObjective =
+      `You already know their video scope (${knownScope}). Build on what they just said without re-asking what videos they make, and smoothly invite them to a quick 15-minute strategy call (ask what day/time and email works best for them).`;
+  }
+
+  const recentClientQuotes = userMsgs
+    .slice(-3)
+    .map((m) => `"${m.content.slice(0, 120)}"`)
+    .join(" -> ");
+
+  const antiRepeatRules: string[] = [];
+  if (alreadySharedPricing && !/\b(price|pricing|cost|how much|plan|package)\b/i.test(lower)) {
+    antiRepeatRules.push("You ALREADY shared pricing earlier in this chat — do NOT repeat the full pricing list again.");
+  }
+  if (alreadySharedPortfolio && !/\b(portfolio|sample|work|example|link)\b/i.test(lower)) {
+    antiRepeatRules.push("You ALREADY shared the portfolio link earlier — do NOT paste the portfolio URL again.");
+  }
+  if (alreadySharedCalendly && !/\b(link|calendly|where)\b/i.test(lower)) {
+    antiRepeatRules.push("You ALREADY sent the Calendly link earlier — instead of pasting the link again, just ask what time works best for them right here.");
+  }
+  if (knownScope) {
+    antiRepeatRules.push(`You ALREADY know their video scope (${knownScope}) — do NOT ask "What kind of videos do you need edited?" again; reference their ${knownScope} naturally.`);
+  }
+
+  return [
+    `• Client Name: ${computedName !== "New Lead" ? computedName : "Not shared yet (ask naturally when booking)"}`,
+    `• Country & Local Timezone (from phone): ${phoneTz ? `${phoneTz.country} — ${phoneTz.label}` : existing?.timezone || "BDT (GMT+6)"}`,
+    `• Remembered Video Scope / Niche: ${knownScope || "Not discovered yet — find out if they need Shorts/Reels, YouTube long-form, or Agency White-Label"}`,
+    `• Remembered Email: ${knownEmail || "Not collected yet — needed to send calendar invite"}`,
+    `• Remembered Website/Channel: ${knownWebsite || "Not shared yet"}`,
+    `• Conversation Depth: ${userMsgs.length + 1} client message(s), ${assistantMsgs.length} prior replies from you${existing?.followup_count ? `, ${existing.followup_count} follow-up(s) sent` : ""}.`,
+    recentClientQuotes ? `• What Client Said Previously: ${recentClientQuotes}` : "",
+    `• Current Client Intent: ${detectedIntent}`,
+    antiRepeatRules.length > 0 ? `• Anti-Repetition Memory: ${antiRepeatRules.join(" ")}` : "",
+    `• WHAT TO TALK ABOUT RIGHT NOW: ${nextSalesObjective}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function generateFollowupText(b: {
   client_name?: string | null;
   scheduled_at?: string | null;
@@ -819,6 +951,8 @@ export function generateFollowupText(b: {
   const name = b.client_name && b.client_name !== "New Lead" && b.client_name !== "Dashboard Lead" ? b.client_name.trim() : "there";
   const type = b.followup_type || "auto_day1";
   const count = b.followup_count || 0;
+  const hasSpecificReq = Boolean(b.requirements && b.requirements !== "Video Editing Consultation");
+  const reqTopic = hasSpecificReq ? b.requirements! : "your video content";
 
   // If rejected, not interested, or fake lead -> strictly NO follow-up
   if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
@@ -835,13 +969,13 @@ export function generateFollowupText(b: {
     return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
   }
 
-  // Stage 1: Day 1 Auto Follow-Up (every 3–4 hours)
+  // Stage 1: Day 1 Auto Follow-Up (every 3–4 hours) — Personalized with remembered requirements
   if (type === "auto_day1" || type === "auto") {
     const day1Templates = [
-      `Hi ${name}! Just checking in to see if you had a chance to look at my previous message. Happy to help if you have any questions about our video editing services!`,
-      `Hey ${name}! Are you still exploring video editing support for your content? Let me know what you're looking for, and I'll help you figure out the best next step.`,
-      `Hi ${name}! Would you be available for a quick 15-minute call to discuss your video editing requirements? You can share a convenient time right here or book directly at https://calendly.com/armaan-gineus/30min`,
-      `Hey ${name}! Just wanted to make sure my message didn't get buried. Whenever you're ready to chat about scaling your video content, let me know!`,
+      `Hi ${name}! Just checking in to see if you had a chance to look at my previous message regarding ${reqTopic}. Happy to help if you have any questions!`,
+      `Hey ${name}! Are you still exploring editing support for ${reqTopic}? Let me know what you're looking for and I'll help you figure out the best next step.`,
+      `Hi ${name}! Would you be available for a quick 15-minute call to discuss ${reqTopic}? You can share a convenient time right here or book directly at https://calendly.com/armaan-gineus/30min`,
+      `Hey ${name}! Just wanted to make sure my message didn't get buried. Whenever you're ready to chat about scaling ${reqTopic}, let me know!`,
     ];
     return day1Templates[count % day1Templates.length];
   }
@@ -849,8 +983,8 @@ export function generateFollowupText(b: {
   // Stage 2: Next 3 Days No-Reply Follow-Up (every 8 hours)
   if (type === "no_reply_3d") {
     const day3Templates = [
-      `Hey ${name}! Hope your week is going well. Just wanted to check if you're still looking for a dedicated video editing team to scale your content? Happy to answer any questions or set up a quick call!`,
-      `Hi ${name}! Whenever you're ready to take video editing off your plate, we can start with a $29 trial edit or jump on a quick 15-minute call (https://calendly.com/armaan-gineus/30min). Let me know what works best for you!`,
+      `Hey ${name}! Hope your week is going well. Just wanted to check if you're still looking for a dedicated editing team for ${reqTopic}? Happy to answer any questions or set up a quick call!`,
+      `Hi ${name}! Whenever you're ready to take editing off your plate, we can start with a $29 trial edit or jump on a quick 15-minute call (https://calendly.com/armaan-gineus/30min). Let me know what works best for you!`,
       `Hey ${name}! Just checking in — are you still deciding which editing package would fit your workflow best? Happy to walk you through our Growth and Scale plans whenever you're free.`,
     ];
     return day3Templates[count % day3Templates.length];
@@ -860,8 +994,8 @@ export function generateFollowupText(b: {
   if (type === "long_term_30d") {
     const longTermTemplates = [
       `Hey ${name}! Wanted to share a few recent video edits we produced for creators and agencies in your space: https://vidmox.pages.dev/portfolio. Let me know if you'd like to try a sample edit!`,
-      `Hi ${name}! Just checking in to see how your content pipeline is going this month. If you need extra editing capacity or want to test our dedicated team, feel free to reach out anytime!`,
-      `Hey ${name}! Hope business is booming. If you're still looking to outsource your short-form or long-form video editing with a 24-hour turnaround, I'd love to help get you set up!`,
+      `Hi ${name}! Just checking in to see how your content pipeline is going this month. If you need extra editing capacity for ${reqTopic}, feel free to reach out anytime!`,
+      `Hey ${name}! Hope business is booming. If you're still looking to outsource your video editing with a 24-hour turnaround, I'd love to help get you set up!`,
     ];
     return longTermTemplates[count % longTermTemplates.length];
   }
@@ -869,7 +1003,7 @@ export function generateFollowupText(b: {
   // Stage 4: Client Choice Time / Date Follow-Up ("i msg you 2 hour later", "i am free at 2 pm")
   if (type === "client_date") {
     const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
-    return `Hi ${name}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a convenient time to chat or arrange a quick call about your video editing requirements?`;
+    return `Hi ${name}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
   }
 
   // Stage 5: Custom Management Timer Follow-Up
@@ -877,7 +1011,7 @@ export function generateFollowupText(b: {
     if (b.notes?.trim()) {
       return `Hey ${name}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
     }
-    return `Hey ${name}! Following up as promised to see if you had any questions about our editing packages or if you're ready to schedule a quick strategy call? Happy to help!`;
+    return `Hey ${name}! Following up as promised to see if you had any questions about ${reqTopic} or if you're ready to schedule a quick strategy call? Happy to help!`;
   }
 
   // Other CRM statuses
@@ -888,7 +1022,7 @@ export function generateFollowupText(b: {
     return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
   }
   if (type === "buy_soon" || b.status === "buy_soon") {
-    return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready to roll!`;
+    return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
   }
   if (type === "nurture") {
     return `Hey ${name}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
@@ -897,7 +1031,7 @@ export function generateFollowupText(b: {
     return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
   }
 
-  return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step or arrange a quick call!`;
+  return `Hey ${name}! Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
 }
 
 /**
@@ -1014,7 +1148,7 @@ async function generateReply(
   c: { chatId: string; chatName?: string; senderPhone?: string; isGroup: boolean; excludeId: string; userContent: string; source: string },
 ): Promise<Decision> {
   const [history, userNotes, userTodos] = await Promise.all([
-    recentMessages(env, c.chatId, s.historyLimit, c.excludeId),
+    recentMessages(env, c.chatId, Math.max(s.historyLimit || 20, 30), c.excludeId),
     getNotes(env, c.chatId).catch(() => []),
     getTodos(env, c.chatId, true).catch(() => []),
   ]);
@@ -1327,6 +1461,15 @@ async function generateReply(
     }
   }
 
+  const memorySummary = analyzeConversationMemory({
+    userContent: c.userContent,
+    history,
+    existing,
+    bookingInfo,
+    phoneTz,
+    computedName,
+  });
+
   const messages: ChatMessage[] = [
     {
       role: "system",
@@ -1338,6 +1481,7 @@ async function generateReply(
         notes: notesText,
         todos: todosText,
         bookingContext,
+        memorySummary,
       }),
     },
     ...history.map((h): ChatMessage => ({
