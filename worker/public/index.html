@@ -204,6 +204,17 @@
                 <option value="cancelled">❌ Cancelled</option>
               </select>
             </label>
+            <label>Follow-Up Strategy
+              <select id="booking-followup-type">
+                <option value="auto">⚡ Auto (Smart AI)</option>
+                <option value="rejected">🛑 Rejected (No Follow-Up)</option>
+                <option value="on_hold">⏸️ On Hold (Check-In)</option>
+                <option value="not_attended">⚠️ Missed Call (Reschedule)</option>
+                <option value="buy_soon">⏳ Buying in Few Days (Closing)</option>
+                <option value="nurture">💡 Value Nurture (Portfolio)</option>
+                <option value="custom">🎯 Custom Strategy</option>
+              </select>
+            </label>
           </div>
           <label style="margin-top: 10px;">Internal Notes
             <textarea id="booking-notes" rows="2" placeholder="e.g. Agency owner, wants trial first, likes Alex Hormozi captions style"></textarea>
@@ -220,16 +231,28 @@
           <div style="flex: 1; min-width: 220px;">
             <input id="bookings-search" placeholder="Search by client, email, phone, website, or requirements..." style="margin: 0;" />
           </div>
-          <div style="width: 230px;">
+          <div style="width: 200px;">
             <select id="bookings-filter-status" style="margin: 0;">
               <option value="all">All Lead Statuses</option>
               <option value="booked">📅 Booked</option>
               <option value="confirmed">✅ Confirmed</option>
               <option value="not_attended">⚠️ Missed Call (Not Attended)</option>
               <option value="buy_soon">⏳ Buying in Few Days</option>
-              <option value="not_interested">🛑 Not Interested (Stopped)</option>
+              <option value="not_interested">🛑 Not Interested</option>
               <option value="completed">🏆 Completed / Closed</option>
               <option value="cancelled">❌ Cancelled</option>
+            </select>
+          </div>
+          <div style="width: 210px;">
+            <select id="bookings-filter-followup" style="margin: 0;">
+              <option value="all">All Follow-Up Strategies</option>
+              <option value="auto">⚡ Auto (Smart AI)</option>
+              <option value="rejected">🛑 Rejected (No Follow-Up)</option>
+              <option value="on_hold">⏸️ On Hold</option>
+              <option value="not_attended">⚠️ Missed Call Reschedule</option>
+              <option value="buy_soon">⏳ Buying in Few Days</option>
+              <option value="nurture">💡 Value Nurture</option>
+              <option value="custom">🎯 Custom Strategy</option>
             </select>
           </div>
         </div>
@@ -246,14 +269,29 @@
 
       <!-- Follow-up Modal -->
       <div id="followup-modal" class="hidden" style="position: fixed; inset: 0; background: #000000cc; backdrop-filter: blur(8px); z-index: 100; place-items: center; padding: 16px;">
-        <div class="card" style="width: min(540px, 100%); margin: auto; max-height: 90vh; overflow-y: auto;">
+        <div class="card" style="width: min(580px, 100%); margin: auto; max-height: 90vh; overflow-y: auto;">
           <div class="chat-head">
             <h2 id="followup-modal-title" style="margin: 0;">⚡ Dynamic Follow-up Composer</h2>
             <button id="close-followup-modal" class="ghost small">✕</button>
           </div>
           <p class="muted small-text" id="followup-modal-subtitle" style="margin-top: 4px;"></p>
+
+          <div style="margin: 12px 0 8px; padding: 10px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
+            <label style="margin: 0; font-size: 13px; font-weight: 600;">Active Follow-Up Strategy for this Lead:
+              <select id="modal-followup-type" style="margin-top: 6px;">
+                <option value="auto">⚡ Auto (Smart AI based on status)</option>
+                <option value="rejected">🛑 Rejected (No Follow-Up / Stopped)</option>
+                <option value="on_hold">⏸️ On Hold (Friendly check-in)</option>
+                <option value="not_attended">⚠️ Missed Call (Reschedule call)</option>
+                <option value="buy_soon">⏳ Buying in Few Days (Closing check-in)</option>
+                <option value="nurture">💡 Value Nurture (Share portfolio)</option>
+                <option value="custom">🎯 Custom Strategy</option>
+              </select>
+            </label>
+          </div>
+
           <div id="followup-status-alert" style="margin: 10px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;"></div>
-          <label style="margin-top: 10px;">Message (Tailored to Status)
+          <label style="margin-top: 10px;">Message (Tailored to Strategy)
             <textarea id="followup-text" rows="5" style="font-family: inherit; font-size: 14px; line-height: 1.5;"></textarea>
           </label>
           <div class="actions" style="margin-top: 14px; flex-wrap: wrap;">

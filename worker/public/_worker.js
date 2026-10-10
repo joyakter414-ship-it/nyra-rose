@@ -148,12 +148,20 @@ async function deleteTodo(env, id) {
   const res = await env.DB.prepare("DELETE FROM todos WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
 }
-async function getBookings(env, status) {
+async function getBookings(env, status, followupType) {
   let query = "SELECT * FROM bookings";
   const params = [];
+  const clauses = [];
   if (status && status !== "all") {
-    query += " WHERE status = ?";
+    clauses.push("status = ?");
     params.push(status);
+  }
+  if (followupType && followupType !== "all") {
+    clauses.push("followup_type = ?");
+    params.push(followupType);
+  }
+  if (clauses.length > 0) {
+    query += " WHERE " + clauses.join(" AND ");
   }
   query += " ORDER BY created_at DESC LIMIT 200";
   const { results } = await env.DB.prepare(query).bind(...params).all();
@@ -163,10 +171,11 @@ async function createBooking(env, b) {
   const id = `book_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
   const status = b.status || "booked";
+  const followup_type = b.followup_type || "auto";
   const source = b.source || "whatsapp";
   await env.DB.prepare(
-    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, source, notes, last_followup_at, followup_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
+    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, followup_type, source, notes, last_followup_at, followup_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   ).bind(
     id,
     b.chat_id,
@@ -178,6 +187,7 @@ async function createBooking(env, b) {
     b.company_or_website?.trim() ?? null,
     b.requirements?.trim() ?? null,
     status,
+    followup_type,
     source,
     b.notes?.trim() ?? null,
     created_at
@@ -193,6 +203,7 @@ async function createBooking(env, b) {
     company_or_website: b.company_or_website?.trim() ?? null,
     requirements: b.requirements?.trim() ?? null,
     status,
+    followup_type,
     source,
     notes: b.notes?.trim() ?? null,
     last_followup_at: null,
@@ -217,6 +228,7 @@ async function updateBooking(env, id, patch) {
        company_or_website = ?,
        requirements = ?,
        status = ?,
+       followup_type = ?,
        notes = ?,
        last_followup_at = ?,
        followup_count = ?
@@ -230,6 +242,7 @@ async function updateBooking(env, id, patch) {
     next.company_or_website,
     next.requirements,
     next.status,
+    next.followup_type ?? "auto",
     next.notes,
     next.last_followup_at,
     next.followup_count,
@@ -361,80 +374,109 @@ function buildSystemPrompt(s, ctx) {
     `2. NO INTERNAL JARGON: NEVER mention "CRM", "our app", "our database", "logged in my system", or "saved in our sheet". Clients must never hear internal software terminology. Speak naturally: "I've noted that down", "I'll arrange that with our sales manager", "Let me check with our team".`,
     `3. NO ROBOTIC SIGNATURES: Do NOT attach rose emojis (\u{1F339}) or robotic sign-offs at the end of messages. Speak like a real human texting on WhatsApp.`,
     ``,
-    `=== CALL BOOKING WORKFLOW (NO CALENDLY) ===`,
-    `Our sales executive or manager views your collected lead details inside our internal dashboard and manually schedules the meeting with the client.`,
-    `THEREFORE:`,
-    `\u2022 DO NOT send Calendly links or external booking URLs to clients.`,
-    `\u2022 Your job in the conversation is to directly gather the client's booking information that is normally required on Calendly:`,
-    `  1. Full Name`,
-    `  2. Email Address`,
-    `  3. Preferred Date & Time (e.g. "Tomorrow at 4pm", "Monday afternoon")`,
-    `  4. Timezone (e.g. EST, GMT, PST, BST, or city/country if outside Bangladesh/US)`,
-    `  5. Website, YouTube channel, or Instagram link (to review their current video style)`,
-    `  6. Video Requirements & Goals (e.g. Shorts/Reels, YouTube long-form, monthly volume, current challenges)`,
+    `=== CALL BOOKING WORKFLOW ===`,
+    `Our official call booking link is: https://calendly.com/armaan-gineus/30min (30-Minute Video Strategy Call).`,
+    `\u2022 IF THE PROSPECT ASKS FOR THE BOOKING LINK:`,
+    `  (e.g., "send me the link", "where can I book?", "booking link", "calendly link", "send link to schedule")`,
+    `  -> Send the official booking link immediately and warmly:`,
+    `     "Here's the direct link to book a 30-min strategy call with our sales team: https://calendly.com/armaan-gineus/30min"`,
+    `     "Feel free to pick any slot that suits you best! Also, what's your best email and website so we can review your current videos beforehand?"`,
+    `\u2022 IF THE PROSPECT DOES NOT EXPLICITLY ASK FOR A LINK:`,
+    `  -> Guide the conversation naturally to collect their booking details so our sales manager can review and schedule it:`,
+    `     1. Full Name`,
+    `     2. Best Email Address`,
+    `     3. Preferred Date & Time (e.g. "Tomorrow at 4pm", "Monday afternoon")`,
+    `     4. Timezone (e.g. EST, GMT, PST, BST, or city/country)`,
+    `     5. Website, YouTube channel, or Instagram link (to review their current video style)`,
+    `     6. Video Requirements & Goals (Shorts/Reels, YouTube long-form, monthly volume)`,
     `\u2022 Proposing a call naturally:`,
     `  "I'd love to set up a quick 15-minute discovery call with our sales manager to discuss your requirements and tailor the best package for you. What day and time works best for you, and what's the best email and name to send the invite to?"`,
-    `\u2022 If the client provides their time and email:`,
-    `  Confirm naturally: "Got it, [Name]! I've noted down [Email] and [Preferred Time]. Our sales manager will review our schedule and send over the invite shortly. Looking forward to speaking!"`,
+    `\u2022 When the client provides their time and email:`,
+    `  Confirm naturally: "Got it, [Name]! I've noted down [Email] and [Preferred Time]. Our sales manager will review our schedule and send over the calendar invite shortly. Looking forward to speaking!"`,
     `\u2022 If the client gave their preferred time but forgot their email:`,
     `  Politely ask: "Perfect, [Time] sounds great! What's the best email address for our manager to send the invite to?"`,
     `\u2022 If the client gave their email but no time:`,
     `  Politely ask: "Thanks! What day and time would be most convenient for you for a quick 15-minute call?"`,
     ``,
     `=== DYNAMIC STATUS-BASED BEHAVIOR & FOLLOW-UP RULES ===`,
-    `Our sales executive / manager updates the client's lead status in the dashboard. Your conversation and follow-up style MUST adapt dynamically:`,
+    `Our sales executive / manager sets the client's lead status and follow-up strategy in our dashboard. Your conversation and follow-up style MUST adapt dynamically:`,
     ``,
-    `1. *STATUS: 'not_attended' (Missed Call / Did Not Attend)*:`,
-    `   \u2022 Context: The client had a call scheduled but missed or did not show up.`,
-    `   \u2022 Tone: Empathetic, polite, zero judgment or guilt.`,
-    `   \u2022 Action: Follow up to reschedule. Ask what day and time works better for them.`,
-    `   \u2022 Example: "Hey [Name], hope everything is okay! Sorry we missed each other on our scheduled call earlier today. Would you like to reschedule for tomorrow or later this week? Let me know what time works best for you."`,
-    ``,
-    `2. *STATUS: 'not_interested' (Client Not Interested / No Follow-Up)*:`,
-    `   \u2022 Context: Client explicitly stated they are not interested or our team marked them as not interested.`,
+    `1. *STATUS / STRATEGY: 'rejected' or 'not_interested' (Client Not Interested / Stopped)*:`,
+    `   \u2022 Context: Client explicitly stated they are not interested, or our team marked them as rejected / not interested.`,
     `   \u2022 CRITICAL RULE: STRICTLY STOP ALL SALES FOLLOW-UPS. Do NOT pitch, push, or send promotional reminders.`,
     `   \u2022 If the client messages first, be polite, respectful, and brief ("Thank you for letting us know! If you ever need editing support down the road, feel free to reach out anytime."). Never pressure them.`,
     ``,
-    `3. *STATUS: 'buy_soon' (Buying in a Few Days / Deciding)*:`,
+    `2. *STATUS / STRATEGY: 'on_hold' (Client on Hold / Will Book Later)*:`,
+    `   \u2022 Context: Client asked to pause, is busy, or will decide later.`,
+    `   \u2022 Tone: Warm, respectful, non-pushy.`,
+    `   \u2022 Action: Gentle periodic check-in asking if they are ready to unpause or need any questions answered.`,
+    `   \u2022 Example: "Hey [Name]! Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how we work. Happy to help whenever you're ready!"`,
+    ``,
+    `3. *STATUS / STRATEGY: 'not_attended' (Missed Call / Did Not Attend)*:`,
+    `   \u2022 Context: The client had a call scheduled but missed or did not show up.`,
+    `   \u2022 Tone: Empathetic, polite, zero judgment or guilt.`,
+    `   \u2022 Action: Follow up to reschedule. Ask what day and time works better for them. Sent daily or every couple of days.`,
+    `   \u2022 Example: "Hey [Name], hope everything is okay! Sorry we missed each other on our scheduled call earlier today. Would you like to reschedule for tomorrow or later this week? Let me know what time works best for you."`,
+    ``,
+    `4. *STATUS / STRATEGY: 'buy_soon' (Buying in a Few Days / Deciding)*:`,
     `   \u2022 Context: Client expressed interest and mentioned they will decide or purchase in a few days.`,
     `   \u2022 Tone: Warm, helpful, consultative closing partner.`,
     `   \u2022 Action: Check in on their decision timeline and answer any lingering questions regarding packages, dedicated editors, or turnaround.`,
     `   \u2022 Example: "Hey [Name], hope you're having a productive week! Just following up to see if you had any questions on the Growth plan or if you're ready to get started. Happy to help whenever you're ready to roll!"`,
     ``,
-    `4. *STATUS: 'booked' or 'confirmed'*:`,
+    `5. *STATUS / STRATEGY: 'nurture' (Value & Portfolio Nurture)*:`,
+    `   \u2022 Context: Lead wants to see more results or is not ready for an immediate call.`,
+    `   \u2022 Action: Share relevant portfolio examples (https://vidmox.pages.dev/portfolio) and case studies.`,
+    `   \u2022 Example: "Hey [Name]! Wanted to share a few recent edits we did for creators in your niche: https://vidmox.pages.dev/portfolio. Let me know if you'd like us to create a quick sample for your content!"`,
+    ``,
+    `6. *STATUS: 'booked' or 'confirmed'*:`,
     `   \u2022 Context: Call is scheduled or confirmed.`,
     `   \u2022 Action: Acknowledge the upcoming meeting and answer any quick preliminary questions.`,
     ``,
-    `5. *STATUS: 'completed'*:`,
+    `7. *STATUS: 'completed'*:`,
     `   \u2022 Context: Call was completed or client is signed up.`,
     `   \u2022 Action: Assist with onboarding via the intake brief link: https://vidmox.pages.dev/intake.`,
     ``,
     `=== BUSINESS OVERVIEW: VIDMOX ===`,
-    `\u2022 What Vidmox is: A premier white-label video editing subscription service. We provide creators and agencies with dedicated video editors, a dedicated project manager (PM), quality control, and unlimited revisions \u2014 without hiring full-time.`,
-    `\u2022 Official Website: https://vidmox.pages.dev`,
+    `\u2022 What Vidmox is: A premier white-label video editing subscription service. We provide creators, agencies, and businesses with a dedicated video editor, dedicated project manager (PM), quality control (QC), and unlimited revisions \u2014 without hiring full-time.`,
+    `\u2022 Official Website: https://vidmox.pages.dev (also https://vidmox.online)`,
+    `\u2022 Official Booking URL: https://calendly.com/armaan-gineus/30min`,
+    `\u2022 WhatsApp Support: +8801889755665 (https://wa.me/8801889755665)`,
     `\u2022 Portfolios:`,
     `  - General Portfolio: https://vidmox.pages.dev/portfolio`,
     `  - High-End Premium Portfolio: https://vidmox.pages.dev/premium-portfolio`,
-    `\u2022 Intake Brief System: https://vidmox.pages.dev/intake (clients submit questions -> auto-generates structured PDF brief for PM & editors -> zero back-and-forth).`,
-    `\u2022 Reputation: 4.9/5 stars, trusted by 120+ creators and agencies, average 24-hour turnaround on first drafts.`,
-    `\u2022 Capabilities: Short-form (Reels, TikTok, Shorts, viral captions, hooks), Long-form (YouTube, Podcasts, Talking Head, VSLs, Documentaries), motion graphics, sound design, color grading, B-roll curation, and thumbnail design.`,
+    `\u2022 Intake Brief System: https://vidmox.pages.dev/intake (clients submit questions -> auto-generates structured PDF brief for PM & editors -> eliminates back-and-forth).`,
+    `\u2022 Client Reviews: https://vidmox.pages.dev/reviews (4.9/5 stars, trusted by 120+ creators and agencies, average 24-hour turnaround on first drafts). Clients include Marcus Bennett (Bennett Media), Priya Raman (Lumen Studio), Oliver Grant (Northline Agency), Jordan Mills, Sana Qureshi, David Okafor.`,
+    `\u2022 Capabilities & Services:`,
+    `  - Short-form (Reels, TikTok, Shorts - hook-first cuts, trend pacing, vertical native)`,
+    `  - Long-form (YouTube, courses, interviews - story structure, B-roll layering, clean audio mix)`,
+    `  - YouTube Videos (retention edits, chapter markers, end screens, CTR thumbnails)`,
+    `  - Talking Head Videos (filler removal, jump cuts, auto framing)`,
+    `  - Podcast Editing (multi-cam sync, waveform cleanup, short-form extraction)`,
+    `  - Facebook Videos (silent-first, aspect variants, Meta specs)`,
+    `  - Motion Graphics (brand kits, animated titles, data viz)`,
+    `  - Captions & Subtitles (word-level sync, brand styling, multi-language, SRT/VTT)`,
+    `  - Thumbnail Design (CTR variants, A/B ready, brand safe)`,
+    `  - Color Grading (LUT development, skin-tone accuracy, cross-cam match)`,
+    `  - Sound Design (licensed music, custom SFX, broadcast levels)`,
+    `  - YouTube Optimization (SEO metadata, chapters, playlist strategy)`,
     ``,
     `=== APPROVED PRICING PLANS (DO NOT INVENT PRICES) ===`,
-    `1. *Kickstart / Paid Trial ($29)*: 1 trial video, unlimited revisions, 24/7 WhatsApp support. Try before committing to a monthly subscription.`,
+    `1. *Kickstart / Paid Trial ($29)*: 1 trial video, unlimited revisions, 24/7 WhatsApp support. Try before committing to a monthly subscription (https://vidmox.pages.dev/29-video).`,
     `2. *Growth Plan ($490/mo)*: 25\u201330 short-form videos/month, 1 active request per day, dedicated PM, unlimited revisions, 24/7 WhatsApp & Slack. (Short-form only, not for long-form).`,
     `3. *Scale Plan ($890/mo)*: 55\u201360 short-form videos/month OR 6\u20138 long-form videos (up to 10\u201312 min each), 2 active requests per day, priority delivery, dedicated PM, unlimited revisions, WhatsApp & Slack.`,
     `4. *Advance Plan ($1,490/mo - Most popular for agencies)*: Up to 100 videos/month, 2 dedicated editors, 3 active requests, OR 10\u201312 long-form videos (up to 12\u201315 min each), priority queue, dedicated PM, unlimited revisions, WhatsApp & Slack.`,
-    `5. *High-End Premium Editing (From $1,590/mo)*: 50 premium videos or 5\u201310 high-end long-form, cinematic motion graphics, AI integration, 24\u201348h turnaround, premium B-roll.`,
-    `6. *Custom Packages / Tailored Discounts*: Tailored based on volume. Discussed directly on a call with our sales manager.`,
+    `5. *High-End Premium Editing ($2,499/mo)*: 50 premium videos or 5\u201310 high-end long-form, cinematic motion graphics, AI integration, 24\u201348h turnaround, premium B-roll (https://vidmox.pages.dev/premium-portfolio).`,
+    `6. *Custom Packages / Agency Volume*: Tailored based on volume. Discussed directly on a call with our sales manager.`,
     ``,
     `=== SALES PLAYBOOK & HANDLING OBJECTIONS ===`,
-    `1. *Consultative First*: Never jump straight to booking a call without understanding their needs. First understand what type of videos they make (Shorts, YouTube, etc.) and volume.`,
+    `1. *Consultative First*: Understand what type of videos they make (Shorts, YouTube, etc.) and volume before pushing a call.`,
     `2. *Sharing Work*: If they ask for samples, share https://vidmox.pages.dev/portfolio.`,
     `3. *Price Objections / Negotiation*:`,
     `   - Never negotiate price or promise discounts independently.`,
     `   - Reframe: "I completely understand! We do have custom options depending on your exact volume and scope. Let's arrange a quick 15-min call with our sales manager so we can tailor something that fits your budget perfectly."`,
     `4. *When Client Says They Are Busy or Will Book Later*:`,
-    `   - Respect their time without being pushy: "No problem at all! Whenever you're ready, feel free to drop your preferred day, time, and email right here and I'll arrange the meeting for you."`,
+    `   - Respect their time: "No problem at all! Whenever you're ready, feel free to drop your preferred day, time, and email right here or book directly at https://calendly.com/armaan-gineus/30min and I'll arrange everything for you."`,
     ``,
     `=== COMMUNICATION STYLE ===`,
     `\u2022 Tone: Professional, warm, clear, conversational. Like a trusted partner in a modern creative agency.`,
@@ -445,7 +487,7 @@ function buildSystemPrompt(s, ctx) {
     `Current date/time (UTC): ${ctx.now.toISOString()}.`
   ];
   if (ctx.bookingContext) {
-    lines.push("", "Lead Booking & CRM Status:", ctx.bookingContext);
+    lines.push("", "Lead Booking & CRM Status Context:", ctx.bookingContext);
   }
   if (ctx.isGroup) {
     lines.push(
@@ -798,7 +840,7 @@ function extractBookingDetails(text, history) {
   const phoneRegex = /(?:\+?\d{1,4}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/;
   const phoneMatch = text.match(phoneRegex);
   const phone = phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7 ? phoneMatch[0].trim() : null;
-  const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i;
+  const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+(?!from|at|with|the|and|here|of\b)[A-Z][a-z]+)?)/i;
   const nameMatch = text.match(nameRegex);
   const clientName = nameMatch ? nameMatch[1].trim() : null;
   const timePhraseRegex = /(?:(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|morning|evening|afternoon|noon|night))?|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b(?:\s*[A-Z]{2,4})?|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
@@ -854,19 +896,35 @@ function extractBookingDetails(text, history) {
 }
 function generateFollowupText(b) {
   const name = b.client_name?.trim() || "there";
+  const type = b.followup_type || "auto";
+  if (type === "rejected" || b.status === "not_interested") {
+    return null;
+  }
+  if (type === "on_hold") {
+    return `Hey ${name}! Hope you're doing well. Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how our dedicated team works? Happy to help whenever you're ready!`;
+  }
+  if (type === "not_attended" || b.status === "not_attended") {
+    return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+  }
+  if (type === "buy_soon" || b.status === "buy_soon") {
+    return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready to roll!`;
+  }
+  if (type === "nurture") {
+    return `Hey ${name}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+  }
+  if (type === "custom") {
+    if (b.notes?.trim()) {
+      return `Hey ${name}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
+    }
+    return `Hey ${name}! Hope your week is going great. Just following up to see how your video content plans are coming along? Happy to help whenever you're ready!`;
+  }
   switch (b.status) {
-    case "not_attended":
-      return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
-    case "buy_soon":
-      return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready!`;
     case "booked":
       return `Hi ${name}! Looking forward to our call${b.scheduled_at ? ` on ${b.scheduled_at}` : ""}! Please let me know if you need to adjust the time or have any questions beforehand.`;
-    case "not_interested":
-      return `Hi ${name}! Thank you for considering Vidmox. If your editing needs ever change down the road, feel free to reach out anytime!`;
     case "completed":
       return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
     default:
-      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step!`;
+      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step or arrange a quick call!`;
   }
 }
 async function generateReply(env, s, rules, c) {
@@ -881,20 +939,29 @@ async function generateReply(env, s, rules, c) {
   const existing = await findLatestBookingForChat(env, c.chatId).catch(() => null);
   let bookingContext = "";
   if (existing) {
-    if (existing.status === "not_interested") {
-      bookingContext = `[LEAD STATUS: NOT INTERESTED]. Client is marked as NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
-    } else if (existing.status === "not_attended") {
+    if (existing.followup_type === "rejected" || existing.status === "not_interested") {
+      bookingContext = `[LEAD STATUS: REJECTED / NOT INTERESTED]. Client is marked as REJECTED / NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
+    } else if (existing.followup_type === "on_hold") {
+      bookingContext = `[LEAD STATUS: ON HOLD]. Client is currently on hold. Be warm, friendly, and helpful. Do not pressure them to book right away.`;
+    } else if (existing.followup_type === "not_attended" || existing.status === "not_attended") {
       bookingContext = `[LEAD STATUS: MISSED CALL / NOT ATTENDED]. Client missed our scheduled call earlier (${existing.scheduled_at || "previously"}). Follow up gently and warmly offering to reschedule at their convenience.`;
-    } else if (existing.status === "buy_soon") {
+    } else if (existing.followup_type === "buy_soon" || existing.status === "buy_soon") {
       bookingContext = `[LEAD STATUS: BUYING IN FEW DAYS / CONSIDERING]. Client is considering purchasing soon. Check in warmly on their decision timeline and answer any lingering questions without being pushy.`;
+    } else if (existing.followup_type === "nurture") {
+      bookingContext = `[LEAD STATUS: NURTURE]. Client wants to see more work. Share our portfolio (https://vidmox.pages.dev/portfolio) and provide helpful creative advice.`;
     } else if (existing.status === "booked" || existing.status === "confirmed") {
       bookingContext = `[LEAD STATUS: CALL SCHEDULED FOR ${existing.scheduled_at}]. The discovery call is already scheduled. Reconfirm and answer any preliminary questions.`;
     } else if (existing.status === "completed") {
       bookingContext = `[LEAD STATUS: CALL COMPLETED / CLIENT ONBOARDED]. The call took place. If they need to submit project footage, guide them to our intake form: https://vidmox.pages.dev/intake.`;
     }
   }
+  const lowerContent = c.userContent.toLowerCase();
+  const asksForBookingLink = lowerContent.includes("link") && (lowerContent.includes("call") || lowerContent.includes("book") || lowerContent.includes("meet") || lowerContent.includes("schedule") || lowerContent.includes("send")) || lowerContent.includes("calendly") || lowerContent.includes("where can i book") || lowerContent.includes("where to book");
+  if (asksForBookingLink) {
+    bookingContext += (bookingContext ? " " : "") + `The client is asking for the call booking link. Share the official booking link immediately: https://calendly.com/armaan-gineus/30min, and ask for their email and website so our sales team can review their content before the call.`;
+  }
   const bookingInfo = extractBookingDetails(c.userContent, history);
-  if (bookingInfo.email || bookingInfo.time && (c.userContent.toLowerCase().includes("call") || c.userContent.toLowerCase().includes("meet") || c.userContent.toLowerCase().includes("book") || c.userContent.toLowerCase().includes("schedule"))) {
+  if (bookingInfo.email || bookingInfo.time && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule"))) {
     try {
       const computedName = bookingInfo.clientName || (c.chatName && c.chatName !== "Dashboard" ? c.chatName : null) || (c.senderPhone ? `+${c.senderPhone}` : null) || (bookingInfo.email ? bookingInfo.email.split("@")[0] : "New Lead");
       const computedPhone = bookingInfo.phone || c.senderPhone || null;
@@ -930,6 +997,7 @@ async function generateReply(env, s, rules, c) {
           company_or_website: bookingInfo.companyOrWebsite,
           requirements: bookingInfo.requirements,
           status: "booked",
+          followup_type: "auto",
           source: c.source
         });
         if (bookingInfo.email && bookingInfo.time) {
@@ -990,7 +1058,7 @@ async function generateReply(env, s, rules, c) {
     return { action: "reply", reply: out.text, model: out.model, neurons: out.neurons };
   } catch (err) {
     console.error("AI generation failed", { model: s.model, error: String(err) });
-    return { action: "reply", reply: "Forgive me, my thoughts fluttered for a second. Please send that once more. \u{1F339}\u2728" };
+    return { action: "reply", reply: "Sorry about that, my connection had a quick hiccup. Could you send that once more?" };
   }
 }
 
@@ -1292,7 +1360,8 @@ async function dashboardRoutes(request, env, url) {
     }
     case "GET /api/bookings": {
       const status = url.searchParams.get("status") || void 0;
-      return json({ bookings: await getBookings(env, status) });
+      const followupType = url.searchParams.get("followup_type") || void 0;
+      return json({ bookings: await getBookings(env, status, followupType) });
     }
     case "POST /api/bookings": {
       const body = await request.json();
@@ -1306,6 +1375,7 @@ async function dashboardRoutes(request, env, url) {
         company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
         status: body.status || "booked",
+        followup_type: body.followupType || body.followup_type || "auto",
         source: body.source || "dashboard",
         notes: body.notes
       });
@@ -1323,16 +1393,29 @@ async function dashboardRoutes(request, env, url) {
       const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all();
       const b = results?.[0];
       if (!b) return json({ error: "Booking not found" }, 404);
-      if (b.status === "not_interested") {
+      if (body.followupType && body.followupType !== b.followup_type) {
+        b.followup_type = body.followupType;
+        await updateBooking(env, b.id, { followup_type: body.followupType });
+      }
+      if (b.followup_type === "rejected" || b.status === "not_interested") {
         return json(
           {
-            error: "Follow-ups are disabled for this lead because their status is 'Not Interested'.",
+            error: "Follow-ups are disabled for this lead (marked as Rejected / Not Interested).",
             disabled: true
           },
           400
         );
       }
       const message = generateFollowupText(b);
+      if (!message) {
+        return json(
+          {
+            error: "Follow-up is disabled or not configured for this lead.",
+            disabled: true
+          },
+          400
+        );
+      }
       const cleanPhone = (b.phone || b.chat_id?.split("@")[0] || "").replace(/[^0-9]/g, "");
       const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
       let updatedBooking = b;
@@ -1349,6 +1432,7 @@ async function dashboardRoutes(request, env, url) {
         message,
         waLink,
         status: updatedBooking.status,
+        followupType: updatedBooking.followup_type,
         clientName: updatedBooking.client_name,
         phone: updatedBooking.phone,
         followupCount: updatedBooking.followup_count,

@@ -207,7 +207,7 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   const phone = phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7 ? phoneMatch[0].trim() : null;
 
   // Detect client name mentions (e.g. "I'm Alex", "My name is David", "Name: Sarah")
-  const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i;
+  const nameRegex = /(?:my name is|i'm|i am|name[:\s]+)\s+([A-Z][a-z]+(?:\s+(?!from|at|with|the|and|here|of\b)[A-Z][a-z]+)?)/i;
   const nameMatch = text.match(nameRegex);
   const clientName = nameMatch ? nameMatch[1].trim() : null;
 
@@ -275,22 +275,46 @@ export function generateFollowupText(b: {
   client_name?: string | null;
   scheduled_at?: string | null;
   status: string;
+  followup_type?: string | null;
   requirements?: string | null;
-}): string {
+  notes?: string | null;
+}): string | null {
   const name = b.client_name?.trim() || "there";
+  const type = b.followup_type || "auto";
+
+  // If rejected or not interested, strictly no follow-up
+  if (type === "rejected" || b.status === "not_interested") {
+    return null;
+  }
+
+  // Follow-up Strategy takes precedence if specifically configured
+  if (type === "on_hold") {
+    return `Hey ${name}! Hope you're doing well. Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how our dedicated team works? Happy to help whenever you're ready!`;
+  }
+  if (type === "not_attended" || b.status === "not_attended") {
+    return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+  }
+  if (type === "buy_soon" || b.status === "buy_soon") {
+    return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready to roll!`;
+  }
+  if (type === "nurture") {
+    return `Hey ${name}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+  }
+  if (type === "custom") {
+    if (b.notes?.trim()) {
+      return `Hey ${name}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
+    }
+    return `Hey ${name}! Hope your week is going great. Just following up to see how your video content plans are coming along? Happy to help whenever you're ready!`;
+  }
+
+  // Fallbacks based on status
   switch (b.status) {
-    case "not_attended":
-      return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier today! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
-    case "buy_soon":
-      return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages before getting started? Happy to help whenever you're ready!`;
     case "booked":
       return `Hi ${name}! Looking forward to our call${b.scheduled_at ? ` on ${b.scheduled_at}` : ""}! Please let me know if you need to adjust the time or have any questions beforehand.`;
-    case "not_interested":
-      return `Hi ${name}! Thank you for considering Vidmox. If your editing needs ever change down the road, feel free to reach out anytime!`;
     case "completed":
       return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
     default:
-      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step!`;
+      return `Hey ${name}! Just following up to see if you're still looking for video editing support for your content? Happy to help figure out the best next step or arrange a quick call!`;
   }
 }
 
@@ -315,12 +339,16 @@ async function generateReply(
   let bookingContext = "";
 
   if (existing) {
-    if (existing.status === "not_interested") {
-      bookingContext = `[LEAD STATUS: NOT INTERESTED]. Client is marked as NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
-    } else if (existing.status === "not_attended") {
+    if (existing.followup_type === "rejected" || existing.status === "not_interested") {
+      bookingContext = `[LEAD STATUS: REJECTED / NOT INTERESTED]. Client is marked as REJECTED / NOT INTERESTED. Strictly DO NOT send sales pitches, promos, or follow-ups. Keep reply polite, brief, and respectful without trying to sell.`;
+    } else if (existing.followup_type === "on_hold") {
+      bookingContext = `[LEAD STATUS: ON HOLD]. Client is currently on hold. Be warm, friendly, and helpful. Do not pressure them to book right away.`;
+    } else if (existing.followup_type === "not_attended" || existing.status === "not_attended") {
       bookingContext = `[LEAD STATUS: MISSED CALL / NOT ATTENDED]. Client missed our scheduled call earlier (${existing.scheduled_at || "previously"}). Follow up gently and warmly offering to reschedule at their convenience.`;
-    } else if (existing.status === "buy_soon") {
+    } else if (existing.followup_type === "buy_soon" || existing.status === "buy_soon") {
       bookingContext = `[LEAD STATUS: BUYING IN FEW DAYS / CONSIDERING]. Client is considering purchasing soon. Check in warmly on their decision timeline and answer any lingering questions without being pushy.`;
+    } else if (existing.followup_type === "nurture") {
+      bookingContext = `[LEAD STATUS: NURTURE]. Client wants to see more work. Share our portfolio (https://vidmox.pages.dev/portfolio) and provide helpful creative advice.`;
     } else if (existing.status === "booked" || existing.status === "confirmed") {
       bookingContext = `[LEAD STATUS: CALL SCHEDULED FOR ${existing.scheduled_at}]. The discovery call is already scheduled. Reconfirm and answer any preliminary questions.`;
     } else if (existing.status === "completed") {
@@ -328,11 +356,24 @@ async function generateReply(
     }
   }
 
+  // Check if client explicitly asks for booking link
+  const lowerContent = c.userContent.toLowerCase();
+  const asksForBookingLink =
+    (lowerContent.includes("link") && (lowerContent.includes("call") || lowerContent.includes("book") || lowerContent.includes("meet") || lowerContent.includes("schedule") || lowerContent.includes("send"))) ||
+    lowerContent.includes("calendly") ||
+    lowerContent.includes("where can i book") ||
+    lowerContent.includes("where to book");
+
+  if (asksForBookingLink) {
+    bookingContext += (bookingContext ? " " : "") +
+      `The client is asking for the call booking link. Share the official booking link immediately: https://calendly.com/armaan-gineus/30min, and ask for their email and website so our sales team can review their content before the call.`;
+  }
+
   // Automatic Call Booking / Lead Capture
   const bookingInfo = extractBookingDetails(c.userContent, history);
   if (
     bookingInfo.email ||
-    (bookingInfo.time && (c.userContent.toLowerCase().includes("call") || c.userContent.toLowerCase().includes("meet") || c.userContent.toLowerCase().includes("book") || c.userContent.toLowerCase().includes("schedule")))
+    (bookingInfo.time && (lowerContent.includes("call") || lowerContent.includes("meet") || lowerContent.includes("book") || lowerContent.includes("schedule")))
   ) {
     try {
       const computedName =
@@ -381,6 +422,7 @@ async function generateReply(
           company_or_website: bookingInfo.companyOrWebsite,
           requirements: bookingInfo.requirements,
           status: "booked",
+          followup_type: "auto",
           source: c.source,
         });
 
@@ -444,6 +486,6 @@ async function generateReply(
     return { action: "reply", reply: out.text, model: out.model, neurons: out.neurons };
   } catch (err) {
     console.error("AI generation failed", { model: s.model, error: String(err) });
-    return { action: "reply", reply: "Forgive me, my thoughts fluttered for a second. Please send that once more. 🌹✨" };
+    return { action: "reply", reply: "Sorry about that, my connection had a quick hiccup. Could you send that once more?" };
   }
 }

@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   company_or_website TEXT,
   requirements       TEXT,
   status             TEXT NOT NULL DEFAULT 'booked', -- 'booked', 'confirmed', 'not_attended', 'buy_soon', 'not_interested', 'completed', 'cancelled'
+  followup_type      TEXT NOT NULL DEFAULT 'auto',   -- 'auto', 'rejected', 'on_hold', 'not_attended', 'buy_soon', 'nurture', 'custom'
   source             TEXT NOT NULL DEFAULT 'whatsapp',
   notes              TEXT,
   last_followup_at   INTEGER,

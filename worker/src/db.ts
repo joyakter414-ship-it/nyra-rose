@@ -270,6 +270,15 @@ export type BookingStatus =
   | "completed"
   | "cancelled";
 
+export type FollowupType =
+  | "auto"
+  | "rejected"
+  | "on_hold"
+  | "not_attended"
+  | "buy_soon"
+  | "nurture"
+  | "custom";
+
 export interface Booking {
   id: string;
   chat_id: string;
@@ -281,6 +290,7 @@ export interface Booking {
   company_or_website: string | null;
   requirements: string | null;
   status: BookingStatus;
+  followup_type: FollowupType;
   source: string;
   notes: string | null;
   last_followup_at: number | null;
@@ -288,13 +298,24 @@ export interface Booking {
   created_at: number;
 }
 
-export async function getBookings(env: AppEnv, status?: string): Promise<Booking[]> {
+export async function getBookings(env: AppEnv, status?: string, followupType?: string): Promise<Booking[]> {
   let query = "SELECT * FROM bookings";
   const params: unknown[] = [];
+  const clauses: string[] = [];
+
   if (status && status !== "all") {
-    query += " WHERE status = ?";
+    clauses.push("status = ?");
     params.push(status);
   }
+  if (followupType && followupType !== "all") {
+    clauses.push("followup_type = ?");
+    params.push(followupType);
+  }
+
+  if (clauses.length > 0) {
+    query += " WHERE " + clauses.join(" AND ");
+  }
+
   query += " ORDER BY created_at DESC LIMIT 200";
   const { results } = await env.DB.prepare(query).bind(...params).all<Booking>();
   return results;
@@ -312,6 +333,7 @@ export async function createBooking(
     company_or_website?: string | null;
     requirements?: string | null;
     status?: BookingStatus;
+    followup_type?: FollowupType;
     source?: string;
     notes?: string | null;
   }
@@ -319,11 +341,12 @@ export async function createBooking(
   const id = `book_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
   const status: BookingStatus = b.status || "booked";
+  const followup_type: FollowupType = b.followup_type || "auto";
   const source = b.source || "whatsapp";
 
   await env.DB.prepare(
-    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, source, notes, last_followup_at, followup_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
+    `INSERT INTO bookings (id, chat_id, client_name, phone, email, scheduled_at, timezone, company_or_website, requirements, status, followup_type, source, notes, last_followup_at, followup_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   )
     .bind(
       id,
@@ -336,6 +359,7 @@ export async function createBooking(
       b.company_or_website?.trim() ?? null,
       b.requirements?.trim() ?? null,
       status,
+      followup_type,
       source,
       b.notes?.trim() ?? null,
       created_at
@@ -353,6 +377,7 @@ export async function createBooking(
     company_or_website: b.company_or_website?.trim() ?? null,
     requirements: b.requirements?.trim() ?? null,
     status,
+    followup_type,
     source,
     notes: b.notes?.trim() ?? null,
     last_followup_at: null,
@@ -384,6 +409,7 @@ export async function updateBooking(
        company_or_website = ?,
        requirements = ?,
        status = ?,
+       followup_type = ?,
        notes = ?,
        last_followup_at = ?,
        followup_count = ?
@@ -398,6 +424,7 @@ export async function updateBooking(
       next.company_or_website,
       next.requirements,
       next.status,
+      next.followup_type ?? "auto",
       next.notes,
       next.last_followup_at,
       next.followup_count,

@@ -375,7 +375,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
     case "GET /api/bookings": {
       const status = url.searchParams.get("status") || undefined;
-      return json({ bookings: await getBookings(env, status) });
+      const followupType = url.searchParams.get("followup_type") || undefined;
+      return json({ bookings: await getBookings(env, status, followupType) });
     }
 
     case "POST /api/bookings": {
@@ -389,6 +390,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         companyOrWebsite?: string;
         requirements?: string;
         status?: "booked" | "confirmed" | "not_attended" | "buy_soon" | "not_interested" | "completed" | "cancelled";
+        followupType?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom";
+        followup_type?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom";
         source?: string;
         notes?: string;
       };
@@ -402,6 +405,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         company_or_website: body.companyOrWebsite,
         requirements: body.requirements,
         status: body.status || "booked",
+        followup_type: body.followupType || body.followup_type || "auto",
         source: body.source || "dashboard",
         notes: body.notes,
       });
@@ -419,6 +423,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         company_or_website?: string;
         requirements?: string;
         status?: "booked" | "confirmed" | "not_attended" | "buy_soon" | "not_interested" | "completed" | "cancelled";
+        followup_type?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom";
         notes?: string;
         last_followup_at?: number;
         followup_count?: number;
@@ -429,16 +434,21 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
     }
 
     case "POST /api/bookings/followup": {
-      const body = (await request.json()) as { id: string; markSent?: boolean };
+      const body = (await request.json()) as { id: string; markSent?: boolean; followupType?: "auto" | "rejected" | "on_hold" | "not_attended" | "buy_soon" | "nurture" | "custom" };
       if (!body?.id) return json({ error: "id is required" }, 400);
       const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.id).all<Booking>();
       const b = results?.[0];
       if (!b) return json({ error: "Booking not found" }, 404);
 
-      if (b.status === "not_interested") {
+      if (body.followupType && body.followupType !== b.followup_type) {
+        b.followup_type = body.followupType;
+        await updateBooking(env, b.id, { followup_type: body.followupType });
+      }
+
+      if (b.followup_type === "rejected" || b.status === "not_interested") {
         return json(
           {
-            error: "Follow-ups are disabled for this lead because their status is 'Not Interested'.",
+            error: "Follow-ups are disabled for this lead (marked as Rejected / Not Interested).",
             disabled: true,
           },
           400,
@@ -446,6 +456,16 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       }
 
       const message = generateFollowupText(b);
+      if (!message) {
+        return json(
+          {
+            error: "Follow-up is disabled or not configured for this lead.",
+            disabled: true,
+          },
+          400,
+        );
+      }
+
       const cleanPhone = (b.phone || b.chat_id?.split("@")[0] || "").replace(/[^0-9]/g, "");
       const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : null;
 
@@ -464,6 +484,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         message,
         waLink,
         status: updatedBooking.status,
+        followupType: updatedBooking.followup_type,
         clientName: updatedBooking.client_name,
         phone: updatedBooking.phone,
         followupCount: updatedBooking.followup_count,
