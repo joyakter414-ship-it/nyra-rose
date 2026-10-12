@@ -2296,7 +2296,8 @@ async function generateReply(env, s, rules, c) {
 
 // src/index.ts
 var SESSION_KEY = "whatsapp/session.bin";
-var GATEWAY_OFFLINE_AFTER_MS = 9e4;
+var SESSION_KV_KEY = "whatsapp_session_b64";
+var GATEWAY_OFFLINE_AFTER_MS = 18e4;
 var index_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -2322,12 +2323,18 @@ async function gatewayRoutes(request, env, url) {
     case "POST /gw/status": {
       const body = await request.json();
       const prev = await kvGet(env, "gateway");
+      const now = Date.now();
+      const anotherInstanceActive = prev && prev.state === "open" && now - prev.at < 45e3 && prev.instanceId && body.instanceId && prev.instanceId !== body.instanceId;
+      if (anotherInstanceActive && body.state !== "open") {
+        return json({ ok: true, standby: true, activeInstanceId: prev.instanceId, command: null, outbound: [] });
+      }
       const next = {
         state: body.state,
-        qr: body.state === "qr" ? body.qr ?? null : null,
+        qr: body.state === "qr" ? body.qr ?? prev?.qr ?? null : null,
         me: body.me ?? prev?.me ?? null,
         detail: body.detail ?? null,
-        at: Date.now()
+        instanceId: body.instanceId ?? prev?.instanceId ?? null,
+        at: now
       };
       await kvSet(env, "gateway", next);
       const command = await kvGet(env, "gateway_command");
@@ -2348,16 +2355,40 @@ async function gatewayRoutes(request, env, url) {
       return json({ ok: true, command: command?.cmd ?? null, outbound });
     }
     case "GET /gw/session": {
-      const obj = await env.BUCKET.get(SESSION_KEY);
-      if (!obj) return new Response(null, { status: 404 });
-      return new Response(obj.body, { headers: { "content-type": "application/octet-stream" } });
+      const obj = await env.BUCKET.get(SESSION_KEY).catch(() => null);
+      if (obj) {
+        return new Response(obj.body, { headers: { "content-type": "application/octet-stream" } });
+      }
+      const b64 = await kvGet(env, SESSION_KV_KEY).catch(() => null);
+      if (b64) {
+        const binary = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        return new Response(binary, { headers: { "content-type": "application/octet-stream" } });
+      }
+      return new Response(null, { status: 404 });
     }
     case "PUT /gw/session": {
-      await env.BUCKET.put(SESSION_KEY, await request.arrayBuffer());
+      const buf = await request.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binaryStr = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binaryStr += String.fromCharCode(bytes[i]);
+      }
+      const b64 = btoa(binaryStr);
+      await Promise.all([
+        env.BUCKET.put(SESSION_KEY, buf).catch(() => {
+        }),
+        kvSet(env, SESSION_KV_KEY, b64).catch(() => {
+        })
+      ]);
       return json({ ok: true });
     }
     case "DELETE /gw/session": {
-      await env.BUCKET.delete(SESSION_KEY);
+      await Promise.all([
+        env.BUCKET.delete(SESSION_KEY).catch(() => {
+        }),
+        kvDelete(env, SESSION_KV_KEY).catch(() => {
+        })
+      ]);
       return json({ ok: true });
     }
   }
@@ -2530,8 +2561,12 @@ async function dashboardRoutes(request, env, url) {
     }
     case "POST /api/gateway/logout":
     case "POST /api/session/reset": {
-      await env.BUCKET.delete(SESSION_KEY).catch(() => {
-      });
+      await Promise.all([
+        env.BUCKET.delete(SESSION_KEY).catch(() => {
+        }),
+        kvDelete(env, SESSION_KV_KEY).catch(() => {
+        })
+      ]);
       await kvSet(env, "gateway", {
         state: "logged_out",
         qr: null,

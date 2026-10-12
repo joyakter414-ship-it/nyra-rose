@@ -32,10 +32,12 @@ const waLog = log.child({ module: "baileys" }, { level: process.env.BAILEYS_LOG_
 const MAX_MESSAGE_AGE_MS = 10 * 60_000;
 /** Safety valve against reply loops / floods: max replies per chat per minute. */
 const MAX_REPLIES_PER_MINUTE = 8;
-const HEARTBEAT_MS = 30_000;
+const HEARTBEAT_MS = 25_000;
+const INSTANCE_ID = `gw_${Math.random().toString(36).slice(2, 8)}_${Date.now()}`;
 
 let sock = null;
 let state = "starting";
+let latestQrDataUrl = null;
 let me = { pn: null, lid: null, name: null };
 let reconnectAttempts = 0;
 let restartTimer = null;
@@ -47,7 +49,9 @@ const groupNames = new Map();
 
 async function start() {
   clearTimeout(restartTimer);
-  await setState("connecting");
+  if (state !== "qr") {
+    await setState("connecting");
+  }
   await restoreSession(log);
 
   const { state: auth, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -60,6 +64,10 @@ async function start() {
   };
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
 
+  try {
+    sock?.end(undefined);
+  } catch {}
+
   sock = makeWASocket({
     version,
     auth: { creds: auth.creds, keys: makeCacheableSignalKeyStore(keys, waLog) },
@@ -68,6 +76,9 @@ async function start() {
     // Stay "offline" so your phone keeps receiving notifications as normal.
     markOnlineOnConnect: false,
     syncFullHistory: false,
+    keepAliveIntervalMs: 25_000,
+    connectTimeoutMs: 60_000,
+    defaultQueryTimeoutMs: 60_000,
     getMessage: async () => undefined,
   });
 
@@ -80,11 +91,13 @@ async function start() {
     if (qr) {
       log.info("Scan this QR in WhatsApp → Settings → Linked devices → Link a device (also shown on the dashboard):");
       qrTerminal.generate(qr, { small: true });
-      await setState("qr", { qr: await QRCode.toDataURL(qr, { margin: 1, width: 320 }) });
+      latestQrDataUrl = await QRCode.toDataURL(qr, { margin: 1, width: 320 });
+      await setState("qr", { qr: latestQrDataUrl });
     }
 
     if (connection === "open") {
       reconnectAttempts = 0;
+      latestQrDataUrl = null;
       me = {
         pn: sock.user?.id ? jidNormalizedUser(sock.user.id) : null,
         lid: sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null,
@@ -99,18 +112,28 @@ async function start() {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
         log.warn("Logged out from WhatsApp. Clearing session — a new QR code will appear.");
+        latestQrDataUrl = null;
         await wipeSession(log);
         await setState("logged_out");
-        scheduleRestart(2_000);
+        scheduleRestart(1_500);
       } else if (code === DisconnectReason.connectionReplaced) {
-        // Another gateway instance is using the same session. Don't fight it.
-        log.error("Connection replaced: another Nyra Rose gateway is running with this session. Retrying in 2 min.");
-        await setState("closed", { detail: "Another gateway took over this session" });
-        scheduleRestart(120_000);
+        // Another gateway instance took over the session — do NOT overwrite the active instance's "open" status in KV!
+        log.warn("Connection replaced: another Nyra Rose gateway instance is active. Standing by for 60s.");
+        scheduleRestart(60_000);
       } else {
-        const delay = code === DisconnectReason.restartRequired ? 0 : Math.min(60_000, 2_000 * 2 ** reconnectAttempts++);
+        const isFastRetry =
+          code === DisconnectReason.restartRequired ||
+          code === DisconnectReason.timedOut ||
+          code === 408 ||
+          code === 515;
+        const delay = isFastRetry ? 1_000 : Math.min(5_000, 1_500 * Math.min(4, ++reconnectAttempts));
         log.warn(`Connection closed (code ${code ?? "unknown"}). Reconnecting in ${Math.round(delay / 1000)}s…`);
-        await setState("closed", { detail: `Disconnected (code ${code ?? "unknown"}), reconnecting` });
+        if (latestQrDataUrl) {
+          // Keep showing the QR state while rotating QR socket
+          await setState("qr", { qr: latestQrDataUrl });
+        } else {
+          await setState("connecting", { detail: `Reconnecting seamlessly…` });
+        }
         scheduleRestart(delay);
       }
     }
@@ -130,8 +153,8 @@ function scheduleRestart(delay) {
 }
 
 function fatalRetry(err) {
-  log.error({ err: String(err) }, "Gateway start failed; retrying in 15s");
-  scheduleRestart(15_000);
+  log.error({ err: String(err) }, "Gateway start failed; retrying in 5s");
+  scheduleRestart(5_000);
 }
 
 // ─── Messages ────────────────────────────────────────────────────────────────
@@ -255,15 +278,18 @@ async function setState(next, extra = {}) {
 async function sendStatus(extra = {}) {
   try {
     const res = await brain("POST", "/gw/status", {
-      retries: 0,
+      retries: 1,
       json: {
         state,
+        instanceId: INSTANCE_ID,
+        qr: state === "qr" ? extra.qr || latestQrDataUrl || null : null,
         me: me.pn ? { id: me.pn, name: me.name, phone: jidDecode(me.pn)?.user } : null,
         ...extra,
       },
     });
-    if (res?.command === "logout" && sock && state === "open") {
+    if (res?.command === "logout" && sock) {
       log.warn("Logout requested from the dashboard.");
+      latestQrDataUrl = null;
       await sock.logout().catch((err) => log.error({ err: String(err) }, "Logout failed"));
     }
     if (Array.isArray(res?.outbound) && res.outbound.length > 0 && sock && state === "open") {
@@ -286,25 +312,31 @@ async function sendStatus(extra = {}) {
   }
 }
 
-// Re-send the latest QR with each heartbeat isn't needed (WhatsApp rotates it
-// and Baileys emits a new one), so heartbeats only carry state.
-setInterval(() => state !== "qr" && sendStatus(), HEARTBEAT_MS).unref();
+// Always send heartbeats every 25s (including while waiting in "qr" state) so the dashboard never drops offline!
+setInterval(() => sendStatus(), HEARTBEAT_MS).unref();
 
 const port = Number(process.env.PORT || 8080);
-createServer((req, res) => {
+const srv = createServer((req, res) => {
   res.writeHead(state === "open" ? 200 : 503, { "content-type": "application/json" });
-  res.end(JSON.stringify({ name: "nyra-rose-gateway", state, connectedAs: me.pn ? `+${jidDecode(me.pn)?.user}` : null }));
-}).listen(port, () => log.info(`Health check on http://localhost:${port}`));
+  res.end(JSON.stringify({ name: "nyra-rose-gateway", state, instanceId: INSTANCE_ID, connectedAs: me.pn ? `+${jidDecode(me.pn)?.user}` : null }));
+});
+srv.on("error", (err) => log.warn({ err: String(err) }, "Health check port busy; continuing gateway operation"));
+srv.listen(port, () => log.info(`Health check on http://localhost:${port}`));
 
 async function shutdown(signal) {
   log.info(`${signal} received — saving session and exiting.`);
   await backupNow(log);
-  await setState("closed", { detail: "Gateway stopped" });
   sock?.end(undefined);
   process.exit(0);
 }
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("uncaughtException", (err) => {
+  log.error({ err: String(err), stack: err?.stack }, "Uncaught exception in gateway — keeping process alive");
+});
+process.on("unhandledRejection", (reason) => {
+  log.error({ err: String(reason) }, "Unhandled rejection in gateway — keeping process alive");
+});
 
 // GitHub Actions 24/7 continuous relay:
 // GitHub jobs have a ~6h runtime limit. At 5 hours, automatically dispatch the next runner.
@@ -330,6 +362,6 @@ if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
   }, RELAY_AFTER_MS).unref();
 }
 
-log.info("🌹 Nyra Rose gateway starting…");
+log.info(`🌹 Nyra Rose gateway starting (${INSTANCE_ID})…`);
 start().catch(fatalRetry);
 

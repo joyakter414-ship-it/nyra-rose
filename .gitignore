@@ -8,4 +8,5 @@ worker/.dev.vars
 gateway/auth/
 worker/worker-configuration.d.ts
 .DS_Store
+*.log
 
