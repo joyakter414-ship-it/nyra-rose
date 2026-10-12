@@ -617,6 +617,7 @@
             <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 5:00 PM">🕔 Today 5:00 PM</button>
             <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 11:00 AM">🌅 Tomorrow 11 AM</button>
             <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 3:00 PM">🌇 Tomorrow 3 PM</button>
+            <span id="composer-todo-live-timer" class="badge badge-auto" style="margin-left: auto; font-size: 12px;">⏱️ Next Follow-Up: —</span>
           </div>
 
           <div style="margin-top: 12px;">
@@ -700,8 +701,11 @@
           </div>
 
           <div style="margin: 12px 0; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px;">
-            <div style="font-size: 13px; font-weight: 600; color: var(--rose-light); margin-bottom: 8px;">
-              🕒 Reschedule Follow-Up Date / Time:
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 13px; font-weight: 600; color: var(--rose-light);">
+                🕒 Reschedule Follow-Up Date / Time (2-Way Synced):
+              </span>
+              <span id="edit-todo-live-timer" class="badge badge-auto" style="font-size: 12px;">⏱️ Next Follow-Up: —</span>
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
               <button type="button" class="ghost small edit-todo-slot" data-phrase="in 30 minutes">+30m</button>

@@ -377,10 +377,27 @@ export function parseScheduledTimeToMs(
     .replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2")
     .trim();
 
-  // 1. Direct ISO / Date.parse check if it looks like a full YYYY-MM-DD date string
+  // Extract inline timezone if present inside the phrase itself (e.g. "Today 1:30 PM GMT")
+  const inlineTzMatch = p.match(
+    /\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|pst|cst|mst|edt|pdt|cdt|mdt|gmt|bst|bdt|utc|cet|aest|aedt|awst|acst|nzst|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst)\b/i
+  );
+  const effectiveTz = inlineTzMatch ? inlineTzMatch[1].toUpperCase() : timezone;
+  const tzOffsetHours = getTimezoneOffsetHours(effectiveTz, phoneFallback);
+
+  // 1. Direct ISO / datetime-local check if it looks like a full YYYY-MM-DD date string
+  const isoLocalMatch = phrase.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (isoLocalMatch) {
+    const yr = parseInt(isoLocalMatch[1], 10);
+    const mo = parseInt(isoLocalMatch[2], 10) - 1;
+    const dy = parseInt(isoLocalMatch[3], 10);
+    const hr = isoLocalMatch[4] ? parseInt(isoLocalMatch[4], 10) : 15;
+    const mn = isoLocalMatch[5] ? parseInt(isoLocalMatch[5], 10) : 0;
+    const sc = isoLocalMatch[6] ? parseInt(isoLocalMatch[6], 10) : 0;
+    return Math.round(Date.UTC(yr, mo, dy, hr, mn, sc) - tzOffsetHours * 3600 * 1000);
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(p)) {
     const parsed = Date.parse(phrase);
-    if (!Number.isNaN(parsed) && parsed > nowMs - 86400_000) return parsed;
+    if (!Number.isNaN(parsed)) return parsed;
   }
 
   // 2. Relative expressions ("in 2 hours", "after 3 days", "21 min later", "2 min latter")
@@ -394,14 +411,7 @@ export function parseScheduledTimeToMs(
     if (unit.startsWith("week")) return Math.round(nowMs + val * 7 * 24 * 3600 * 1000);
   }
 
-  // Extract inline timezone if present inside the phrase itself (e.g. "Today 1:30 PM GMT")
-  const inlineTzMatch = p.match(
-    /\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|pst|cst|mst|edt|pdt|cdt|mdt|gmt|bst|bdt|utc|cet|aest|aedt|awst|acst|nzst|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst)\b/i
-  );
-  const effectiveTz = inlineTzMatch ? inlineTzMatch[1].toUpperCase() : timezone;
-
   // 3. Calculate in client's target timezone (explicit timezone or phone-number timezone)
-  const tzOffsetHours = getTimezoneOffsetHours(effectiveTz, phoneFallback);
   const localNowMs = nowMs + tzOffsetHours * 3600 * 1000;
   const localDate = new Date(localNowMs);
 

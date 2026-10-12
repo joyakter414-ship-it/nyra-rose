@@ -769,6 +769,8 @@ let todoBookingsCache = [];
 let todoFilter = "active";
 let todoSearch = "";
 let currentEditingTodoId = null;
+let editModalScheduledMs = null;
+let composerScheduledMs = null;
 
 function isSameBdtDay(ms1, ms2) {
   if (!ms1 || !ms2) return false;
@@ -803,6 +805,196 @@ function formatBdtClock(ms, fallbackText = "") {
   const monthName = months[bdtDate.getUTCMonth()];
   const dayNum = bdtDate.getUTCDate();
   return `${monthName} ${dayNum}, ${timeStr}`;
+}
+
+// Convert UTC epoch ms -> "YYYY-MM-DDTHH:mm" in BDT (GMT+6) for <input type="datetime-local">
+function msToBdtDatetimeLocal(ms) {
+  if (!ms || !Number.isFinite(ms)) return "";
+  const bdtDate = new Date(ms + 6 * 3600000);
+  const yr = bdtDate.getUTCFullYear();
+  const mo = String(bdtDate.getUTCMonth() + 1).padStart(2, "0");
+  const dy = String(bdtDate.getUTCDate()).padStart(2, "0");
+  const hr = String(bdtDate.getUTCHours()).padStart(2, "0");
+  const mn = String(bdtDate.getUTCMinutes()).padStart(2, "0");
+  return `${yr}-${mo}-${dy}T${hr}:${mn}`;
+}
+
+// Convert "YYYY-MM-DDTHH:mm" from <input type="datetime-local"> -> UTC epoch ms in BDT (GMT+6)
+function bdtDatetimeLocalToMs(dtVal) {
+  if (!dtVal || typeof dtVal !== "string") return null;
+  const m = dtVal.trim().match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const yr = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10) - 1;
+    const dy = parseInt(m[3], 10);
+    const hr = parseInt(m[4], 10);
+    const mn = parseInt(m[5], 10);
+    const sc = m[6] ? parseInt(m[6], 10) : 0;
+    return Date.UTC(yr, mo, dy, hr, mn, sc) - 6 * 3600000;
+  }
+  const parsed = new Date(dtVal).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Client-side natural time parser (mirrors backend parseScheduledTimeToMs in BDT)
+function parseClientNaturalTimeToMs(phrase, nowMs = Date.now()) {
+  if (!phrase || !phrase.trim()) return null;
+  const raw = phrase.trim();
+
+  // 1. Check YYYY-MM-DDTHH:mm
+  const isoLocal = bdtDatetimeLocalToMs(raw);
+  if (isoLocal && /^\d{4}-\d{2}-\d{2}/.test(raw)) return isoLocal;
+
+  const p = raw
+    .toLowerCase()
+    .replace(/^follow-up:\s*/i, "")
+    .replace(/\blatter\b/g, "later")
+    .replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2")
+    .trim();
+
+  // 2. Relative expressions ("in 30 minutes", "+1h", "2 hours later", "in 3 days")
+  const relMatch = p.match(/(?:in|after|\+)?\s*(\d+(?:\.\d+)?)\s*(hour|hr|h|minute|min|m|day|d|week|w)s?(?:\s+later)?\b/i);
+  if (relMatch && !/\b(?:am|pm)\b/i.test(p.slice(relMatch.index, relMatch.index + relMatch[0].length + 4))) {
+    const isShortUnit = /^(?:h|m|d|w)$/i.test(relMatch[2]);
+    if (!isShortUnit || /^[+]|^(?:in|after)\b|\blater\b/i.test(p)) {
+      const val = parseFloat(relMatch[1]);
+      const u = relMatch[2].toLowerCase();
+      if (u.startsWith("m")) return Math.round(nowMs + val * 60 * 1000);
+      if (u.startsWith("h")) return Math.round(nowMs + val * 3600 * 1000);
+      if (u.startsWith("d")) return Math.round(nowMs + val * 24 * 3600 * 1000);
+      if (u.startsWith("w")) return Math.round(nowMs + val * 7 * 24 * 3600 * 1000);
+    }
+  }
+
+  const bdtOffset = 6 * 3600 * 1000;
+  const localNowMs = nowMs + bdtOffset;
+  const localDate = new Date(localNowMs);
+
+  let explicitMonth = null;
+  let explicitDay = null;
+  const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const monthMatch = p.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\b/i,
+  );
+  const reverseMonthMatch = !monthMatch
+    ? p.match(
+        /\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i,
+      )
+    : null;
+  const bareDateMatch =
+    !monthMatch && !reverseMonthMatch
+      ? p.match(/\b(?:on\s+(?:the\s+)?)?(\d{1,2})(?:\s*(?:st|nd|rd|th)?\s+date\b|\s*(?:tarik|tarikh)\b|\s*(?:st|nd|rd|th)\b)/i)
+      : null;
+
+  if (monthMatch) {
+    explicitMonth = monthNames.indexOf(monthMatch[1].slice(0, 3).toLowerCase());
+    explicitDay = parseInt(monthMatch[2], 10);
+  } else if (reverseMonthMatch) {
+    explicitDay = parseInt(reverseMonthMatch[1], 10);
+    explicitMonth = monthNames.indexOf(reverseMonthMatch[2].slice(0, 3).toLowerCase());
+  } else if (bareDateMatch) {
+    const dayNum = parseInt(bareDateMatch[1], 10);
+    if (dayNum >= 1 && dayNum <= 31) {
+      explicitDay = dayNum;
+      explicitMonth = localDate.getUTCMonth();
+      if (dayNum < localDate.getUTCDate()) {
+        explicitMonth = (explicitMonth + 1) % 12;
+      }
+    }
+  }
+
+  let dayOffset = null;
+  if (p.includes("day after tomorrow")) {
+    dayOffset = 2;
+  } else if (p.includes("tomorrow")) {
+    dayOffset = 1;
+  } else if (p.includes("today") || p.includes("tonight")) {
+    dayOffset = 0;
+  } else if (p.includes("next week")) {
+    dayOffset = 7;
+  } else if (explicitMonth === null) {
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    for (let i = 0; i < 7; i++) {
+      if (p.includes(days[i])) {
+        const curDay = localDate.getUTCDay();
+        dayOffset = (i - curDay + 7) % 7;
+        if (dayOffset === 0 && (p.includes("next") || localDate.getUTCHours() >= 18)) {
+          dayOffset = 7;
+        }
+        break;
+      }
+    }
+  }
+
+  const ampmMatch = p.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  const colonMatch = p.match(/\b(\d{1,2}):(\d{2})\b/);
+  const prepMatch = p.match(/(?:at|on|for|in|around|by|today|tomorrow)\s+(\d{1,2})(?::(\d{2}))?\b/i);
+
+  const hasTimeCue =
+    Boolean(ampmMatch || colonMatch || prepMatch) ||
+    /\b(morning|noon|afternoon|evening|night|tonight)\b/i.test(p);
+
+  if (explicitMonth === null && dayOffset === null && !hasTimeCue) {
+    return null;
+  }
+
+  let hour = 15;
+  let minute = 0;
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    const m = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+    const mer = ampmMatch[3].toLowerCase();
+    if (mer === "pm" && h < 12) h += 12;
+    if (mer === "am" && h === 12) h = 0;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  } else if (colonMatch) {
+    let h = parseInt(colonMatch[1], 10);
+    const m = parseInt(colonMatch[2], 10);
+    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  } else if (prepMatch) {
+    let h = parseInt(prepMatch[1], 10);
+    const m = prepMatch[2] ? parseInt(prepMatch[2], 10) : 0;
+    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  } else if (p.includes("morning")) {
+    hour = 10;
+  } else if (p.includes("noon") || p.includes("afternoon")) {
+    hour = 15;
+  } else if (p.includes("evening")) {
+    hour = 19;
+  } else if (p.includes("night") || p.includes("tonight")) {
+    hour = 20;
+  }
+
+  const targetLocal = new Date(localNowMs);
+  if (explicitMonth !== null && explicitDay !== null) {
+    targetLocal.setUTCMonth(explicitMonth, explicitDay);
+  } else {
+    targetLocal.setUTCDate(targetLocal.getUTCDate() + (dayOffset ?? 0));
+  }
+  targetLocal.setUTCHours(hour, minute, 0, 0);
+
+  let targetUtcMs = targetLocal.getTime() - bdtOffset;
+  if (
+    explicitMonth === null &&
+    (dayOffset === null || dayOffset === 0) &&
+    targetUtcMs <= nowMs - 15 * 60 * 1000 &&
+    !p.includes("today") &&
+    !p.includes("yesterday")
+  ) {
+    targetUtcMs += 24 * 3600 * 1000;
+  }
+  return targetUtcMs;
 }
 
 function formatTodoCountdown(t) {
@@ -868,6 +1060,20 @@ function formatTodoCountdown(t) {
   };
 }
 
+function updateLiveTimerBadgeEl(badgeEl, ms) {
+  if (!badgeEl) return;
+  if (!ms || !Number.isFinite(ms)) {
+    badgeEl.textContent = "⏱️ Next Follow-Up: No timer set";
+    return;
+  }
+  const clockStr = formatBdtClock(ms);
+  const cd = formatTodoCountdown({ scheduled_at_ms: ms, completed: 0, auto_send: 1, phone: "1" });
+  badgeEl.textContent = `⏱️ Next Follow-Up: ${clockStr} (${cd.label})`;
+  badgeEl.style.background = cd.bg;
+  badgeEl.style.color = cd.color;
+  badgeEl.style.border = `1px solid ${cd.border}`;
+}
+
 function getTaskTypeMeta(taskType) {
   switch (taskType) {
     case "client_date":
@@ -875,8 +1081,10 @@ function getTaskTypeMeta(taskType) {
     case "call_reminder":
       return { badge: "⏰ Call Reminder", cls: "badge-call_reminder", accent: "#a855f7" };
     case "ai_followup":
+    case "client_followup":
       return { badge: "🤖 Nyra AI Follow-Up", cls: "badge-auto_day1", accent: "#fb7185" };
     case "manual_ai":
+    case "ai_scheduled":
       return { badge: "✍️ Custom AI Schedule", cls: "badge-custom_timer", accent: "#38bdf8" };
     default:
       return { badge: "📌 Manual Task", cls: "badge-source", accent: "#94a3b8" };
@@ -899,6 +1107,11 @@ async function loadTodos() {
   todos = res.todos || [];
   if (Array.isArray(res.bookings)) {
     todoBookingsCache = res.bookings;
+    if (bookings.length > 0) {
+      bookings = res.bookings;
+      updateBookingStats();
+      renderBookings();
+    }
   }
   populateTodoClientSelect();
   updateTodoStats();
@@ -1220,7 +1433,7 @@ function renderTodos() {
           sendNowBtn.disabled = true;
           sendNowBtn.textContent = "⏳ Sending...";
           try {
-            await api("POST", "/api/todos/send", { id: t.id, customMessage: t.ai_message });
+            await api("POST", "/api/todos/send", { id: t.id, customText: t.ai_message });
             await loadTodos();
           } catch (err) {
             alert(`Failed to send via WhatsApp: ${err.message}`);
@@ -1237,7 +1450,8 @@ function renderTodos() {
         plus1hBtn.title = "Push scheduled time forward by 1 hour";
         plus1hBtn.addEventListener("click", async () => {
           const base = t.scheduled_at_ms && t.scheduled_at_ms > Date.now() ? t.scheduled_at_ms : Date.now();
-          await api("PATCH", "/api/todos", { id: t.id, scheduledAtMs: base + 3600000 });
+          const nextMs = base + 3600000;
+          await api("PATCH", "/api/todos", { id: t.id, scheduledAtMs: nextMs, dueDate: formatBdtClock(nextMs) });
           await loadTodos();
         });
 
@@ -1245,7 +1459,13 @@ function renderTodos() {
         tmrwBtn.type = "button";
         tmrwBtn.title = "Reschedule to Tomorrow 11:00 AM BDT";
         tmrwBtn.addEventListener("click", async () => {
-          await api("PATCH", "/api/todos", { id: t.id, timePhrase: "tomorrow 11am" });
+          const nextMs = parseClientNaturalTimeToMs("Tomorrow 11:00 AM");
+          await api("PATCH", "/api/todos", {
+            id: t.id,
+            scheduledAtMs: nextMs,
+            timePhrase: "Tomorrow 11:00 AM",
+            dueDate: formatBdtClock(nextMs),
+          });
           await loadTodos();
         });
 
@@ -1323,11 +1543,9 @@ function parseQuickTodoInput(raw) {
 
   const clientName = matchedLead?.client_name || "";
   const bookingId = matchedLead?.id || undefined;
-
-  // 3. Pass the task portion as timePhrase so backend parseScheduledTimeToMs extracts "today 1pm", "tomorrow", "21 date", "+2h", etc.
   const timePhrase = text;
+  const scheduledAtMs = parseClientNaturalTimeToMs(text) || undefined;
 
-  // 4. If user didn't type an explicit message but there's a client or phone, draft a smart follow-up message
   if (!aiMessage && (clientName || extractedPhone || /follow\s*up|knock|msg|message|call/i.test(text))) {
     aiMessage = matchedLead?.custom_followup_msg || generateSmartAiDraft(clientName, "manual_ai", "");
   }
@@ -1337,6 +1555,7 @@ function parseQuickTodoInput(raw) {
   return {
     task: text,
     timePhrase,
+    scheduledAtMs,
     clientName: clientName || undefined,
     phone: extractedPhone || undefined,
     bookingId,
@@ -1380,12 +1599,27 @@ $("#refresh-todos-btn")?.addEventListener("click", () => {
   loadTodos();
 });
 
-// Full AI Follow-Up & Task Composer (#ai-todo-composer)
+// ─── Full AI Follow-Up & Task Composer (#ai-todo-composer) with 2-Way Sync ──
+
+function syncComposerTimeFromMs(ms, updateNatural = true, updateExact = true) {
+  composerScheduledMs = ms;
+  if (updateNatural && $("#todo-time-phrase")) {
+    $("#todo-time-phrase").value = ms ? formatBdtClock(ms) : "";
+  }
+  if (updateExact && $("#todo-datetime-picker")) {
+    $("#todo-datetime-picker").value = ms ? msToBdtDatetimeLocal(ms) : "";
+  }
+  updateLiveTimerBadgeEl($("#composer-todo-live-timer"), ms);
+}
+
 $("#toggle-ai-todo-composer-btn")?.addEventListener("click", () => {
   const comp = $("#ai-todo-composer");
   if (!comp) return;
   comp.classList.toggle("hidden");
   populateTodoClientSelect();
+  if (!comp.classList.contains("hidden") && !composerScheduledMs) {
+    syncComposerTimeFromMs(Date.now() + 3600000, true, true);
+  }
 });
 
 $("#cancel-ai-todo-composer-btn")?.addEventListener("click", () => {
@@ -1403,17 +1637,45 @@ $("#todo-client-select")?.addEventListener("change", (e) => {
   if ($("#todo-title-input") && !$("#todo-title-input").value.trim()) {
     $("#todo-title-input").value = `Follow up ${found.client_name || found.phone || "Client"}`;
   }
+  if (found.next_followup_at) {
+    syncComposerTimeFromMs(found.next_followup_at, true, true);
+  }
   if ($("#todo-ai-message") && !$("#todo-ai-message").value.trim()) {
     $("#todo-ai-message").value =
       found.custom_followup_msg || generateSmartAiDraft(found.client_name, $("#todo-task-type")?.value || "manual_ai", "");
   }
 });
 
+// 2-Way Sync in Composer: Quick Slots -> Natural + Exact + Live Timer
 document.querySelectorAll(".todo-quick-slot").forEach((btn) => {
   btn.addEventListener("click", () => {
     const phrase = btn.dataset.phrase || "";
-    if ($("#todo-time-phrase")) $("#todo-time-phrase").value = phrase;
-    if ($("#todo-datetime-picker")) $("#todo-datetime-picker").value = "";
+    const ms = parseClientNaturalTimeToMs(phrase);
+    if (ms) {
+      syncComposerTimeFromMs(ms, true, true);
+    } else if ($("#todo-time-phrase")) {
+      $("#todo-time-phrase").value = phrase;
+    }
+  });
+});
+
+// 2-Way Sync in Composer: Exact Date/Time Picker -> Natural Time + Live Timer
+["input", "change"].forEach((evt) => {
+  $("#todo-datetime-picker")?.addEventListener(evt, (e) => {
+    const ms = bdtDatetimeLocalToMs(e.target.value);
+    if (ms) {
+      syncComposerTimeFromMs(ms, true, false);
+    }
+  });
+});
+
+// 2-Way Sync in Composer: Natural Time Input -> Exact Date/Time Picker + Live Timer
+["input", "change"].forEach((evt) => {
+  $("#todo-time-phrase")?.addEventListener(evt, (e) => {
+    const ms = parseClientNaturalTimeToMs(e.target.value);
+    if (ms) {
+      syncComposerTimeFromMs(ms, false, true);
+    }
   });
 });
 
@@ -1437,13 +1699,17 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
   const taskType = $("#todo-task-type")?.value || "manual_ai";
   const timePhrase = $("#todo-time-phrase")?.value?.trim() || "";
   const dtVal = $("#todo-datetime-picker")?.value || "";
-  const scheduledAtMs = dtVal ? new Date(dtVal).getTime() : undefined;
+  const resolvedMs =
+    composerScheduledMs ||
+    (dtVal ? bdtDatetimeLocalToMs(dtVal) : null) ||
+    (timePhrase ? parseClientNaturalTimeToMs(timePhrase) : null) ||
+    undefined;
   const rawTitle = $("#todo-title-input")?.value?.trim() || "";
   const aiMessage = $("#todo-ai-message")?.value?.trim() || "";
   const autoSend = $("#todo-auto-send") ? $("#todo-auto-send").checked : true;
 
   const task = rawTitle || (clientName ? `Follow up ${clientName}` : "Scheduled AI Follow-Up");
-  if (!timePhrase && !scheduledAtMs && !rawTitle) {
+  if (!timePhrase && !resolvedMs && !rawTitle) {
     if (errEl) errEl.textContent = "Please enter a time (e.g. 'Today 1pm') or task title.";
     return;
   }
@@ -1455,13 +1721,15 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
       clientName: clientName || undefined,
       phone: phone || undefined,
       taskType,
-      timePhrase: timePhrase || undefined,
-      scheduledAtMs,
+      timePhrase: resolvedMs ? formatBdtClock(resolvedMs) : timePhrase || undefined,
+      dueDate: resolvedMs ? formatBdtClock(resolvedMs) : timePhrase || undefined,
+      scheduledAtMs: resolvedMs,
       aiMessage: aiMessage || generateSmartAiDraft(clientName, taskType, timePhrase),
       autoSend,
       chatId: phone ? `${phone.replace(/[^\d]/g, "")}@s.whatsapp.net` : "dashboard",
     });
     $("#ai-todo-composer").reset();
+    composerScheduledMs = null;
     $("#ai-todo-composer").classList.add("hidden");
     await loadTodos();
   } catch (err) {
@@ -1469,7 +1737,18 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
   }
 });
 
-// ─── Re-Edit Task & AI Message Modal (#todo-edit-modal) ──────────────────────
+// ─── Re-Edit Task & AI Message Modal (#todo-edit-modal) with 2-Way Sync ──────
+
+function syncEditModalTimeFromMs(ms, updateNatural = true, updateExact = true) {
+  editModalScheduledMs = ms;
+  if (updateNatural && $("#edit-todo-time-phrase")) {
+    $("#edit-todo-time-phrase").value = ms ? formatBdtClock(ms) : "";
+  }
+  if (updateExact && $("#edit-todo-datetime")) {
+    $("#edit-todo-datetime").value = ms ? msToBdtDatetimeLocal(ms) : "";
+  }
+  updateLiveTimerBadgeEl($("#edit-todo-live-timer"), ms);
+}
 
 function openTodoEditModal(t) {
   currentEditingTodoId = t.id;
@@ -1480,17 +1759,17 @@ function openTodoEditModal(t) {
     $("#todo-edit-modal-title").textContent = `✏️ Edit Scheduled Task & AI Message — ${t.client_name || t.task}`;
   }
   if ($("#edit-todo-task")) $("#edit-todo-task").value = t.task || "";
-  if ($("#edit-todo-type")) $("#edit-todo-type").value = t.task_type || "manual_ai";
+  if ($("#edit-todo-type")) $("#edit-todo-type").value = t.task_type || "client_followup";
   if ($("#edit-todo-client-name")) $("#edit-todo-client-name").value = t.client_name || "";
   if ($("#edit-todo-phone")) $("#edit-todo-phone").value = t.phone || "";
-  if ($("#edit-todo-time-phrase")) {
-    $("#edit-todo-time-phrase").value = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date) : t.due_date || "";
-    $("#edit-todo-time-phrase").dataset.initial = $("#edit-todo-time-phrase").value;
-  }
-  if ($("#edit-todo-datetime")) $("#edit-todo-datetime").value = "";
+
+  // Populate BOTH Natural Time AND Exact Date & Time Picker in sync!
+  const initialMs = t.scheduled_at_ms || parseClientNaturalTimeToMs(t.due_date || "") || Date.now() + 3600000;
+  syncEditModalTimeFromMs(initialMs, true, true);
+
   if ($("#edit-todo-ai-message")) {
     $("#edit-todo-ai-message").value =
-      t.ai_message || generateSmartAiDraft(t.client_name, t.task_type || "manual_ai", t.due_date || "");
+      t.ai_message || generateSmartAiDraft(t.client_name, t.task_type || "client_followup", t.due_date || "");
   }
   if ($("#edit-todo-auto-send")) {
     $("#edit-todo-auto-send").checked = t.auto_send !== undefined ? Boolean(t.auto_send) : true;
@@ -1508,19 +1787,41 @@ function closeTodoEditModal() {
     modal.style.display = "none";
   }
   currentEditingTodoId = null;
+  editModalScheduledMs = null;
 }
 
 $("#close-todo-edit-modal")?.addEventListener("click", closeTodoEditModal);
 $("#cancel-todo-edit-btn")?.addEventListener("click", closeTodoEditModal);
 
+// 1. Quick Slot Buttons inside Edit Modal -> Sync Natural Time + Exact Picker + Live Timer
 document.querySelectorAll(".edit-todo-slot").forEach((btn) => {
   btn.addEventListener("click", () => {
     const phrase = btn.dataset.phrase || "";
-    if ($("#edit-todo-time-phrase")) {
+    const ms = parseClientNaturalTimeToMs(phrase);
+    if (ms) {
+      syncEditModalTimeFromMs(ms, true, true);
+    } else if ($("#edit-todo-time-phrase")) {
       $("#edit-todo-time-phrase").value = phrase;
     }
-    if ($("#edit-todo-datetime")) {
-      $("#edit-todo-datetime").value = "";
+  });
+});
+
+// 2. Exact Date & Time Picker inside Edit Modal -> Immediately syncs Natural Time + Live Timer!
+["input", "change"].forEach((evt) => {
+  $("#edit-todo-datetime")?.addEventListener(evt, (e) => {
+    const ms = bdtDatetimeLocalToMs(e.target.value);
+    if (ms) {
+      syncEditModalTimeFromMs(ms, true, false);
+    }
+  });
+});
+
+// 3. Natural Time Input inside Edit Modal -> Immediately syncs Exact Date & Time Picker + Live Timer!
+["input", "change"].forEach((evt) => {
+  $("#edit-todo-time-phrase")?.addEventListener(evt, (e) => {
+    const ms = parseClientNaturalTimeToMs(e.target.value);
+    if (ms) {
+      syncEditModalTimeFromMs(ms, false, true);
     }
   });
 });
@@ -1528,15 +1829,21 @@ document.querySelectorAll(".edit-todo-slot").forEach((btn) => {
 async function saveCurrentTodoEdits() {
   if (!currentEditingTodoId) return null;
   const task = $("#edit-todo-task")?.value?.trim() || "";
-  const taskType = $("#edit-todo-type")?.value || "manual_ai";
+  const taskType = $("#edit-todo-type")?.value || "client_followup";
   const clientName = $("#edit-todo-client-name")?.value?.trim() || "";
   const phone = $("#edit-todo-phone")?.value?.trim() || "";
-  const timeInput = $("#edit-todo-time-phrase");
-  const rawTimePhrase = timeInput?.value?.trim() || "";
-  const initialTimePhrase = timeInput?.dataset?.initial || "";
+  const rawTimePhrase = $("#edit-todo-time-phrase")?.value?.trim() || "";
   const dtVal = $("#edit-todo-datetime")?.value || "";
   const aiMessage = $("#edit-todo-ai-message")?.value?.trim() || "";
   const autoSend = $("#edit-todo-auto-send") ? $("#edit-todo-auto-send").checked : true;
+
+  // Resolve the final timestamp from the 2-way synced state
+  const finalMs =
+    editModalScheduledMs ||
+    (dtVal ? bdtDatetimeLocalToMs(dtVal) : null) ||
+    (rawTimePhrase ? parseClientNaturalTimeToMs(rawTimePhrase) : null);
+
+  const formattedNatural = finalMs ? formatBdtClock(finalMs) : rawTimePhrase || undefined;
 
   const payload = {
     id: currentEditingTodoId,
@@ -1546,16 +1853,20 @@ async function saveCurrentTodoEdits() {
     phone,
     aiMessage,
     autoSend,
+    scheduledAtMs: finalMs || undefined,
+    dueDate: formattedNatural,
+    timePhrase: formattedNatural,
   };
 
-  if (dtVal) {
-    const parsedDt = new Date(dtVal).getTime();
-    if (Number.isFinite(parsedDt)) payload.scheduledAtMs = parsedDt;
-  } else if (rawTimePhrase && rawTimePhrase !== initialTimePhrase) {
-    payload.timePhrase = rawTimePhrase;
-  }
-
   const res = await api("PATCH", "/api/todos", payload);
+  if (res.booking && bookings.length > 0) {
+    const idx = bookings.findIndex((b) => b.id === res.booking.id);
+    if (idx !== -1) {
+      bookings[idx] = res.booking;
+      updateBookingStats();
+      renderBookings();
+    }
+  }
   return res.todo;
 }
 
@@ -1570,12 +1881,12 @@ $("#save-todo-edit-btn")?.addEventListener("click", async () => {
   try {
     await saveCurrentTodoEdits();
     await loadTodos();
-    if (typeof loadBookings === "function" && bookings.length > 0) {
+    if (typeof loadBookings === "function") {
       loadBookings().catch(() => {});
     }
     if (fb) {
       fb.style.color = "#34d399";
-      fb.textContent = "✅ Saved & synced with Nyra's schedule!";
+      fb.textContent = "✅ Saved & synced! Natural time, exact time & next follow-up timer updated ✓";
     }
     setTimeout(() => closeTodoEditModal(), 650);
   } catch (err) {
@@ -1599,10 +1910,10 @@ $("#send-todo-now-btn")?.addEventListener("click", async () => {
   }
   try {
     await saveCurrentTodoEdits();
-    const customMessage = $("#edit-todo-ai-message")?.value?.trim() || "";
+    const customText = $("#edit-todo-ai-message")?.value?.trim() || "";
     await api("POST", "/api/todos/send", {
       id: currentEditingTodoId,
-      customMessage,
+      customText,
     });
     await loadTodos();
     if (fb) {
@@ -1757,7 +2068,7 @@ function formatNextFollowupTimer(b) {
   }
   const now = Date.now();
   const isCallReminder = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
-  if (isCallReminder && b.call_time_ms && b.call_time_ms <= now) {
+  if (isCallReminder && b.call_time_ms && b.call_time_ms <= now && (!b.next_followup_at || b.next_followup_at <= now)) {
     return `⏰ Call Time Passed (${fmtTimeInBookingTz(b.call_time_ms, b.timezone)})`;
   }
   if (!b.next_followup_at) {
@@ -2210,6 +2521,11 @@ async function openFollowupModal(b) {
     timerBadge.textContent = formatNextFollowupTimer(b);
   }
 
+  const customDtInput = $("#modal-custom-datetime");
+  if (customDtInput) {
+    customDtInput.value = msToBdtDatetimeLocal(b.next_followup_at || Date.now() + 3600000);
+  }
+
   $("#followup-modal-title").textContent = `⚡ Follow-Up & Timer: ${b.client_name || "Lead"}`;
   $("#followup-modal-subtitle").textContent = `Phone: ${b.phone || "Not set"} · Status: ${STATUS_LABELS[b.status] || b.status} · Stage: ${FOLLOWUP_LABELS[fType] || fType}`;
   $("#followup-text").value = "Generating tailored message...";
@@ -2315,9 +2631,14 @@ document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
         if (modalStrategySelect) modalStrategySelect.value = found.followup_type;
         const timerBadge = $("#modal-next-followup-badge");
         if (timerBadge) timerBadge.textContent = formatNextFollowupTimer(found);
+        const customDtInput = $("#modal-custom-datetime");
+        if (customDtInput && found.next_followup_at) {
+          customDtInput.value = msToBdtDatetimeLocal(found.next_followup_at);
+        }
         updateModalAlert(found);
         updateBookingStats();
         renderBookings();
+        loadTodos().catch(() => {});
       }
       $("#followup-feedback").textContent = `⏱️ Timer set! Next auto follow-up will send in ${hours} hour(s) ✓`;
     } catch (err) {
@@ -2326,7 +2647,25 @@ document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
   });
 });
 
-// Exact Date/Time Picker inside Modal
+// Live preview when picking Exact Date/Time inside CRM Modal
+["input", "change"].forEach((evt) => {
+  $("#modal-custom-datetime")?.addEventListener(evt, (e) => {
+    const ts = bdtDatetimeLocalToMs(e.target.value);
+    if (ts && currentFollowupBookingId) {
+      const found = bookings.find((x) => x.id === currentFollowupBookingId);
+      const timerBadge = $("#modal-next-followup-badge");
+      if (timerBadge) {
+        timerBadge.textContent = formatNextFollowupTimer({
+          ...(found || {}),
+          followup_type: "client_date",
+          next_followup_at: ts,
+        });
+      }
+    }
+  });
+});
+
+// Exact Date/Time Picker Save inside CRM Modal
 $("#modal-save-datetime-btn")?.addEventListener("click", async () => {
   if (!currentFollowupBookingId) return;
   const val = $("#modal-custom-datetime")?.value;
@@ -2334,17 +2673,18 @@ $("#modal-save-datetime-btn")?.addEventListener("click", async () => {
     $("#followup-feedback").textContent = "Please pick a date and time first.";
     return;
   }
-  const ts = Date.parse(val);
-  if (Number.isNaN(ts)) {
+  const ts = bdtDatetimeLocalToMs(val);
+  if (!ts || Number.isNaN(ts)) {
     $("#followup-feedback").textContent = "Invalid date/time.";
     return;
   }
   try {
+    const naturalFormatted = formatBdtClock(ts);
     const res = await api("PATCH", "/api/bookings", {
       id: currentFollowupBookingId,
       customFollowupAt: ts,
       followup_type: "client_date",
-      scheduled_at: new Date(ts).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }),
+      scheduled_at: `Follow-up: ${naturalFormatted}`,
     });
     const found = bookings.find((x) => x.id === currentFollowupBookingId);
     if (found && res.booking) {
@@ -2356,8 +2696,9 @@ $("#modal-save-datetime-btn")?.addEventListener("click", async () => {
       updateModalAlert(found);
       updateBookingStats();
       renderBookings();
+      loadTodos().catch(() => {});
     }
-    $("#followup-feedback").textContent = `📅 Scheduled follow-up for ${fmtTime(ts)} ✓`;
+    $("#followup-feedback").textContent = `📅 Scheduled follow-up for ${naturalFormatted} ✓`;
   } catch (err) {
     $("#followup-feedback").textContent = `Error: ${err.message}`;
   }

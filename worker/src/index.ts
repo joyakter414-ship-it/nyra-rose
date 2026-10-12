@@ -422,8 +422,9 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
         targetMs = body.scheduledAtMs;
       } else if (typeof body.scheduledAtMs === "string" && body.scheduledAtMs.trim()) {
-        const parsed = Date.parse(body.scheduledAtMs);
-        if (!Number.isNaN(parsed)) targetMs = parsed;
+        targetMs =
+          parseScheduledTimeToMs(body.scheduledAtMs, effTz, now, cleanPhone || body.chatId) ??
+          (Number.isNaN(Date.parse(body.scheduledAtMs)) ? null : Date.parse(body.scheduledAtMs));
       }
       if (!targetMs && body.delayHours && body.delayHours > 0) {
         targetMs = Math.round(now + body.delayHours * 3600 * 1000);
@@ -558,8 +559,9 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       } else if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
         targetMs = body.scheduledAtMs;
       } else if (typeof body.scheduledAtMs === "string" && body.scheduledAtMs.trim()) {
-        const parsed = Date.parse(body.scheduledAtMs);
-        if (!Number.isNaN(parsed)) targetMs = parsed;
+        targetMs =
+          parseScheduledTimeToMs(body.scheduledAtMs, effTz, now, cleanPhone || existing.chat_id) ??
+          (Number.isNaN(Date.parse(body.scheduledAtMs)) ? undefined : Date.parse(body.scheduledAtMs));
       }
       if (targetMs === undefined && body.delayHours && body.delayHours > 0) {
         targetMs = Math.round(now + body.delayHours * 3600 * 1000);
@@ -572,12 +574,28 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const formattedDue =
         targetMs !== undefined && targetMs !== null
           ? formatTimeInTimezone(targetMs, effTz, cleanPhone || existing.chat_id, now)
-          : body.dueDate !== undefined
+          : body.dueDate !== undefined && body.dueDate !== null
           ? body.dueDate
           : existing.due_date;
 
+      // Find linked booking if booking_id not set yet but phone matches
+      let bookingId = existing.booking_id;
+      if (!bookingId && cleanPhone && cleanPhone.length >= 7) {
+        const foundB = await env.DB.prepare(
+          "SELECT id FROM bookings WHERE phone LIKE ? OR chat_id LIKE ? ORDER BY created_at DESC LIMIT 1"
+        )
+          .bind(`%${cleanPhone.slice(-8)}%`, `%${cleanPhone.slice(-8)}%`)
+          .first<{ id: string }>();
+        if (foundB) bookingId = foundB.id;
+      }
+
+      let updatedTaskTitle = body.task !== undefined ? body.task : existing.task;
+      if (formattedDue && existing.due_date && updatedTaskTitle === existing.task && updatedTaskTitle.includes(existing.due_date)) {
+        updatedTaskTitle = updatedTaskTitle.replace(existing.due_date, formattedDue);
+      }
+
       const patch: Partial<Todo> = {
-        task: body.task !== undefined ? body.task : existing.task,
+        task: updatedTaskTitle,
         completed: body.completed !== undefined ? (body.completed ? 1 : 0) : existing.completed,
         due_date: formattedDue,
         scheduled_at_ms: finalMs,
@@ -586,17 +604,27 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         phone: cleanPhone,
         ai_message: body.aiMessage !== undefined ? body.aiMessage : existing.ai_message,
         task_type: body.taskType !== undefined ? body.taskType : existing.task_type,
+        booking_id: bookingId,
         auto_send: body.autoSend !== undefined ? (body.autoSend ? 1 : 0) : existing.auto_send,
       };
 
       const todo = await updateTodo(env, body.id, patch);
 
       // Sync back to linked CRM booking if present
+      let updatedBooking: Booking | null = null;
       if (todo?.booking_id) {
         const bookingPatch: Partial<Booking> = {};
         if (targetMs !== undefined) {
           bookingPatch.next_followup_at = targetMs;
           if (formattedDue) bookingPatch.scheduled_at = `Follow-up: ${formattedDue}`;
+          if (patch.task_type === "call_reminder" && targetMs) {
+            bookingPatch.call_time_ms = targetMs + 30 * 60 * 1000;
+            bookingPatch.followup_type = "call_reminder";
+          } else if (patch.task_type === "client_date") {
+            bookingPatch.followup_type = "client_date";
+          } else if (targetMs) {
+            bookingPatch.followup_type = "custom_timer";
+          }
         }
         if (body.aiMessage !== undefined) {
           bookingPatch.custom_followup_msg = body.aiMessage?.trim() || null;
@@ -608,11 +636,11 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           bookingPatch.phone = cleanPhone;
         }
         if (Object.keys(bookingPatch).length > 0) {
-          await updateBooking(env, todo.booking_id, bookingPatch);
+          updatedBooking = await updateBooking(env, todo.booking_id, bookingPatch);
         }
       }
 
-      return json({ todo });
+      return json({ todo, booking: updatedBooking });
     }
 
     case "POST /api/todos/send": {
