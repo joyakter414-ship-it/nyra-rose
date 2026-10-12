@@ -281,6 +281,7 @@ async function refreshOverview() {
   }
 
   renderInstantReplyControls();
+  if (typeof updateStudioPulse === "function") updateStudioPulse();
 }
 
 function cleanPhoneDigits(raw) {
@@ -1356,7 +1357,7 @@ function renderHomeTodayTasks() {
       const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, t) : null;
 
       const row = el("div", "todo-home-row");
-      row.style.cssText = `display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:10px; background:rgba(15,17,26,0.65); border:1px solid rgba(255,255,255,0.07); border-left:3px solid ${meta.accent}; flex-wrap:wrap;`;
+      row.style.cssText = `display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:11px 14px; border-radius:12px; background:var(--panel-2); border:1px solid var(--line); border-left:3px solid ${meta.accent}; flex-wrap:wrap;`;
 
       const left = el("div");
       left.style.cssText = "flex:1; min-width:220px;";
@@ -1365,7 +1366,7 @@ function renderHomeTodayTasks() {
       topLine.style.cssText = "display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;";
 
       const timePill = el("span", "badge", `🕐 ${clockText}`);
-      timePill.style.cssText = "background:rgba(244,63,94,0.16); color:#fda4af; border:1px solid rgba(244,63,94,0.35); font-weight:700;";
+      timePill.style.cssText = "background:rgba(244,63,94,0.14); color:var(--rose-light); border:1px solid rgba(244,63,94,0.35); font-weight:700;";
 
       const cdPill = el("span", "badge", cd.label);
       cdPill.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:600;`;
@@ -1374,19 +1375,19 @@ function renderHomeTodayTasks() {
       topLine.append(timePill);
       if (clientOrig) {
         const clientTzPill = el("span", "badge", `🌍 Client: ${clientOrig.clock} (${clientOrig.tzInfo.shortCountry})`);
-        clientTzPill.style.cssText = "background:rgba(56,189,248,0.14); color:#7dd3fc; border:1px solid rgba(56,189,248,0.35); font-weight:600;";
+        clientTzPill.style.cssText = "background:rgba(14,165,233,0.14); color:#0ea5e9; border:1px solid rgba(14,165,233,0.35); font-weight:600;";
         topLine.append(clientTzPill);
       }
       topLine.append(cdPill, typeBadge);
 
       const titleLine = el("div", null, t.task);
-      titleLine.style.cssText = "font-weight:600; font-size:13.5px; color:#f8fafc; margin-bottom:3px;";
+      titleLine.style.cssText = "font-weight:600; font-size:13.5px; color:var(--text); margin-bottom:3px;";
       left.append(topLine, titleLine);
 
       if (t.ai_message) {
         const msgPreview = el("div", "small-text", `💬 "${t.ai_message}"`);
         msgPreview.style.cssText =
-          "color:#cbd5e1; background:rgba(255,255,255,0.03); padding:5px 8px; border-radius:6px; border:1px dashed rgba(255,255,255,0.1); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:680px;";
+          "color:var(--muted); background:var(--surface-inset); padding:5px 9px; border-radius:7px; border:1px dashed var(--line); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:680px;";
         left.append(msgPreview);
       }
 
@@ -1488,9 +1489,9 @@ function renderTodos() {
       const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, effectiveRecord) : null;
 
       const card = el("div", `todo-timeline-card ${t.completed ? "disabled" : ""}`);
-      card.style.cssText = `background:rgba(15, 18, 28, 0.78); border:1px solid rgba(255,255,255,0.08); border-left:4px solid ${
+      card.style.cssText = `border-left:4px solid ${
         t.completed ? "#10b981" : meta.accent
-      }; border-radius:14px; padding:14px 16px; margin-bottom:10px; transition:all 0.2s ease; opacity:${t.completed ? "0.74" : "1"};`;
+      } !important; opacity:${t.completed ? "0.74" : "1"};`;
 
       // Top metadata row: Local Clock Pill + Client Original Clock Pill + Countdown + Task Type + Auto-Send status
       const topRow = el("div");
@@ -1501,13 +1502,13 @@ function renderTodos() {
 
       const clockBadge = el("span", "badge todo-time-pill", `🕐 ${clockStr}`);
       clockBadge.style.cssText =
-        "background:rgba(244, 63, 94, 0.16); color:#fda4af; border:1px solid rgba(244, 63, 94, 0.38); font-weight:700; font-size:12.5px; padding:4px 10px;";
+        "background:rgba(244, 63, 94, 0.14); color:var(--rose-light); border:1px solid rgba(244, 63, 94, 0.38); font-weight:700; font-size:12.5px; padding:4px 10px;";
       badgesLeft.append(clockBadge);
 
       if (clientOrig) {
         const clientOrigBadge = el("span", "badge", `🌍 Client Time: ${clientOrig.clock}`);
         clientOrigBadge.style.cssText =
-          "background:rgba(56, 189, 248, 0.15); color:#7dd3fc; border:1px solid rgba(56, 189, 248, 0.38); font-weight:700; font-size:12px; padding:4px 10px;";
+          "background:rgba(14, 165, 233, 0.14); color:#0ea5e9; border:1px solid rgba(14, 165, 233, 0.38); font-weight:700; font-size:12px; padding:4px 10px;";
         badgesLeft.append(clientOrigBadge);
       }
 
@@ -1524,8 +1525,8 @@ function renderTodos() {
           t.auto_send ? "🚀 Auto-Send on WhatsApp" : "⏸️ Auto-Send Paused",
         );
         autoBadge.style.cssText = t.auto_send
-          ? "background:rgba(16,185,129,0.12); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3);"
-          : "background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25);";
+          ? "background:rgba(16,185,129,0.12); color:var(--green); border:1px solid rgba(16,185,129,0.32);"
+          : "background:var(--surface-inset); color:var(--muted); border:1px solid var(--line);";
         badgesLeft.append(autoBadge);
       }
 
@@ -1538,12 +1539,12 @@ function renderTodos() {
       titleRow.style.cssText = "display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;";
 
       const titleText = el("div", null, `${t.completed ? "✓ " : ""}${t.task}`);
-      titleText.style.cssText = `font-size:15px; font-weight:700; color:#f8fafc; ${t.completed ? "text-decoration:line-through; color:#94a3b8;" : ""}`;
+      titleText.style.cssText = `font-size:15px; font-weight:700; color:var(--text); ${t.completed ? "text-decoration:line-through; color:var(--muted);" : ""}`;
       titleRow.append(titleText);
 
       if (t.client_name) {
         const clientChip = el("span", "badge", `👤 ${t.client_name}`);
-        clientChip.style.cssText = "background:rgba(255,255,255,0.06); color:#e2e8f0; border:1px solid rgba(255,255,255,0.12);";
+        clientChip.style.cssText = "background:var(--surface-inset); color:var(--text); border:1px solid var(--line);";
         titleRow.append(clientChip);
       }
       if (t.phone) {
@@ -1557,8 +1558,8 @@ function renderTodos() {
       if (tzInfo) {
         const tzChip = el("span", "badge", `🌐 Client TZ: ${tzInfo.fullBadge}`);
         tzChip.style.cssText = tzInfo.isForeign
-          ? "background:rgba(56,189,248,0.12); color:#7dd3fc; border:1px solid rgba(56,189,248,0.3); font-size:11.5px; font-weight:600;"
-          : "background:rgba(16,185,129,0.1); color:#6ee7b7; border:1px solid rgba(16,185,129,0.25); font-size:11.5px;";
+          ? "background:rgba(14,165,233,0.12); color:#0ea5e9; border:1px solid rgba(14,165,233,0.3); font-size:11.5px; font-weight:600;"
+          : "background:rgba(16,185,129,0.1); color:var(--green); border:1px solid rgba(16,185,129,0.28); font-size:11.5px;";
         titleRow.append(tzChip);
       }
 
@@ -1578,15 +1579,13 @@ function renderTodos() {
             : `📅 Booked Meeting Time (Local BDT): ${localCallClock}`,
         );
         callBanner.style.cssText =
-          "background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.32); color:#e9d5ff; padding:7px 11px; border-radius:8px; margin-bottom:8px; font-weight:600;";
+          "background:rgba(139,92,246,0.12); border:1px solid rgba(139,92,246,0.32); color:var(--text); padding:7px 11px; border-radius:8px; margin-bottom:8px; font-weight:600;";
         card.append(callBanner);
       }
 
       // Exact WhatsApp AI Message Box (clickable to edit)
       if (t.ai_message || t.phone || t.booking_id) {
         const msgBox = el("div", "todo-msg-box");
-        msgBox.style.cssText =
-          "background:rgba(9, 11, 19, 0.72); border:1px solid rgba(244, 63, 94, 0.22); border-radius:10px; padding:10px 12px; margin-bottom:10px; cursor:pointer;";
         msgBox.title = "Click to edit this WhatsApp message or reschedule time";
         msgBox.addEventListener("click", () => openTodoEditModal(t));
 
@@ -1599,7 +1598,7 @@ function renderTodos() {
             ? "💬 WhatsApp Message Dispatched by Nyra Rose:"
             : "💬 Exact WhatsApp Message Nyra Rose Will Send at Scheduled Time:",
         );
-        msgLabel.style.cssText = "color:#fda4af; font-weight:600; font-size:11.5px;";
+        msgLabel.style.cssText = "color:var(--rose-light); font-weight:600; font-size:11.5px;";
         const editHint = el("span", "small-text muted", "✏️ Click to rewrite message or change time");
         editHint.style.fontSize = "11px";
         msgHeader.append(msgLabel, editHint);
@@ -1609,7 +1608,7 @@ function renderTodos() {
           null,
           t.ai_message || "(No message drafted yet — click here to write the WhatsApp message Nyra will send)",
         );
-        msgBody.style.cssText = "color:#e2e8f0; font-size:13.5px; line-height:1.45; white-space:pre-wrap;";
+        msgBody.style.cssText = "color:var(--text); font-size:13.5px; line-height:1.45; white-space:pre-wrap;";
         msgBox.append(msgHeader, msgBody);
         card.append(msgBox);
       }
@@ -3313,6 +3312,281 @@ $("#settings-form").addEventListener("submit", async (e) => {
     $("#settings-saved").textContent = `⚠️ ${err.message}`;
   } finally {
     btn.disabled = false;
+  }
+});
+
+// ─── Studio UX Controller (Theme, Hero Pulse, Card Spotlight & ⌘K Palette) ──
+
+function syncThemeIcon() {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const iconEl = $("#theme-toggle-icon");
+  if (iconEl) iconEl.textContent = current === "light" ? "🌙" : "☀️";
+}
+syncThemeIcon();
+
+$("#theme-toggle-btn")?.addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const next = current === "light" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  try {
+    localStorage.setItem("nyra-studio-theme", next);
+  } catch {}
+  syncThemeIcon();
+});
+
+// Hero Quick Actions & Metric Card Navigation
+$("#hero-schedule-task-btn")?.addEventListener("click", () => {
+  document.querySelector('.tab[data-tab="todos"]')?.click();
+  const composer = $("#ai-todo-composer");
+  if (composer && composer.classList.contains("hidden")) {
+    $("#toggle-ai-todo-composer-btn")?.click();
+  }
+  $("#todo-client-name")?.focus();
+});
+
+$("#hero-open-crm-btn")?.addEventListener("click", () => {
+  document.querySelector('.tab[data-tab="bookings"]')?.click();
+});
+
+$("#hero-test-chat-btn")?.addEventListener("click", () => {
+  document.querySelector('.tab[data-tab="chat"]')?.click();
+  $("#chat-input")?.focus();
+});
+
+$$(".hero-metric-card[data-jump-tab]").forEach((card) => {
+  card.addEventListener("click", () => {
+    const targetTab = card.dataset.jumpTab;
+    if (targetTab) document.querySelector(`.tab[data-tab="${targetTab}"]`)?.click();
+  });
+});
+
+// Live Studio Clock, Hero Metrics & Nav Count Badges
+function updateStudioPulse() {
+  const now = Date.now();
+  const bdtDate = new Date(now + 6 * 3600000);
+  let hr = bdtDate.getUTCHours();
+  const mn = String(bdtDate.getUTCMinutes()).padStart(2, "0");
+  const sc = String(bdtDate.getUTCSeconds()).padStart(2, "0");
+  const ampm = hr >= 12 ? "PM" : "AM";
+  hr = hr % 12 || 12;
+
+  const clockEl = $("#topbar-clock-text");
+  if (clockEl) clockEl.textContent = `${hr}:${mn}:${sc} ${ampm} BDT`;
+
+  const gw = overview?.gateway;
+  const gwDot = $("#topbar-gw-dot");
+  const heroGw = $("#hero-metric-gw");
+  const heroGwSub = $("#hero-metric-gw-sub");
+
+  if (gw) {
+    if (gw.online && gw.state === "open") {
+      if (gwDot) gwDot.className = "dot on";
+      if (heroGw) {
+        heroGw.textContent = "🟢 Connected";
+        heroGw.style.color = "var(--green)";
+      }
+      if (heroGwSub) {
+        heroGwSub.textContent = gw.me?.name ? `${gw.me.name} · 24/7 Live` : "WhatsApp Linked 24/7";
+      }
+    } else if (gw.online && gw.state === "qr") {
+      if (gwDot) gwDot.className = "dot warn";
+      if (heroGw) {
+        heroGw.textContent = "🟡 Awaiting QR";
+        heroGw.style.color = "#f59e0b";
+      }
+      if (heroGwSub) heroGwSub.textContent = "Scan QR below to link";
+    } else if (gw.online) {
+      if (gwDot) gwDot.className = "dot warn";
+      if (heroGw) {
+        heroGw.textContent = "🟡 Connecting…";
+        heroGw.style.color = "#f59e0b";
+      }
+      if (heroGwSub) heroGwSub.textContent = "Auto-healing session";
+    } else {
+      if (gwDot) gwDot.className = "dot off";
+      if (heroGw) {
+        heroGw.textContent = "🔴 Standby";
+        heroGw.style.color = "var(--red)";
+      }
+      if (heroGwSub) heroGwSub.textContent = "Click Wake Runner";
+    }
+  }
+
+  // Sync Today's Tasks & Active Leads counts
+  const activeTodos = Array.isArray(todos) ? todos.filter((t) => !t.completed) : [];
+  const todayCountEl = $("#stat-todos-today");
+  const heroToday = $("#hero-metric-today");
+  if (heroToday) {
+    heroToday.textContent = todayCountEl?.textContent || String(activeTodos.length);
+  }
+
+  const navTodosBadge = $("#nav-badge-todos");
+  if (navTodosBadge) {
+    const cnt = activeTodos.length;
+    navTodosBadge.textContent = String(cnt);
+    navTodosBadge.classList.toggle("hidden", cnt === 0);
+  }
+
+  const allLeads = Array.isArray(bookings) && bookings.length > 0 ? bookings : todoBookingsCache || [];
+  const activeLeadsCount = allLeads.filter(
+    (b) => !["completed", "cancelled", "not_interested", "fake_lead"].includes(b.status),
+  ).length;
+  const heroLeads = $("#hero-metric-leads");
+  if (heroLeads) {
+    heroLeads.textContent = String(allLeads.length || 0);
+  }
+  const navBookingsBadge = $("#nav-badge-bookings");
+  if (navBookingsBadge) {
+    const badgeCount = activeLeadsCount || allLeads.length;
+    navBookingsBadge.textContent = String(badgeCount);
+    navBookingsBadge.classList.toggle("hidden", badgeCount === 0);
+  }
+
+  const nextVal = $("#stat-todos-next")?.textContent || "—";
+  const nextSub = $("#stat-todos-next-sub")?.textContent || "Live countdown";
+  const heroNext = $("#hero-metric-next");
+  const heroNextSub = $("#hero-metric-next-sub");
+  if (heroNext) heroNext.textContent = nextVal;
+  if (heroNextSub) heroNextSub.textContent = nextSub;
+}
+setInterval(updateStudioPulse, 1000);
+
+// MotionHero Interactive Radial Spotlight on Cards
+document.addEventListener(
+  "pointermove",
+  (e) => {
+    const target = e.target?.closest?.(".card, .booking-item, .todo-timeline-card");
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    target.style.setProperty("--mouse-x", `${e.clientX - rect.left}px`);
+    target.style.setProperty("--mouse-y", `${e.clientY - rect.top}px`);
+  },
+  { passive: true },
+);
+
+// ⌘K / Ctrl+K Studio Command Palette
+const STUDIO_COMMANDS = [
+  { label: "✦ Go to Studio Overview (Home)", hint: "Tab", run: () => document.querySelector('.tab[data-tab="home"]')?.click() },
+  { label: "✅ Open AI Follow-Up & Daily Task Bar", hint: "Tasks", run: () => document.querySelector('.tab[data-tab="todos"]')?.click() },
+  {
+    label: "➕ Schedule New AI Client Follow-Up",
+    hint: "Action",
+    run: () => $("#hero-schedule-task-btn")?.click(),
+  },
+  { label: "📅 Open Vidmox Booked Calls & Lead CRM", hint: "CRM", run: () => document.querySelector('.tab[data-tab="bookings"]')?.click() },
+  {
+    label: "➕ Log a New Lead / Booked Call",
+    hint: "CRM",
+    run: () => {
+      document.querySelector('.tab[data-tab="bookings"]')?.click();
+      const f = $("#new-booking-form");
+      if (f && f.classList.contains("hidden")) $("#toggle-add-booking-btn")?.click();
+    },
+  },
+  { label: "💬 Talk to Nyra Rose (AI Sandbox)", hint: "Chat", run: () => document.querySelector('.tab[data-tab="chat"]')?.click() },
+  { label: "⚡ View WhatsApp Inbox Conversations", hint: "Inbox", run: () => document.querySelector('.tab[data-tab="chats"]')?.click() },
+  { label: "📜 Open AI Rule Book & Instant Triggers", hint: "Rules", run: () => document.querySelector('.tab[data-tab="rules"]')?.click() },
+  { label: "📝 Open Quick Notes & Memory", hint: "Memory", run: () => document.querySelector('.tab[data-tab="notes"]')?.click() },
+  { label: "⚙️ Open Studio & Brain Settings", hint: "Settings", run: () => document.querySelector('.tab[data-tab="settings"]')?.click() },
+  {
+    label: "⏸️ Toggle Pause / Resume Instant AI Reply",
+    hint: "Switch",
+    run: () => $("#topbar-instant-pause-btn")?.click(),
+  },
+  {
+    label: "🌗 Switch Dark / Light Studio Theme",
+    hint: "Theme",
+    run: () => $("#theme-toggle-btn")?.click(),
+  },
+];
+
+let cmdActiveIndex = 0;
+
+function renderCommandPalette(query = "") {
+  const listEl = $("#cmd-palette-list");
+  if (!listEl) return;
+  const q = query.trim().toLowerCase();
+  const items = STUDIO_COMMANDS.filter(
+    (c) => !q || c.label.toLowerCase().includes(q) || c.hint.toLowerCase().includes(q),
+  );
+  if (cmdActiveIndex >= items.length) cmdActiveIndex = 0;
+
+  listEl.replaceChildren(
+    ...items.map((cmd, idx) => {
+      const btn = el("button", `cmd-palette-item ${idx === cmdActiveIndex ? "active" : ""}`);
+      btn.type = "button";
+      const span = el("span", null, cmd.label);
+      const small = el("small", null, cmd.hint);
+      btn.append(span, small);
+      btn.addEventListener("click", () => {
+        closeCommandPalette();
+        cmd.run();
+      });
+      return btn;
+    }),
+  );
+}
+
+function openCommandPalette() {
+  const modal = $("#cmd-palette-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  cmdActiveIndex = 0;
+  const input = $("#cmd-palette-input");
+  if (input) {
+    input.value = "";
+    renderCommandPalette("");
+    setTimeout(() => input.focus(), 20);
+  }
+}
+
+function closeCommandPalette() {
+  $("#cmd-palette-modal")?.classList.add("hidden");
+}
+
+$("#cmd-palette-trigger")?.addEventListener("click", openCommandPalette);
+$("#cmd-palette-close")?.addEventListener("click", closeCommandPalette);
+$("#cmd-palette-modal")?.addEventListener("click", (e) => {
+  if (e.target.id === "cmd-palette-modal") closeCommandPalette();
+});
+$("#cmd-palette-input")?.addEventListener("input", (e) => {
+  cmdActiveIndex = 0;
+  renderCommandPalette(e.target.value);
+});
+
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    const modal = $("#cmd-palette-modal");
+    if (modal?.classList.contains("hidden")) openCommandPalette();
+    else closeCommandPalette();
+    return;
+  }
+  const modal = $("#cmd-palette-modal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeCommandPalette();
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    const buttons = $$("#cmd-palette-list .cmd-palette-item");
+    if (buttons.length) {
+      cmdActiveIndex = (cmdActiveIndex + 1) % buttons.length;
+      renderCommandPalette($("#cmd-palette-input")?.value || "");
+    }
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    const buttons = $$("#cmd-palette-list .cmd-palette-item");
+    if (buttons.length) {
+      cmdActiveIndex = (cmdActiveIndex - 1 + buttons.length) % buttons.length;
+      renderCommandPalette($("#cmd-palette-input")?.value || "");
+    }
+  } else if (e.key === "Enter") {
+    const activeBtn = $("#cmd-palette-list .cmd-palette-item.active");
+    if (activeBtn) {
+      e.preventDefault();
+      activeBtn.click();
+    }
   }
 });
 

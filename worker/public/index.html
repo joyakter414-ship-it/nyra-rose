@@ -1,51 +1,109 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
-  <title>Nyra Rose 🌹</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌹</text></svg>" />
+  <meta name="theme-color" content="#09090d" />
+  <title>Nyra Rose 🌹 — AI CRM & Automation Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23f43f5e'/><text x='50%' y='54%' dominant-baseline='central' text-anchor='middle' font-size='62'>🌹</text></svg>" />
   <link rel="stylesheet" href="/style.css" />
+  <script>
+    (function() {
+      try {
+        var saved = localStorage.getItem("nyra-studio-theme");
+        var theme = saved === "light" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
-  <!-- Animated Ambient Background Orbs -->
+  <!-- Animated Ambient Background Orbs & Studio Mesh -->
   <div class="ambient-bg" aria-hidden="true">
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
     <div class="orb orb-3"></div>
   </div>
 
-  <!-- Login -->
+  <!-- Login Sanctuary -->
   <main id="login" class="login hidden">
     <form id="login-form" class="card login-card">
+      <div class="login-eyebrow">● AUTONOMOUS AI WORKSPACE</div>
       <div class="crest">🌹</div>
-      <h1>Nyra Rose</h1>
-      <p class="muted">Intelligent WhatsApp AI Sanctuary</p>
-      <input id="password" type="password" placeholder="Password" autocomplete="current-password" required />
-      <button type="submit">Enter Sanctuary</button>
+      <h1>Nyra <span class="serif-italic">Rose</span></h1>
+      <p class="muted">Intelligent WhatsApp AI &amp; Lead Automation Sanctuary</p>
+      <input id="password" type="password" placeholder="Enter Sanctuary Password…" autocomplete="current-password" required />
+      <button type="submit">Enter Sanctuary →</button>
       <p id="login-error" class="error"></p>
     </form>
   </main>
 
-  <!-- App -->
+  <!-- Studio App Shell -->
   <div id="app" class="hidden">
     <header class="topbar">
       <div class="brand">
-        <span>🌹</span> Nyra Rose
-        <span id="role-badge" class="badge" style="font-size: 11px; margin-left: 8px;"></span>
+        <div class="brand-mark"><span>🌹</span></div>
+        <div class="brand-copy">
+          <div class="brand-title-row">
+            <b>Nyra Rose</b>
+            <span id="role-badge" class="badge" style="font-size: 10px;"></span>
+          </div>
+          <small>Vidmox AI Studio · 24/7</small>
+        </div>
       </div>
-      <nav>
-        <button data-tab="home" class="tab active">Home</button>
-        <button data-tab="chat" class="tab">Talk to her</button>
-        <button data-tab="chats" class="tab">Conversations</button>
-        <button data-tab="bookings" class="tab">Booked Calls 📅</button>
-        <button data-tab="rules" class="tab">Rule Book 📜</button>
-        <button data-tab="notes" class="tab">Notes 📝</button>
-        <button data-tab="todos" class="tab">Tasks ✅</button>
-        <button data-tab="settings" class="tab">Settings</button>
+
+      <nav aria-label="Workspace navigation">
+        <button data-tab="home" class="tab active">
+          <span class="tab-icon">✦</span>
+          <span>Overview</span>
+        </button>
+        <button data-tab="chat" class="tab">
+          <span class="tab-icon">💬</span>
+          <span>Talk to her</span>
+        </button>
+        <button data-tab="chats" class="tab">
+          <span class="tab-icon">⚡</span>
+          <span>Inbox</span>
+        </button>
+        <button data-tab="bookings" class="tab">
+          <span class="tab-icon">📅</span>
+          <span>Booked Calls</span>
+          <span id="nav-badge-bookings" class="nav-count-pill hidden">0</span>
+        </button>
+        <button data-tab="todos" class="tab">
+          <span class="tab-icon">✅</span>
+          <span>Task Bar</span>
+          <span id="nav-badge-todos" class="nav-count-pill hidden">0</span>
+        </button>
+        <button data-tab="rules" class="tab">
+          <span class="tab-icon">📜</span>
+          <span>Rules</span>
+        </button>
+        <button data-tab="notes" class="tab">
+          <span class="tab-icon">📝</span>
+          <span>Memory</span>
+        </button>
+        <button data-tab="settings" class="tab">
+          <span class="tab-icon">⚙️</span>
+          <span>Settings</span>
+        </button>
       </nav>
-      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+
+      <div class="topbar-actions">
+        <div id="topbar-live-clock" class="studio-clock-pill" title="Bangladesh Standard Time (UTC+6)">
+          <span class="dot on" id="topbar-gw-dot"></span>
+          <span id="topbar-clock-text">BDT Live</span>
+        </div>
+        <button id="cmd-palette-trigger" type="button" class="ghost small studio-icon-btn" title="Quick Command Palette (⌘K or Ctrl+K)">
+          <span>⌘K</span>
+        </button>
+        <button id="theme-toggle-btn" type="button" class="ghost small studio-icon-btn" title="Switch Dark / Light Studio Theme">
+          <span id="theme-toggle-icon">☀️</span>
+        </button>
         <button id="topbar-instant-pause-btn" type="button" class="small ghost" title="Toggle Instant AI Reply while keeping Automated Follow-Ups Active" style="font-weight: 600;">
           ⚡ Instant Reply: ON
         </button>
@@ -53,12 +111,59 @@
       </div>
     </header>
 
-    <!-- Home -->
+    <!-- Home / Studio Overview -->
     <section id="tab-home" class="page">
+      <!-- Vidmox × MotionHero Dynamic Studio Hero Banner -->
+      <div class="studio-hero" id="studio-hero-banner">
+        <div class="studio-hero-glow-1" aria-hidden="true"></div>
+        <div class="studio-hero-glow-2" aria-hidden="true"></div>
+        <div class="studio-hero-content">
+          <div class="studio-hero-left">
+            <div class="studio-eyebrow">
+              <span class="pulse-dot"></span>
+              <span>VIDMOX × NYRA ROSE · AUTONOMOUS 24/7 ENGINE</span>
+            </div>
+            <h1 class="studio-hero-title">
+              Scale client conversations with <span class="serif-italic">intelligent precision.</span>
+            </h1>
+            <p class="studio-hero-sub">
+              Real-time WhatsApp AI sales concierge, timezone-aware meeting scheduler, and automated 4-stage follow-up command studio.
+            </p>
+            <div class="studio-hero-actions">
+              <button type="button" id="hero-schedule-task-btn" class="small">+ Schedule Client Follow-Up</button>
+              <button type="button" id="hero-open-crm-btn" class="ghost small">📅 Open Booked Calls CRM</button>
+              <button type="button" id="hero-test-chat-btn" class="ghost small">💬 Talk to Nyra Rose</button>
+            </div>
+          </div>
+          <div class="studio-hero-metrics">
+            <div class="hero-metric-card" data-jump-tab="home">
+              <span class="hero-metric-label">Gateway Link</span>
+              <strong class="hero-metric-val" id="hero-metric-gw">Checking…</strong>
+              <span class="hero-metric-sub" id="hero-metric-gw-sub">24/7 Cloud + Local Sync</span>
+            </div>
+            <div class="hero-metric-card" data-jump-tab="todos">
+              <span class="hero-metric-label">Due Today</span>
+              <strong class="hero-metric-val" id="hero-metric-today">0</strong>
+              <span class="hero-metric-sub">Scheduled AI actions</span>
+            </div>
+            <div class="hero-metric-card" data-jump-tab="bookings">
+              <span class="hero-metric-label">Active Pipeline</span>
+              <strong class="hero-metric-val" id="hero-metric-leads">0</strong>
+              <span class="hero-metric-sub">CRM leads &amp; calls</span>
+            </div>
+            <div class="hero-metric-card" data-jump-tab="todos">
+              <span class="hero-metric-label">Next AI Dispatch</span>
+              <strong class="hero-metric-val mono-text" id="hero-metric-next">—</strong>
+              <span class="hero-metric-sub" id="hero-metric-next-sub">Live countdown</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="grid">
         <div class="card" id="card-whatsapp">
           <div class="chat-head">
-            <h2>WhatsApp</h2>
+            <h2>WhatsApp Gateway</h2>
             <button id="wa-wake-head" class="small ghost hidden">▶ Wake Runner</button>
           </div>
           <div id="wa-status" class="status"></div>
@@ -71,10 +176,11 @@
           <div id="wa-help" class="muted small-text"></div>
           <div class="actions" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
             <button id="wa-logout" class="danger small hidden">Sign Out WhatsApp</button>
-            <button id="wa-reset" class="ghost small danger hidden">Unlink & Reset QR</button>
+            <button id="wa-reset" class="ghost small danger hidden">Unlink &amp; Reset QR</button>
             <button id="wa-wake" class="small hidden" style="background: var(--rose); color: #fff; font-weight: 600;">▶ Wake Up Cloud Gateway</button>
           </div>
         </div>
+
         <div class="card" id="card-neurons">
           <div class="chat-head">
             <h2 id="neurons-card-title">Neurons today</h2>
@@ -89,6 +195,7 @@
           <p id="neurons-source" class="muted small-text" style="margin-top: -6px;"></p>
           <table id="usage-table" class="usage"><tbody id="usage-rows"></tbody></table>
         </div>
+
         <div class="card">
           <h2>Quick switches</h2>
           <label class="switch"><input type="checkbox" id="quick-enabled" /> <span>Nyra Rose answers on WhatsApp</span></label>
@@ -103,12 +210,12 @@
       </div>
 
       <!-- Dedicated Pause Instant Reply & Active Follow-Up Section on Home -->
-      <div class="card" style="margin-top: 16px;">
+      <div class="card" style="margin-top: 18px;">
         <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
           <div>
-            <h2 style="margin: 0;">⏸️ Instant AI Reply & Active Follow-Up Control</h2>
+            <h2 style="margin: 0;">⏸️ Instant AI Reply &amp; Active Follow-Up Control</h2>
             <p class="muted small-text" style="margin-top: 4px;">
-              When <b>Pause Instant AI Reply</b> is ON, Nyra will <b>NOT</b> reply instantly to incoming WhatsApp messages (so you or your sales team can chat manually), while <b>Automated Follow-Ups & 30-Min Call Reminders stay 100% ACTIVE</b>.
+              When <b>Pause Instant AI Reply</b> is ON, Nyra will <b>NOT</b> reply instantly to incoming WhatsApp messages (so you or your sales team can chat manually), while <b>Automated Follow-Ups &amp; 30-Min Call Reminders stay 100% ACTIVE</b>.
             </p>
           </div>
           <button id="home-toggle-instant-pause-btn" type="button" class="small" style="font-weight: 600;">
@@ -117,13 +224,13 @@
         </div>
 
         <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
-          <div style="flex: 1; min-width: 240px; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
+          <div class="studio-subpanel" style="flex: 1; min-width: 240px;">
             <div class="muted small-text">Instant WhatsApp Chat Reply</div>
             <div id="home-instant-reply-state" style="font-size: 15px; font-weight: 700; margin-top: 4px;">🟢 Active (Replying Instantly)</div>
           </div>
-          <div style="flex: 1; min-width: 240px; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
-            <div class="muted small-text">Automated Follow-Ups & 30m Call Reminders</div>
-            <div style="font-size: 15px; font-weight: 700; color: #34d399; margin-top: 4px;">🔔 Always Active (Never Stopped by Pause)</div>
+          <div class="studio-subpanel" style="flex: 1; min-width: 240px;">
+            <div class="muted small-text">Automated Follow-Ups &amp; 30m Call Reminders</div>
+            <div style="font-size: 15px; font-weight: 700; color: var(--green); margin-top: 4px;">🔔 Always Active (Never Stopped by Pause)</div>
           </div>
         </div>
 
@@ -134,7 +241,7 @@
               <p class="muted small-text" style="margin: 2px 0 0;">Pause instant AI replies for specific client numbers while keeping their scheduled follow-ups running.</p>
             </div>
             <form id="home-add-paused-chat-form" style="display: flex; gap: 8px; align-items: center; margin: 0;">
-              <input id="home-paused-chat-input" placeholder="Phone e.g. 8801873877905" style="margin: 0; width: 200px; padding: 6px 10px; font-size: 13px;" />
+              <input id="home-paused-chat-input" placeholder="Phone e.g. 8801873877905" style="margin: 0; width: 210px; padding: 7px 11px; font-size: 13px;" />
               <button type="submit" class="small ghost" style="white-space: nowrap;">+ Pause Chat</button>
             </form>
           </div>
@@ -143,10 +250,10 @@
       </div>
 
       <!-- Today's AI Follow-Up & Task Schedule Preview on Home -->
-      <div class="card" id="home-today-tasks-card" style="margin-top: 16px;">
+      <div class="card" id="home-today-tasks-card" style="margin-top: 18px;">
         <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
           <div>
-            <h2 style="margin: 0;">📅 Today's AI Follow-Up & Task Timeline</h2>
+            <h2 style="margin: 0;">📅 Today's AI Follow-Up &amp; Task Timeline</h2>
             <p class="muted small-text" style="margin-top: 4px;">
               Live schedule of when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send. Auto-updates when clients say <i>"tomorrow"</i>, <i>"today 1 pm"</i>, or <i>"21 date"</i>.
             </p>
@@ -161,13 +268,16 @@
     <section id="tab-chat" class="page hidden">
       <div class="card chat-card">
         <div class="chat-head">
-          <h2>Talk to Nyra Rose 🌹</h2>
+          <div>
+            <h2 style="margin: 0;">Talk to Nyra Rose 🌹</h2>
+            <p class="muted small-text" style="margin: 2px 0 0;">Interactive AI sandbox — test prompts, pricing questions, and timezone booking detection live.</p>
+          </div>
           <button id="chat-reset" class="ghost small">Start afresh</button>
         </div>
         <div id="chat-log" class="chat-log"></div>
         <form id="chat-form" class="chat-form">
           <input id="chat-input" placeholder="Write to her… (English, বাংলা, anything)" autocomplete="off" />
-          <button type="submit">Send</button>
+          <button type="submit">Send →</button>
         </form>
       </div>
     </section>
@@ -196,7 +306,7 @@
     <!-- Booked Calls CRM Sheet -->
     <section id="tab-bookings" class="page hidden">
       <!-- Management Instant AI Reply & Active Follow-Up Bar -->
-      <div class="card" style="margin-bottom: 16px; padding: 12px 16px; border-left: 4px solid var(--rose);">
+      <div class="card" style="margin-bottom: 16px; padding: 14px 18px; border-left: 4px solid var(--rose);">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div>
             <div style="font-weight: 700; font-size: 14.5px;" id="crm-instant-reply-banner-title">⚡ Instant AI Reply: ACTIVE · 🔔 Automated Follow-Ups: ACTIVE</div>
@@ -211,38 +321,38 @@
       </div>
 
       <!-- Stats bar -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); margin-bottom: 16px;">
-        <div class="card" style="padding: 12px 14px;">
+      <div class="grid stats-kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); margin-bottom: 16px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">Total Leads</div>
-          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-total" style="color: var(--rose-light); font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">🌱 Active Auto Follow-Up</div>
-          <div class="big" id="stat-bookings-leads" style="color: #a78bfa; font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-leads" style="color: #a78bfa; font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">📅 Booked (30m Reminder)</div>
-          <div class="big" id="stat-bookings-booked" style="color: #f59e0b; font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-booked" style="color: #f59e0b; font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">✅ Confirmed</div>
-          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-confirmed" style="color: var(--green); font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">⚠️ Missed (No-Show)</div>
-          <div class="big" id="stat-bookings-not-attended" style="color: #f87171; font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-not-attended" style="color: #f87171; font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">⏳ Buy in Few Days</div>
-          <div class="big" id="stat-bookings-buy-soon" style="color: #38bdf8; font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-buy-soon" style="color: #38bdf8; font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">🕵️ Fake Leads (30d)</div>
-          <div class="big" id="stat-bookings-fake" style="color: #fb7185; font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-fake" style="color: #fb7185; font-size: 24px;">0</div>
         </div>
-        <div class="card" style="padding: 12px 14px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">🛑 Stopped / Rejected</div>
-          <div class="big" id="stat-bookings-not-interested" style="color: #9ca3af; font-size: 22px;">0</div>
+          <div class="big" id="stat-bookings-not-interested" style="color: #9ca3af; font-size: 24px;">0</div>
         </div>
       </div>
 
@@ -250,7 +360,7 @@
       <div class="card" style="margin-bottom: 16px;">
         <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
           <div>
-            <h2>Vidmox Lead & Call Booking CRM 📅</h2>
+            <h2>Vidmox Lead &amp; Call Booking CRM 📅</h2>
             <p class="muted small-text">
               Automated 4-Stage Follow-Up Engine: <b>Day 1 (Every 3–4h)</b> → <b>Next 3 Days (Every 8h)</b> → <b>3–30 Days (Daily → Fake Lead)</b> + <b>Client Choice Date</b> + <b>Custom Management Timers</b>. Booked calls stop sales follow-ups and send a <b>30-min Pre-Meeting Reminder</b> (auto-updates if rescheduled).
             </p>
@@ -336,7 +446,7 @@
             <textarea id="booking-notes" rows="2" placeholder="e.g. Agency owner, wants trial first, likes Alex Hormozi captions style"></textarea>
           </label>
           <div class="actions" style="margin-top: 12px;">
-            <button type="submit">Save Lead & Schedule Timer</button>
+            <button type="submit">Save Lead &amp; Schedule Timer</button>
             <button type="button" id="cancel-booking-btn" class="ghost small">Cancel</button>
             <span id="booking-error" class="error"></span>
           </div>
@@ -363,7 +473,7 @@
           </div>
           <div style="width: 240px;">
             <select id="bookings-filter-followup" style="margin: 0;">
-              <option value="all">All Follow-Up Stages & Timers</option>
+              <option value="all">All Follow-Up Stages &amp; Timers</option>
               <option value="auto_day1">⚡ Type 1: Day 1 Auto (3–4h)</option>
               <option value="no_reply_3d">⏳ Type 2: Next 3 Days (8h)</option>
               <option value="long_term_30d">📆 Type 3: 3–30 Days (Daily → Fake)</option>
@@ -384,23 +494,23 @@
       <!-- Bookings Table / List -->
       <div class="card">
         <div class="chat-head">
-          <h2 style="margin: 0;">Lead Booking Records & Automated Follow-Up Timer Center</h2>
+          <h2 style="margin: 0;">Lead Booking Records &amp; Automated Follow-Up Timer Center</h2>
           <span id="bookings-count-label" class="muted small-text"></span>
         </div>
         <div id="bookings-list" class="rules-list"></div>
       </div>
 
       <!-- Follow-up Modal -->
-      <div id="followup-modal" class="hidden" style="position: fixed; inset: 0; background: #000000cc; backdrop-filter: blur(8px); z-index: 100; place-items: center; padding: 16px;">
-        <div class="card" style="width: min(640px, 100%); margin: auto; max-height: 92vh; overflow-y: auto;">
+      <div id="followup-modal" class="studio-modal-backdrop hidden">
+        <div class="card studio-modal-card">
           <div class="chat-head">
-            <h2 id="followup-modal-title" style="margin: 0;">⚡ Follow-Up & Timer Controller</h2>
+            <h2 id="followup-modal-title" style="margin: 0;">⚡ Follow-Up &amp; Timer Controller</h2>
             <button id="close-followup-modal" class="ghost small">✕</button>
           </div>
           <p class="muted small-text" id="followup-modal-subtitle" style="margin-top: 4px;"></p>
 
           <!-- Strategy Selector -->
-          <div style="margin: 12px 0 8px; padding: 10px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;">
+          <div class="studio-subpanel" style="margin: 12px 0 8px;">
             <label style="margin: 0; font-size: 13px; font-weight: 600;">Follow-Up Stage / Strategy:
               <select id="modal-followup-type" style="margin-top: 6px;">
                 <option value="auto_day1">⚡ Type 1: Day 1 Auto Follow-Up (Every 3–4h until call booked)</option>
@@ -420,7 +530,7 @@
           </div>
 
           <!-- Custom Management Timer Preset Bar -->
-          <div style="margin: 10px 0; padding: 12px 14px; background: #1a1121; border: 1px solid var(--line); border-radius: 10px;">
+          <div class="studio-subpanel" style="margin: 10px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
               <span style="font-size: 13px; font-weight: 600; color: var(--rose-light);">⏱️ Set How Much Time Later Follow-Up Is Sent:</span>
               <span id="modal-next-followup-badge" class="badge badge-auto" style="font-size: 11.5px;"></span>
@@ -448,7 +558,7 @@
             <button type="button" id="followup-send-gateway-btn" class="small" style="background: linear-gradient(135deg, #10b981, #059669);">
               🚀 Send Now via Nyra WhatsApp
             </button>
-            <a id="followup-send-wa-btn" href="#" target="_blank" rel="noopener noreferrer" style="background: var(--panel-2); border: 1px solid #10b981; color: #34d399; text-decoration: none; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+            <a id="followup-send-wa-btn" href="#" target="_blank" rel="noopener noreferrer" style="background: var(--panel-2); border: 1px solid #10b981; color: var(--green); text-decoration: none; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
               💬 Open WhatsApp Link
             </a>
             <button type="button" id="followup-copy-btn" class="ghost small">📋 Copy</button>
@@ -505,7 +615,7 @@
       <div class="card" style="margin-bottom: 16px;">
         <div class="chat-head">
           <div>
-            <h2>Quick Notes & Memory 📝</h2>
+            <h2>Quick Notes &amp; Memory 📝</h2>
             <p class="muted small-text">Notes stored via WhatsApp with <code>/note &lt;text&gt;</code> or created here. Nyra Rose can reference these when answering.</p>
           </div>
         </div>
@@ -524,26 +634,26 @@
     <!-- Tasks & AI Follow-Up Schedule Command Center -->
     <section id="tab-todos" class="page hidden">
       <!-- Live KPI Stats Row -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); margin-bottom: 16px;">
-        <div class="card" style="padding: 14px 16px;">
+      <div class="grid stats-kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); margin-bottom: 16px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">📅 Today's Schedule</div>
           <div class="big" id="stat-todos-today" style="color: var(--rose-light); font-size: 24px;">0</div>
-          <div class="muted small-text" style="font-size: 11.5px;">Follow-ups & tasks due today</div>
+          <div class="muted small-text" style="font-size: 11.5px;">Follow-ups &amp; tasks due today</div>
         </div>
-        <div class="card" style="padding: 14px 16px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">⚡ Next AI Action</div>
-          <div class="big" id="stat-todos-next" style="color: #34d399; font-size: 20px; margin: 6px 0;">—</div>
+          <div class="big mono-text" id="stat-todos-next" style="color: var(--green); font-size: 20px; margin: 6px 0;">—</div>
           <div class="muted small-text" id="stat-todos-next-sub" style="font-size: 11.5px;">Live countdown</div>
         </div>
-        <div class="card" style="padding: 14px 16px;">
+        <div class="card kpi-card" style="padding: 14px 16px;">
           <div class="muted small-text">🤖 Auto-Added by Client</div>
           <div class="big" id="stat-todos-client-date" style="color: #38bdf8; font-size: 24px;">0</div>
           <div class="muted small-text" style="font-size: 11.5px;">"Tomorrow / 1 PM / 21 date"</div>
         </div>
-        <div class="card" style="padding: 14px 16px;">
-          <div class="muted small-text">✅ Sent & Completed</div>
+        <div class="card kpi-card" style="padding: 14px 16px;">
+          <div class="muted small-text">✅ Sent &amp; Completed</div>
           <div class="big" id="stat-todos-completed" style="color: #a78bfa; font-size: 24px;">0</div>
-          <div class="muted small-text" style="font-size: 11.5px;">Delivered & finished tasks</div>
+          <div class="muted small-text" style="font-size: 11.5px;">Delivered &amp; finished tasks</div>
         </div>
       </div>
 
@@ -551,9 +661,9 @@
       <div class="card" style="margin-bottom: 16px;">
         <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
           <div>
-            <h2>AI Follow-Up Schedule & Daily Task Bar ✅</h2>
+            <h2>AI Follow-Up Schedule &amp; Daily Task Bar ✅</h2>
             <p class="muted small-text">
-              Check when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send. Auto-adds tasks whenever a client says <b>"I'll message you tomorrow"</b>, <b>"today 1 PM"</b>, or <b>"21 date"</b> — and you can add or re-edit any task & AI message below.
+              Check when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send. Auto-adds tasks whenever a client says <b>"I'll message you tomorrow"</b>, <b>"today 1 PM"</b>, or <b>"21 date"</b> — and you can add or re-edit any task &amp; AI message below.
             </p>
           </div>
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -574,7 +684,7 @@
           <div class="row">
             <label>Select Existing Lead / Client <span class="muted">(optional)</span>
               <select id="todo-client-select">
-                <option value="">— Or type client name & phone manually —</option>
+                <option value="">— Or type client name &amp; phone manually —</option>
               </select>
             </label>
             <label>Client Name
@@ -598,7 +708,7 @@
             <label>When Should Nyra Follow Up? <span class="muted">(e.g. Today 1 PM, Tomorrow 3 PM, 21 date)</span>
               <input id="todo-time-phrase" placeholder="e.g. Today 1:00 PM / Tomorrow 2 PM / 21 date" />
             </label>
-            <label>Or Pick Exact Date & Time
+            <label>Or Pick Exact Date &amp; Time
               <input type="datetime-local" id="todo-datetime-picker" />
             </label>
             <label>Task Title / Summary
@@ -634,7 +744,7 @@
           </label>
 
           <div class="actions" style="margin-top: 12px;">
-            <button type="submit">💾 Save & Schedule AI Task</button>
+            <button type="submit">💾 Save &amp; Schedule AI Task</button>
             <button type="button" id="cancel-ai-todo-composer-btn" class="ghost small">Cancel</button>
             <span id="todo-composer-error" class="error"></span>
           </div>
@@ -659,17 +769,17 @@
       <!-- Chronological Timeline List -->
       <div class="card">
         <div class="chat-head">
-          <h2 style="margin: 0;" id="todos-section-heading">📅 Live AI Follow-Up & Task Timeline</h2>
+          <h2 style="margin: 0;" id="todos-section-heading">📅 Live AI Follow-Up &amp; Task Timeline</h2>
           <span id="todos-count-label" class="muted small-text"></span>
         </div>
         <div id="todos-list" class="rules-list"></div>
       </div>
 
       <!-- Re-Edit Task & AI Message Modal -->
-      <div id="todo-edit-modal" class="hidden" style="position: fixed; inset: 0; background: #000000cc; backdrop-filter: blur(8px); z-index: 100; place-items: center; padding: 16px;">
-        <div class="card" style="width: min(640px, 100%); margin: auto; max-height: 92vh; overflow-y: auto;">
+      <div id="todo-edit-modal" class="studio-modal-backdrop hidden">
+        <div class="card studio-modal-card">
           <div class="chat-head">
-            <h2 id="todo-edit-modal-title" style="margin: 0;">✏️ Edit Scheduled Task & AI Message</h2>
+            <h2 id="todo-edit-modal-title" style="margin: 0;">✏️ Edit Scheduled Task &amp; AI Message</h2>
             <button type="button" id="close-todo-edit-modal" class="ghost small">✕</button>
           </div>
           <p class="muted small-text" id="todo-edit-modal-sub" style="margin-top: 4px;">
@@ -700,7 +810,7 @@
             </label>
           </div>
 
-          <div style="margin: 12px 0; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px;">
+          <div class="studio-subpanel" style="margin: 12px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
               <span style="font-size: 13px; font-weight: 600; color: var(--rose-light);">
                 🕒 Reschedule Follow-Up Date / Time (2-Way Synced):
@@ -721,7 +831,7 @@
               <label>Natural Time / Date <span class="muted">(e.g. Today 1 PM, Tomorrow, 21 date)</span>
                 <input id="edit-todo-time-phrase" placeholder="e.g. Today 1:00 PM / 21 date" />
               </label>
-              <label>Or Exact Date & Time Picker
+              <label>Or Exact Date &amp; Time Picker
                 <input type="datetime-local" id="edit-todo-datetime" />
               </label>
             </div>
@@ -737,7 +847,7 @@
           </label>
 
           <div class="actions" style="margin-top: 14px; flex-wrap: wrap; gap: 8px;">
-            <button type="button" id="save-todo-edit-btn">💾 Save Changes & Sync Timer</button>
+            <button type="button" id="save-todo-edit-btn">💾 Save Changes &amp; Sync Timer</button>
             <button type="button" id="send-todo-now-btn" class="small" style="background: linear-gradient(135deg, #10b981, #059669);">
               🚀 Send Now via Nyra WhatsApp
             </button>
@@ -751,15 +861,15 @@
     <!-- Settings -->
     <section id="tab-settings" class="page hidden">
       <form id="settings-form" class="card settings">
-        <h2>Settings</h2>
+        <h2>Studio &amp; Brain Settings</h2>
 
         <label class="switch"><input type="checkbox" name="enabled" /> <span>Nyra Rose answers on WhatsApp (Master Switch)</span></label>
 
         <fieldset style="margin-top: 14px; border-color: var(--rose);">
-          <legend>⏸️ Pause Instant AI Reply & Paused Chats (Follow-Ups Stay Active)</legend>
+          <legend>⏸️ Pause Instant AI Reply &amp; Paused Chats (Follow-Ups Stay Active)</legend>
           <label class="switch">
             <input type="checkbox" name="instantReplyPaused" />
-            <span><b>Pause Instant AI Replies Globally</b> — Do NOT send instant chat replies, but keep all automated follow-ups & 30m call reminders 100% active</span>
+            <span><b>Pause Instant AI Replies Globally</b> — Do NOT send instant chat replies, but keep all automated follow-ups &amp; 30m call reminders 100% active</span>
           </label>
           <label style="margin-top: 10px;">Paused Chat Numbers <span class="muted">(one phone number per line, e.g. 8801873877905 — pauses instant replies for these specific chats while keeping their follow-ups active)</span>
             <textarea name="pausedInstantChats" rows="3" placeholder="e.g. 8801873877905"></textarea>
@@ -810,7 +920,7 @@
 
         <!-- Security & Access Password (Visible to Management & Admin) -->
         <fieldset id="security-password-fieldset">
-          <legend>🔐 Security & Dashboard Password</legend>
+          <legend>🔐 Security &amp; Dashboard Password</legend>
           <label>Dashboard Login Password <span class="muted">(change your Sanctuary access password anytime)</span>
             <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap;">
               <input id="mgmt-password-input" name="clientPassword" type="password" placeholder="Enter new password (min 4 characters)" autocomplete="new-password" style="margin: 0; flex: 1; min-width: 200px;" />
@@ -836,6 +946,18 @@
         </div>
       </form>
     </section>
+
+    <!-- Studio Quick Command Palette Modal (⌘K / Ctrl+K) -->
+    <div id="cmd-palette-modal" class="studio-modal-backdrop hidden">
+      <div class="card cmd-palette-card">
+        <div class="cmd-palette-header">
+          <span class="cmd-palette-icon">⌘</span>
+          <input id="cmd-palette-input" placeholder="Type a command or jump to any studio view…" autocomplete="off" />
+          <button type="button" id="cmd-palette-close" class="ghost small">ESC</button>
+        </div>
+        <div id="cmd-palette-list" class="cmd-palette-list"></div>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js" type="module"></script>
