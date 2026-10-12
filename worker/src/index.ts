@@ -429,7 +429,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const allBookings = await getBookings(env).catch(() => []);
       for (const b of allBookings) {
         if (!b.timezone) {
-          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BD";
         }
         if (b.next_followup_at) {
           await syncBookingToTodo(env, b, now);
@@ -457,7 +457,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       };
       const now = Date.now();
       const cleanPhone = (body.phone || "").replace(/[^0-9]/g, "") || null;
-      const effTz = body.timezone || detectTimezoneFromPhone(cleanPhone || body.chatId)?.code || "BDT";
+      const effTz = body.timezone || detectTimezoneFromPhone(cleanPhone || body.chatId)?.code || "BD";
 
       let targetMs: number | null = null;
       if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
@@ -592,7 +592,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         body.phone !== undefined
           ? (body.phone || "").replace(/[^0-9]/g, "") || null
           : existing.phone;
-      const effTz = body.timezone || existing.timezone || detectTimezoneFromPhone(cleanPhone || existing.chat_id)?.code || "BDT";
+      const effTz = body.timezone || existing.timezone || detectTimezoneFromPhone(cleanPhone || existing.chat_id)?.code || "BD";
 
       let targetMs: number | null | undefined = undefined;
       if (body.scheduledAtMs === null || body.scheduledAtMs === "") {
@@ -754,7 +754,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const now = Date.now();
       for (const b of list) {
         if (!b.timezone) {
-          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BD";
         }
         if (
           !b.call_time_ms &&
@@ -789,7 +789,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const now = Date.now();
       const status: BookingStatus = body.status || "booked";
       const rawType: FollowupType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
-      const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BDT";
+      const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BD";
       const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
 
@@ -876,7 +876,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const patch: Partial<Booking> = { ...body };
       let nextStatus = body.status ?? existing.status;
       let nextType = body.followup_type ?? existing.followup_type;
-      const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BDT";
+      const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BD";
       patch.timezone = effTz;
 
       // Synchronize status and followup_type when one is explicitly changed in CRM

@@ -785,7 +785,7 @@ function isTomorrowBdtDay(ms, nowMs = Date.now()) {
 }
 
 const PHONE_PREFIX_TZ_CLIENT = [
-  { prefix: "880", code: "BDT", offset: 6, flag: "🇧🇩", country: "Bangladesh", label: "🇧🇩 Bangladesh (+880 · BDT GMT+6)" },
+  { prefix: "880", code: "BD", offset: 6, flag: "🇧🇩", country: "Bangladesh", label: "🇧🇩 Bangladesh (+880 · BD GMT+6)" },
   { prefix: "971", code: "GST", offset: 4, flag: "🇦🇪", country: "UAE / Dubai", label: "🇦🇪 UAE / Dubai (+971 · GST GMT+4)" },
   { prefix: "966", code: "AST", offset: 3, flag: "🇸🇦", country: "Saudi Arabia", label: "🇸🇦 Saudi Arabia (+966 · AST GMT+3)" },
   { prefix: "974", code: "AST", offset: 3, flag: "🇶🇦", country: "Qatar", label: "🇶🇦 Qatar (+974 · AST GMT+3)" },
@@ -862,7 +862,8 @@ function resolveRecordTimezoneInfo(record) {
   if (!record) return null;
   const phoneTz = detectClientTzFromPhone(record.phone || record.chat_id);
   const rawTz = (record.timezone || "").trim().toUpperCase();
-  if (rawTz && rawTz !== "BDT") {
+  const isBdRaw = rawTz === "BD" || rawTz === "BDT";
+  if (rawTz && !isBdRaw) {
     const offset = getTzOffsetHours(rawTz);
     const gmt = formatGmtOffsetLabel(offset);
     return {
@@ -876,7 +877,7 @@ function resolveRecordTimezoneInfo(record) {
       fullBadge: phoneTz
         ? `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix}) · ${rawTz} (${gmt})`
         : `🌍 ${rawTz} (${gmt})`,
-      isForeign: offset !== 6 || rawTz !== "BDT",
+      isForeign: offset !== 6 || !isBdRaw,
     };
   }
   if (phoneTz) {
@@ -890,19 +891,19 @@ function resolveRecordTimezoneInfo(record) {
       prefix: `+${phoneTz.prefix}`,
       shortCountry: `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix})`,
       fullBadge: `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix}) · ${phoneTz.code} (${gmt})`,
-      isForeign: phoneTz.offset !== 6 || phoneTz.code !== "BDT",
+      isForeign: phoneTz.offset !== 6 || (phoneTz.code !== "BD" && phoneTz.code !== "BDT"),
     };
   }
-  if (rawTz === "BDT") {
+  if (isBdRaw) {
     return {
-      code: "BDT",
+      code: "BD",
       offset: 6,
       gmtLabel: "GMT+6",
       country: "Bangladesh",
       flag: "🇧🇩",
       prefix: "+880",
-      shortCountry: "🇧🇩 Bangladesh (BDT)",
-      fullBadge: "🇧🇩 Bangladesh · BDT (GMT+6)",
+      shortCountry: "🇧🇩 Bangladesh (BD)",
+      fullBadge: "🇧🇩 Bangladesh · BD (GMT+6)",
       isForeign: false,
     };
   }
@@ -922,11 +923,11 @@ function formatSingleTzClock(ms, offsetHours, tzCode, nowMs = Date.now()) {
   return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${timeStr}`;
 }
 
-// Primary Task Bar clock: ALWAYS displays calculated Local Time (BDT) first!
+// Primary Task Bar clock: ALWAYS displays calculated Local Time (BD) first!
 function formatBdtClock(ms, fallbackText = "", taskOrTz = null) {
-  if (!ms || !Number.isFinite(ms)) return fallbackText || "No fixed time";
+  if (!ms || !Number.isFinite(ms)) return String(fallbackText || "No fixed time").replace(/\bBDT\b/g, "BD");
   const now = Date.now();
-  const bdtStr = formatSingleTzClock(ms, 6, "BDT", now);
+  const bdtStr = formatSingleTzClock(ms, 6, "BD", now);
 
   if (taskOrTz && typeof taskOrTz === "object") {
     const tzInfo = resolveRecordTimezoneInfo(taskOrTz);
@@ -1010,7 +1011,7 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now(), fallbackTzOffset
   }
 
   // Detect explicit timezone mention in phrase (e.g. "today 14:00 est", "tomorrow 4pm gmt")
-  const tzMatch = p.match(/\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|edt|pst|pdt|cst|cdt|mst|mdt|gmt|utc|bdt|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst|aest|aedt|nzst|cet|wat|eat|trt|brt)\b/i);
+  const tzMatch = p.match(/\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|edt|pst|pdt|cst|cdt|mst|mdt|gmt|utc|bdt|bd|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst|aest|aedt|nzst|cet|wat|eat|trt|brt)\b/i);
   const effOffsetHours = tzMatch ? getTzOffsetHours(tzMatch[1]) : fallbackTzOffsetHours;
   const tzOffsetMs = effOffsetHours * 3600 * 1000;
   const localNowMs = nowMs + tzOffsetMs;
@@ -1212,7 +1213,7 @@ function updateLiveTimerBadgeEl(badgeEl, ms, recordContext = null) {
     badgeEl.textContent = "⏱️ Next Follow-Up: No timer set";
     return;
   }
-  const localClockStr = formatSingleTzClock(ms, 6, "BDT");
+  const localClockStr = formatSingleTzClock(ms, 6, "BD");
   const clientOrig = recordContext ? formatClientOriginalClock(ms, recordContext) : null;
   const cd = formatTodoCountdown({ scheduled_at_ms: ms, completed: 0, auto_send: 1, phone: "1" });
   if (clientOrig) {
@@ -1287,7 +1288,7 @@ function populateTodoClientSelect() {
 function splitClockParts(ms, fallbackText = "") {
   if (!ms || !Number.isFinite(ms)) {
     return {
-      time: fallbackText || "Anytime",
+      time: String(fallbackText || "Anytime").replace(/\bBDT\b/g, "BD"),
       day: fallbackText ? "Scheduled" : "Open Task",
     };
   }
@@ -1299,10 +1300,10 @@ function splitClockParts(ms, fallbackText = "") {
   const timeStr = `${hours}:${mins}`;
   const dayDiff = Math.floor((ms + offsetMs) / 86400000) - Math.floor((nowMs + offsetMs) / 86400000);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  let dayStr = `${months[d.getUTCMonth()]} ${d.getUTCDate()} · BDT`;
-  if (dayDiff === 0) dayStr = "Today · BDT";
-  else if (dayDiff === 1) dayStr = "Tomorrow · BDT";
-  else if (dayDiff === -1) dayStr = "Yesterday · BDT";
+  let dayStr = `${months[d.getUTCMonth()]} ${d.getUTCDate()} · BD`;
+  if (dayDiff === 0) dayStr = "Today · BD";
+  else if (dayDiff === 1) dayStr = "Tomorrow · BD";
+  else if (dayDiff === -1) dayStr = "Yesterday · BD";
   return { time: timeStr, day: dayStr };
 }
 
@@ -1517,7 +1518,7 @@ function buildStudioTodoCard(t, allLeads) {
     await loadTodos();
   });
 
-  const titleText = el("div", `task-objective-title ${t.completed ? "done" : ""}`, t.task);
+  const titleText = el("div", `task-objective-title ${t.completed ? "done" : ""}`, String(t.task || "").replace(/\bBDT\b/g, "BD"));
   titleGroup.append(checkBtn, titleText);
 
   const metaPills = el("div", "task-meta-pills");
@@ -1567,7 +1568,7 @@ function buildStudioTodoCard(t, allLeads) {
     }
 
     if (linkedBooking && linkedBooking.call_time_ms) {
-      const localCallClock = formatSingleTzClock(linkedBooking.call_time_ms, 6, "BDT");
+      const localCallClock = formatSingleTzClock(linkedBooking.call_time_ms, 6, "BD");
       const clientCallClock =
         tzInfo && tzInfo.isForeign ? formatSingleTzClock(linkedBooking.call_time_ms, tzInfo.offset, tzInfo.code) : null;
       const callTag = el(
@@ -1642,7 +1643,7 @@ function buildStudioTodoCard(t, allLeads) {
 
     const tmrwBtn = el("button", "ghost small task-slot-pill", "🌅 Tomorrow 11:00");
     tmrwBtn.type = "button";
-    tmrwBtn.title = "Reschedule to Tomorrow 11:00 BDT";
+    tmrwBtn.title = "Reschedule to Tomorrow 11:00 BD";
     tmrwBtn.addEventListener("click", async () => {
       const nextMs = parseClientNaturalTimeToMs("Tomorrow 11:00");
       await api("PATCH", "/api/todos", {
@@ -1744,7 +1745,7 @@ function renderTodos() {
   // Group tasks chronologically for clean visual scanning
   const groups = [
     { key: "due", title: "Due Now & Immediate Dispatch", color: "#f43f5e", items: [] },
-    { key: "today", title: "Today's Schedule (BDT · GMT+6)", color: "#10b981", items: [] },
+    { key: "today", title: "Today's Schedule (BD · GMT+6)", color: "#10b981", items: [] },
     { key: "tomorrow", title: "Tomorrow's Schedule", color: "#38bdf8", items: [] },
     { key: "upcoming", title: "Upcoming Scheduled Dates", color: "#a855f7", items: [] },
     { key: "unscheduled", title: "Open & Unscheduled Tasks", color: "#94a3b8", items: [] },
@@ -1922,7 +1923,7 @@ function getEditModalRecordContext() {
 function syncComposerTimeFromMs(ms, updateNatural = true, updateExact = true) {
   composerScheduledMs = ms;
   if (updateNatural && $("#todo-time-phrase")) {
-    $("#todo-time-phrase").value = ms ? formatSingleTzClock(ms, 6, "BDT") : "";
+    $("#todo-time-phrase").value = ms ? formatSingleTzClock(ms, 6, "BD") : "";
   }
   if (updateExact && $("#todo-datetime-picker")) {
     $("#todo-datetime-picker").value = ms ? msToBdtDatetimeLocal(ms) : "";
@@ -2047,8 +2048,8 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
       clientName: clientName || undefined,
       phone: phone || undefined,
       taskType,
-      timePhrase: resolvedMs ? formatSingleTzClock(resolvedMs, 6, "BDT") : timePhrase || undefined,
-      dueDate: resolvedMs ? formatSingleTzClock(resolvedMs, 6, "BDT") : timePhrase || undefined,
+      timePhrase: resolvedMs ? formatSingleTzClock(resolvedMs, 6, "BD") : timePhrase || undefined,
+      dueDate: resolvedMs ? formatSingleTzClock(resolvedMs, 6, "BD") : timePhrase || undefined,
       scheduledAtMs: resolvedMs,
       aiMessage: aiMessage || generateSmartAiDraft(clientName, taskType, timePhrase),
       autoSend,
@@ -2068,7 +2069,7 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
 function syncEditModalTimeFromMs(ms, updateNatural = true, updateExact = true) {
   editModalScheduledMs = ms;
   if (updateNatural && $("#edit-todo-time-phrase")) {
-    $("#edit-todo-time-phrase").value = ms ? formatSingleTzClock(ms, 6, "BDT") : "";
+    $("#edit-todo-time-phrase").value = ms ? formatSingleTzClock(ms, 6, "BD") : "";
   }
   if (updateExact && $("#edit-todo-datetime")) {
     $("#edit-todo-datetime").value = ms ? msToBdtDatetimeLocal(ms) : "";
@@ -2385,7 +2386,8 @@ function fmtTimeInBookingTz(ms, tz) {
   const h = String(d.getUTCHours()).padStart(2, "0");
   const min = String(d.getUTCMinutes()).padStart(2, "0");
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${h}:${min} ${tz.toUpperCase()}`;
+  const code = tz.toUpperCase() === "BDT" ? "BD" : tz.toUpperCase();
+  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${h}:${min} ${code}`;
 }
 
 function formatNextFollowupTimer(b) {
@@ -2400,14 +2402,14 @@ function formatNextFollowupTimer(b) {
   const tzInfo = resolveRecordTimezoneInfo(b);
   const isCallReminder = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
   if (isCallReminder && b.call_time_ms && b.call_time_ms <= now && (!b.next_followup_at || b.next_followup_at <= now)) {
-    const localCall = formatSingleTzClock(b.call_time_ms, 6, "BDT", now);
+    const localCall = formatSingleTzClock(b.call_time_ms, 6, "BD", now);
     const clientCall = tzInfo && tzInfo.isForeign ? ` · Client: ${formatSingleTzClock(b.call_time_ms, tzInfo.offset, tzInfo.code, now)}` : "";
     return `⏰ Call Time Passed (Local: ${localCall}${clientCall})`;
   }
   if (!b.next_followup_at) {
     if (isCallReminder) {
       if (b.call_time_ms && b.call_time_ms > now) {
-        const localCall = formatSingleTzClock(b.call_time_ms, 6, "BDT", now);
+        const localCall = formatSingleTzClock(b.call_time_ms, 6, "BD", now);
         const clientCall = tzInfo && tzInfo.isForeign ? ` · Client: ${formatSingleTzClock(b.call_time_ms, tzInfo.offset, tzInfo.code, now)}` : "";
         return `🔔 Call — Local: ${localCall}${clientCall}`;
       }
@@ -2417,7 +2419,7 @@ function formatNextFollowupTimer(b) {
   }
   const diffMs = b.next_followup_at - now;
   const prefix = isCallReminder ? "🔔 30m Call Reminder" : "⏱️ Next Follow-Up";
-  const localTimeStr = formatSingleTzClock(b.next_followup_at, 6, "BDT", now);
+  const localTimeStr = formatSingleTzClock(b.next_followup_at, 6, "BD", now);
   const clientTimeSuffix =
     tzInfo && tzInfo.isForeign
       ? ` · 🌍 Client: ${formatSingleTzClock(b.next_followup_at, tzInfo.offset, tzInfo.code, now)}`
@@ -2557,14 +2559,15 @@ function renderBookings() {
       const refMs = isCall ? b.call_time_ms || b.next_followup_at : b.next_followup_at;
       if (b.scheduled_at || refMs) {
         const isPastCall = isCall && b.call_time_ms && b.call_time_ms <= Date.now();
-        let timeBreakdown = b.scheduled_at || "";
+        const cleanSchedAt = String(b.scheduled_at || "").replace(/\bBDT\b/g, "BD");
+        let timeBreakdown = cleanSchedAt;
         if (refMs) {
-          const localBdtClock = formatSingleTzClock(refMs, 6, "BDT");
+          const localBdtClock = formatSingleTzClock(refMs, 6, "BD");
           if (tzInfo && tzInfo.isForeign) {
             const clientOrigClock = formatSingleTzClock(refMs, tzInfo.offset, tzInfo.code);
             timeBreakdown = `🇧🇩 Local Time (Calculated): ${localBdtClock}   ⇄   🌍 Client Original: ${clientOrigClock} (${tzInfo.shortCountry})`;
           } else {
-            timeBreakdown = `🇧🇩 Local Time (BDT): ${localBdtClock}${b.scheduled_at ? ` · (${b.scheduled_at})` : ""}`;
+            timeBreakdown = `🇧🇩 Local Time (BD): ${localBdtClock}${cleanSchedAt ? ` · (${cleanSchedAt})` : ""}`;
           }
         }
         schedBox = el(
@@ -3457,7 +3460,7 @@ function updateStudioPulse() {
   const sc = String(bdtDate.getUTCSeconds()).padStart(2, "0");
 
   const clockEl = $("#topbar-clock-text");
-  if (clockEl) clockEl.textContent = `${hr}:${mn}:${sc} BDT`;
+  if (clockEl) clockEl.textContent = `${hr}:${mn}:${sc} BD`;
 
   const gw = overview?.gateway;
   const gwDot = $("#topbar-gw-dot");

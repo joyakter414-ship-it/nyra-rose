@@ -54,7 +54,7 @@ export function buildSystemPrompt(
     `    2. Best Email Address (for the calendar invite)`,
     `    3. Name & Website/Channel (if not already shared)`,
     `• PHONE NUMBER TIMEZONE INFERENCE & CONFIRMATION RULE:`,
-    `  - You automatically know the client's local timezone from their phone number country code (e.g. +880 = Bangladesh Time BDT GMT+6, +61 = Australian Time AEST GMT+10, +44 = UK Time GMT, +1 = US Eastern Time EST, +91 = India Time IST, +971 = UAE Time GST).`,
+    `  - You automatically know the client's local timezone from their phone number country code (e.g. +880 = Bangladesh Time BD GMT+6, +61 = Australian Time AEST GMT+10, +44 = UK Time GMT, +1 = US Eastern Time EST, +91 = India Time IST, +971 = UAE Time GST).`,
     `  - When a client books a call time, ALWAYS set it in their phone-number timezone first and ask them to confirm:`,
     `    "I've set your call for [Time] [Phone Country Timezone] based on your number — please let me know if that timezone works for you, or if you prefer another time or timezone!"`,
     `  - If they reply "ok", "yes", "sounds good", or don't object, keep that time locked in.`,

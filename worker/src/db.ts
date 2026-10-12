@@ -259,7 +259,7 @@ export async function createTodo(
   const client_name = extra?.client_name?.trim() || null;
   const phone = extra?.phone?.trim() || null;
   const scheduled_at_ms = extra?.scheduled_at_ms ?? null;
-  const timezone = extra?.timezone?.trim() || "BDT";
+  const timezone = extra?.timezone?.trim() || "BD";
   const ai_message = extra?.ai_message?.trim() || null;
   const task_type = extra?.task_type || (ai_message || phone ? "ai_scheduled" : "general");
   const booking_id = extra?.booking_id || null;
@@ -343,7 +343,7 @@ export async function updateTodo(
       next.client_name ?? null,
       next.phone ?? null,
       next.scheduled_at_ms ?? null,
-      next.timezone ?? "BDT",
+      next.timezone ?? "BD",
       next.ai_message ?? null,
       next.task_type ?? "general",
       next.booking_id ?? null,
@@ -421,11 +421,11 @@ export async function upsertBookingTodo(
       taskType = "client_date";
     } else if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
       let callLabel = b.scheduled_at || "";
-      if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BDT") {
+      if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BD" && b.timezone.toUpperCase() !== "BDT") {
         const bdtDate = new Date(b.call_time_ms + 6 * 3600000);
         const h = String(bdtDate.getUTCHours()).padStart(2, "0");
         const m = String(bdtDate.getUTCMinutes()).padStart(2, "0");
-        const localCallStr = `${h}:${m} BDT`;
+        const localCallStr = `${h}:${m} BD`;
         callLabel = b.scheduled_at
           ? `Local: ${localCallStr} · Client: ${b.scheduled_at}`
           : localCallStr;
@@ -466,7 +466,7 @@ export async function upsertBookingTodo(
         client_name: b.client_name || existing.client_name,
         phone: cleanPhone || existing.phone,
         scheduled_at_ms: b.next_followup_at,
-        timezone: b.timezone || existing.timezone || "BDT",
+        timezone: b.timezone || existing.timezone || "BD",
         ai_message: effectiveMsg,
         task_type: existing.task_type && existing.task_type !== "general" ? existing.task_type : taskType,
         auto_send: existing.auto_send !== undefined && existing.auto_send !== null ? existing.auto_send : 1,
@@ -477,7 +477,7 @@ export async function upsertBookingTodo(
       client_name: b.client_name,
       phone: cleanPhone,
       scheduled_at_ms: b.next_followup_at,
-      timezone: b.timezone || "BDT",
+      timezone: b.timezone || "BD",
       ai_message: effectiveMsg,
       task_type: taskType,
       booking_id: b.id,

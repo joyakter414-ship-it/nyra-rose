@@ -134,7 +134,7 @@ async function createTodo(env, chatId, task, dueDate, extra) {
   const client_name = extra?.client_name?.trim() || null;
   const phone = extra?.phone?.trim() || null;
   const scheduled_at_ms = extra?.scheduled_at_ms ?? null;
-  const timezone = extra?.timezone?.trim() || "BDT";
+  const timezone = extra?.timezone?.trim() || "BD";
   const ai_message = extra?.ai_message?.trim() || null;
   const task_type = extra?.task_type || (ai_message || phone ? "ai_scheduled" : "general");
   const booking_id = extra?.booking_id || null;
@@ -207,7 +207,7 @@ async function updateTodo(env, id, patch) {
     next.client_name ?? null,
     next.phone ?? null,
     next.scheduled_at_ms ?? null,
-    next.timezone ?? "BDT",
+    next.timezone ?? "BD",
     next.ai_message ?? null,
     next.task_type ?? "general",
     next.booking_id ?? null,
@@ -261,11 +261,11 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
       taskType = "client_date";
     } else if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
       let callLabel = b.scheduled_at || "";
-      if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BDT") {
+      if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BD" && b.timezone.toUpperCase() !== "BDT") {
         const bdtDate = new Date(b.call_time_ms + 6 * 36e5);
         const h = String(bdtDate.getUTCHours()).padStart(2, "0");
         const m = String(bdtDate.getUTCMinutes()).padStart(2, "0");
-        const localCallStr = `${h}:${m} BDT`;
+        const localCallStr = `${h}:${m} BD`;
         callLabel = b.scheduled_at ? `Local: ${localCallStr} \xB7 Client: ${b.scheduled_at}` : localCallStr;
       }
       taskTitle = `\u{1F514} 30m Call Reminder: ${clientLabel}${callLabel ? ` (Call \u2014 ${callLabel})` : ""}`;
@@ -302,7 +302,7 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
         client_name: b.client_name || existing.client_name,
         phone: cleanPhone || existing.phone,
         scheduled_at_ms: b.next_followup_at,
-        timezone: b.timezone || existing.timezone || "BDT",
+        timezone: b.timezone || existing.timezone || "BD",
         ai_message: effectiveMsg,
         task_type: existing.task_type && existing.task_type !== "general" ? existing.task_type : taskType,
         auto_send: existing.auto_send !== void 0 && existing.auto_send !== null ? existing.auto_send : 1
@@ -312,7 +312,7 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
       client_name: b.client_name,
       phone: cleanPhone,
       scheduled_at_ms: b.next_followup_at,
-      timezone: b.timezone || "BDT",
+      timezone: b.timezone || "BD",
       ai_message: effectiveMsg,
       task_type: taskType,
       booking_id: b.id,
@@ -614,7 +614,7 @@ function buildSystemPrompt(s, ctx) {
     `    2. Best Email Address (for the calendar invite)`,
     `    3. Name & Website/Channel (if not already shared)`,
     `\u2022 PHONE NUMBER TIMEZONE INFERENCE & CONFIRMATION RULE:`,
-    `  - You automatically know the client's local timezone from their phone number country code (e.g. +880 = Bangladesh Time BDT GMT+6, +61 = Australian Time AEST GMT+10, +44 = UK Time GMT, +1 = US Eastern Time EST, +91 = India Time IST, +971 = UAE Time GST).`,
+    `  - You automatically know the client's local timezone from their phone number country code (e.g. +880 = Bangladesh Time BD GMT+6, +61 = Australian Time AEST GMT+10, +44 = UK Time GMT, +1 = US Eastern Time EST, +91 = India Time IST, +971 = UAE Time GST).`,
     `  - When a client books a call time, ALWAYS set it in their phone-number timezone first and ask them to confirm:`,
     `    "I've set your call for [Time] [Phone Country Timezone] based on your number \u2014 please let me know if that timezone works for you, or if you prefer another time or timezone!"`,
     `  - If they reply "ok", "yes", "sounds good", or don't object, keep that time locked in.`,
@@ -1101,7 +1101,7 @@ async function handleDashboardChat(env, text) {
 }
 var PHONE_PREFIX_TIMEZONES = [
   // 3-digit country codes first
-  { prefix: "880", tz: { code: "BDT", label: "Bangladesh Time (GMT+6)", country: "Bangladesh", offsetHours: 6 } },
+  { prefix: "880", tz: { code: "BD", label: "Bangladesh Time (BD, GMT+6)", country: "Bangladesh", offsetHours: 6 } },
   { prefix: "971", tz: { code: "GST", label: "UAE / Dubai Time (GMT+4)", country: "UAE", offsetHours: 4 } },
   { prefix: "966", tz: { code: "AST", label: "Saudi Arabia Time (GMT+3)", country: "Saudi Arabia", offsetHours: 3 } },
   { prefix: "974", tz: { code: "AST", label: "Qatar Time (GMT+3)", country: "Qatar", offsetHours: 3 } },
@@ -1214,7 +1214,8 @@ function formatTimeInTimezone(utcMs, tz, phoneFallback, nowMs = Date.now()) {
   const isTomorrow = d.getUTCFullYear() === tmrwD.getUTCFullYear() && d.getUTCMonth() === tmrwD.getUTCMonth() && d.getUTCDate() === tmrwD.getUTCDate();
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const dayPrefix = sameDay ? "Today" : isTomorrow ? "Tomorrow" : `${months[d.getUTCMonth()]} ${d.getUTCDate()}`;
-  const tzLabel = (tz || detectTimezoneFromPhone(phoneFallback)?.code || "BDT").toUpperCase();
+  const rawTzLabel = (tz || detectTimezoneFromPhone(phoneFallback)?.code || "BD").toUpperCase();
+  const tzLabel = rawTzLabel === "BDT" ? "BD" : rawTzLabel;
   return `${dayPrefix} ${timeStr} ${tzLabel}`;
 }
 function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallback) {
@@ -1451,7 +1452,7 @@ function normalizeTimezoneMention(rawTz) {
   if (u === "AEDT") return "AEDT";
   if (u === "AWST" || u.includes("PERTH")) return "AWST";
   if (u.includes("NEW ZEALAND") || u === "NZST") return "NZST";
-  if (u.includes("BANGLADESH") || u.includes("DHAKA") || u.startsWith("BD")) return "BDT";
+  if (u.includes("BANGLADESH") || u.includes("DHAKA") || u.startsWith("BD")) return "BD";
   if (u.includes("INDIA") || u === "IST") return "IST";
   if (u.includes("PAKISTAN") || u === "PKT") return "PKT";
   if (u.includes("DUBAI") || u.includes("UAE") || u === "GST") return "GST";
@@ -1756,7 +1757,7 @@ function analyzeConversationMemory(params) {
   }
   return [
     `\u2022 Client Name: ${computedName !== "New Lead" ? computedName : "Not shared yet (ask naturally when booking)"}`,
-    `\u2022 Country & Local Timezone (from phone): ${phoneTz ? `${phoneTz.country} \u2014 ${phoneTz.label}` : existing?.timezone || "BDT (GMT+6)"}`,
+    `\u2022 Country & Local Timezone (from phone): ${phoneTz ? `${phoneTz.country} \u2014 ${phoneTz.label}` : existing?.timezone || "BD (GMT+6)"}`,
     `\u2022 Remembered Video Scope / Niche: ${knownScope || "Not discovered yet \u2014 find out if they need Shorts/Reels, YouTube long-form, or Agency White-Label"}`,
     `\u2022 Remembered Email: ${knownEmail || "Not collected yet \u2014 needed to send calendar invite"}`,
     `\u2022 Remembered Website/Channel: ${knownWebsite || "Not shared yet"}`,
@@ -1841,11 +1842,12 @@ function generateFollowupText(b) {
 }
 async function syncBookingToTodo(env, b, nowMs = Date.now()) {
   if (!b) return;
-  const effTz = (b.timezone || detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT").toUpperCase();
+  const rawEffTz = (b.timezone || detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BD").toUpperCase();
+  const effTz = rawEffTz === "BDT" ? "BD" : rawEffTz;
   let formattedDue = b.scheduled_at || null;
   if (b.next_followup_at) {
-    const localBdtStr = formatTimeInTimezone(b.next_followup_at, "BDT", null, nowMs);
-    if (effTz !== "BDT") {
+    const localBdtStr = formatTimeInTimezone(b.next_followup_at, "BD", null, nowMs);
+    if (effTz !== "BD") {
       const clientTzStr = formatTimeInTimezone(b.next_followup_at, effTz, b.phone || b.chat_id, nowMs);
       formattedDue = `${localBdtStr} (Client: ${clientTzStr})`;
     } else {
@@ -2032,8 +2034,8 @@ async function generateReply(env, s, rules, c) {
       if (isBookingCallIntent || bookingInfo.isRescheduleRequest) {
         const wasAlreadyBooked = Boolean(existing && (existing.status === "booked" || existing.status === "confirmed"));
         const useExplicitTz = Boolean(bookingInfo.timezone);
-        const effTz = useExplicitTz ? bookingInfo.timezone : phoneTz?.code || existing?.timezone || "BDT";
-        const tzDisplayName = useExplicitTz ? bookingInfo.timezone : phoneTz ? phoneTz.label : existing?.timezone || "Bangladesh Time (GMT+6)";
+        const effTz = useExplicitTz ? bookingInfo.timezone : phoneTz?.code || existing?.timezone || "BD";
+        const tzDisplayName = useExplicitTz ? bookingInfo.timezone : phoneTz ? phoneTz.label : existing?.timezone || "Bangladesh Time (BD, GMT+6)";
         const rawTimePhrase = bookingInfo.time || existing?.scheduled_at || null;
         const parsedCallMs = rawTimePhrase ? parseScheduledTimeToMs(rawTimePhrase, effTz, nowMs, computedPhone || c.chatId) : existing?.call_time_ms || null;
         const formattedScheduledAt = parsedCallMs ? formatTimeInTimezone(parsedCallMs, effTz, computedPhone || c.chatId, nowMs) : rawTimePhrase;
@@ -2112,11 +2114,11 @@ async function generateReply(env, s, rules, c) {
         }
       } else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
         const isHourlyRelative = /(?:in|after|\+)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?\b/i.test(bookingInfo.time) && !/\b(?:am|pm)\b/i.test(bookingInfo.time);
-        const effTz = bookingInfo.timezone || phoneTz?.code || existing?.timezone || "BDT";
+        const effTz = bookingInfo.timezone || phoneTz?.code || existing?.timezone || "BD";
         const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 2 * 3600 * 1e3;
         const formattedClientTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
-        const formattedLocalBdtTime = formatTimeInTimezone(targetFollowupMs, "BDT", null, nowMs);
-        const scheduledAtLabel = isHourlyRelative ? `Follow-up: ${bookingInfo.time.trim()} (${formattedLocalBdtTime})` : effTz.toUpperCase() !== "BDT" ? `Follow-up: ${formattedClientTime} (Local: ${formattedLocalBdtTime})` : `Follow-up: ${formattedLocalBdtTime}`;
+        const formattedLocalBdtTime = formatTimeInTimezone(targetFollowupMs, "BD", null, nowMs);
+        const scheduledAtLabel = isHourlyRelative ? `Follow-up: ${bookingInfo.time.trim()} (${formattedLocalBdtTime})` : effTz.toUpperCase() !== "BD" && effTz.toUpperCase() !== "BDT" ? `Follow-up: ${formattedClientTime} (Local: ${formattedLocalBdtTime})` : `Follow-up: ${formattedLocalBdtTime}`;
         const nextStatus = bookingInfo.inferredStatus || (existing?.status && existing.status !== "fake_lead" && existing.status !== "booked" && existing.status !== "confirmed" ? existing.status : "lead");
         if (existing) {
           const saved = await updateBooking(env, existing.id, {
@@ -2191,7 +2193,7 @@ async function generateReply(env, s, rules, c) {
           const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
-            timezone: existing.timezone || phoneTz?.code || "BDT",
+            timezone: existing.timezone || phoneTz?.code || "BD",
             company_or_website: bookingInfo.companyOrWebsite || existing.company_or_website,
             requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
             status: nextStatus,
@@ -2212,7 +2214,7 @@ async function generateReply(env, s, rules, c) {
             phone: computedPhone,
             email: null,
             scheduled_at: null,
-            timezone: bookingInfo.timezone || phoneTz?.code || "BDT",
+            timezone: bookingInfo.timezone || phoneTz?.code || "BD",
             company_or_website: bookingInfo.companyOrWebsite,
             requirements: bookingInfo.requirements,
             status: nextStatus,
@@ -2624,7 +2626,7 @@ async function dashboardRoutes(request, env, url) {
       const allBookings = await getBookings(env).catch(() => []);
       for (const b of allBookings) {
         if (!b.timezone) {
-          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BD";
         }
         if (b.next_followup_at) {
           await syncBookingToTodo(env, b, now);
@@ -2637,7 +2639,7 @@ async function dashboardRoutes(request, env, url) {
       const body = await request.json();
       const now = Date.now();
       const cleanPhone = (body.phone || "").replace(/[^0-9]/g, "") || null;
-      const effTz = body.timezone || detectTimezoneFromPhone(cleanPhone || body.chatId)?.code || "BDT";
+      const effTz = body.timezone || detectTimezoneFromPhone(cleanPhone || body.chatId)?.code || "BD";
       let targetMs = null;
       if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
         targetMs = body.scheduledAtMs;
@@ -2714,7 +2716,7 @@ async function dashboardRoutes(request, env, url) {
       }
       const now = Date.now();
       const cleanPhone = body.phone !== void 0 ? (body.phone || "").replace(/[^0-9]/g, "") || null : existing.phone;
-      const effTz = body.timezone || existing.timezone || detectTimezoneFromPhone(cleanPhone || existing.chat_id)?.code || "BDT";
+      const effTz = body.timezone || existing.timezone || detectTimezoneFromPhone(cleanPhone || existing.chat_id)?.code || "BD";
       let targetMs = void 0;
       if (body.scheduledAtMs === null || body.scheduledAtMs === "") {
         targetMs = null;
@@ -2850,7 +2852,7 @@ async function dashboardRoutes(request, env, url) {
       const now = Date.now();
       for (const b of list) {
         if (!b.timezone) {
-          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BD";
         }
         if (!b.call_time_ms && b.scheduled_at && (b.status === "booked" || b.status === "confirmed" || b.followup_type === "call_reminder")) {
           b.call_time_ms = parseScheduledTimeToMs(b.scheduled_at, b.timezone, b.created_at || now, b.phone || b.chat_id);
@@ -2863,7 +2865,7 @@ async function dashboardRoutes(request, env, url) {
       const now = Date.now();
       const status = body.status || "booked";
       const rawType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
-      const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BDT";
+      const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BD";
       const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
       let nextFollowupAt = null;
@@ -2924,7 +2926,7 @@ async function dashboardRoutes(request, env, url) {
       const patch = { ...body };
       let nextStatus = body.status ?? existing.status;
       let nextType = body.followup_type ?? existing.followup_type;
-      const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BDT";
+      const effTz = body.timezone ?? existing.timezone ?? detectTimezoneFromPhone(body.phone || existing.phone || existing.chat_id)?.code ?? "BD";
       patch.timezone = effTz;
       if (body.status && !body.followup_type) {
         if (body.status === "not_attended") nextType = "not_attended";
