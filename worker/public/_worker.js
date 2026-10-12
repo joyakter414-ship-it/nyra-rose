@@ -263,11 +263,9 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
       let callLabel = b.scheduled_at || "";
       if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BDT") {
         const bdtDate = new Date(b.call_time_ms + 6 * 36e5);
-        let h = bdtDate.getUTCHours();
+        const h = String(bdtDate.getUTCHours()).padStart(2, "0");
         const m = String(bdtDate.getUTCMinutes()).padStart(2, "0");
-        const ampm = h >= 12 ? "PM" : "AM";
-        h = h % 12 || 12;
-        const localCallStr = `${h}:${m} ${ampm} BDT`;
+        const localCallStr = `${h}:${m} BDT`;
         callLabel = b.scheduled_at ? `Local: ${localCallStr} \xB7 Client: ${b.scheduled_at}` : localCallStr;
       }
       taskTitle = `\u{1F514} 30m Call Reminder: ${clientLabel}${callLabel ? ` (Call \u2014 ${callLabel})` : ""}`;
@@ -1208,11 +1206,9 @@ function formatTimeInTimezone(utcMs, tz, phoneFallback, nowMs = Date.now()) {
   const localNowMs = nowMs + offsetHours * 3600 * 1e3;
   const d = new Date(localMs);
   const nowD = new Date(localNowMs);
-  let h = d.getUTCHours();
-  const m = d.getUTCMinutes();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  const timeStr = `${h}:${m.toString().padStart(2, "0")} ${ampm}`;
+  const h = d.getUTCHours().toString().padStart(2, "0");
+  const m = d.getUTCMinutes().toString().padStart(2, "0");
+  const timeStr = `${h}:${m}`;
   const sameDay = d.getUTCFullYear() === nowD.getUTCFullYear() && d.getUTCMonth() === nowD.getUTCMonth() && d.getUTCDate() === nowD.getUTCDate();
   const tmrwD = new Date(localNowMs + 24 * 3600 * 1e3);
   const isTomorrow = d.getUTCFullYear() === tmrwD.getUTCFullYear() && d.getUTCMonth() === tmrwD.getUTCMonth() && d.getUTCDate() === tmrwD.getUTCDate();
@@ -1316,7 +1312,7 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallb
   } else if (colonMatch) {
     let h = parseInt(colonMatch[1], 10);
     const m = parseInt(colonMatch[2], 10);
-    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 1 && h <= 8 && !colonMatch[1].startsWith("0")) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;
@@ -1324,7 +1320,7 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallb
   } else if (prepMatch) {
     let h = parseInt(prepMatch[1], 10);
     const m = prepMatch[2] ? parseInt(prepMatch[2], 10) : 0;
-    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 1 && h <= 8 && !prepMatch[1].startsWith("0")) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;

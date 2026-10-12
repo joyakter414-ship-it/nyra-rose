@@ -335,11 +335,9 @@ export function formatTimeInTimezone(
   const d = new Date(localMs);
   const nowD = new Date(localNowMs);
 
-  let h = d.getUTCHours();
-  const m = d.getUTCMinutes();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  const timeStr = `${h}:${m.toString().padStart(2, "0")} ${ampm}`;
+  const h = d.getUTCHours().toString().padStart(2, "0");
+  const m = d.getUTCMinutes().toString().padStart(2, "0");
+  const timeStr = `${h}:${m}`;
 
   const sameDay =
     d.getUTCFullYear() === nowD.getUTCFullYear() &&
@@ -466,8 +464,8 @@ export function parseScheduledTimeToMs(
     }
   }
 
-  // Extract time of day ("1:30 pm", "1:30", "at 4", "today 1", "in 7 pm")
-  let hour = 15; // fallback 3:00 PM if only a day like "tomorrow" is given
+  // Extract time of day ("13:30", "1:30 pm", "1:30", "at 4", "today 1", "in 7 pm")
+  let hour = 15; // fallback 15:00 if only a day like "tomorrow" is given
   let minute = 0;
   const ampmMatch = p.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   const colonMatch = p.match(/\b(\d{1,2}):(\d{2})\b/);
@@ -486,8 +484,8 @@ export function parseScheduledTimeToMs(
   } else if (colonMatch) {
     let h = parseInt(colonMatch[1], 10);
     const m = parseInt(colonMatch[2], 10);
-    // Business calls between 1:00 and 8:59 without AM/PM are afternoon/evening (PM)
-    if (h >= 1 && h <= 8) h += 12;
+    // Casual single-digit 1:00–8:59 without leading zero or AM/PM defaults to afternoon (13:00–20:59); 24h leading zero (01:00–08:59) stays morning
+    if (h >= 1 && h <= 8 && !colonMatch[1].startsWith("0")) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;
@@ -495,7 +493,7 @@ export function parseScheduledTimeToMs(
   } else if (prepMatch) {
     let h = parseInt(prepMatch[1], 10);
     const m = prepMatch[2] ? parseInt(prepMatch[2], 10) : 0;
-    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 1 && h <= 8 && !prepMatch[1].startsWith("0")) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;

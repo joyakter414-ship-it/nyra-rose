@@ -705,7 +705,7 @@
         <div class="card kpi-card">
           <div class="muted small-text">🤖 Auto-Added by Client</div>
           <div class="big" id="stat-todos-client-date" style="color: #38bdf8; font-size: 24px;">0</div>
-          <div class="muted small-text" style="font-size: 11px;">"Tomorrow / 1 PM / 21 date"</div>
+          <div class="muted small-text" style="font-size: 11px;">"Tomorrow / 13:00 / 21 date"</div>
         </div>
         <div class="card kpi-card">
           <div class="muted small-text">✅ Sent &amp; Completed</div>
@@ -722,7 +722,7 @@
             <div>
               <h2 style="margin: 0;">AI Follow-Up Schedule &amp; Daily Task Bar</h2>
               <p class="muted small-text" style="margin: 2px 0 0;">
-                Check when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send. Auto-adds tasks whenever a client says <b>"I'll message you tomorrow"</b>, <b>"today 1 PM"</b>, or <b>"21 date"</b>.
+                Check when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send (24-hour clock). Auto-adds tasks whenever a client says <b>"I'll message you tomorrow"</b>, <b>"today 13:00"</b>, or <b>"21 date"</b>.
               </p>
             </div>
           </div>
@@ -735,15 +735,15 @@
         <!-- Quick Smart Studio Command Bar -->
         <form id="new-todo-form" class="todo-command-bar">
           <span class="todo-command-icon">⚡</span>
-          <input id="todo-input" placeholder="Quick schedule: 'Today 1pm follow up Akter — Hey bro, ready for your video edit?' or any task…" required />
+          <input id="todo-input" placeholder="Quick schedule: 'Today 13:00 follow up Akter — Hey bro, ready for your video edit?' or any task…" required />
           <button type="submit" class="small">+ Add to Schedule</button>
         </form>
         <div class="todo-syntax-chips">
           <span class="muted small-text" style="font-size: 11px;">Quick templates:</span>
-          <span class="todo-syntax-chip" data-template="Today 2:00 PM follow up ">🕐 Today 2:00 PM follow up…</span>
+          <span class="todo-syntax-chip" data-template="Today 14:00 follow up ">🕐 Today 14:00 follow up…</span>
           <span class="todo-syntax-chip" data-template="in 2 hours follow up ">⏱️ In 2 hours follow up…</span>
-          <span class="todo-syntax-chip" data-template="Tomorrow 11:00 AM follow up ">🌅 Tomorrow 11 AM follow up…</span>
-          <span class="todo-syntax-chip" data-template="21 date 4:00 PM follow up ">🗓️ 21 date 4 PM follow up…</span>
+          <span class="todo-syntax-chip" data-template="Tomorrow 11:00 follow up ">🌅 Tomorrow 11:00 follow up…</span>
+          <span class="todo-syntax-chip" data-template="21 date 16:00 follow up ">🗓️ 21 date 16:00 follow up…</span>
         </div>
 
         <!-- Full AI Follow-Up Task & Message Composer (Collapsible) -->
@@ -773,8 +773,8 @@
           </div>
 
           <div class="row" style="margin-top: 10px;">
-            <label>When Should Nyra Follow Up? <span class="muted">(e.g. Today 1 PM, Tomorrow 3 PM, 21 date)</span>
-              <input id="todo-time-phrase" placeholder="e.g. Today 1:00 PM / Tomorrow 2 PM / 21 date" />
+            <label>When Should Nyra Follow Up? <span class="muted">(e.g. Today 13:00, Tomorrow 15:00, 21 date)</span>
+              <input id="todo-time-phrase" placeholder="e.g. Today 13:00 / Tomorrow 14:00 / 21 date" />
             </label>
             <label>Or Pick Exact Date &amp; Time
               <input type="datetime-local" id="todo-datetime-picker" />
@@ -790,11 +790,11 @@
             <button type="button" class="ghost small todo-quick-slot" data-phrase="in 30 minutes">⏱️ +30m</button>
             <button type="button" class="ghost small todo-quick-slot" data-phrase="in 1 hour">⏱️ +1 Hour</button>
             <button type="button" class="ghost small todo-quick-slot" data-phrase="in 2 hours">⏱️ +2 Hours</button>
-            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 1:00 PM">🕐 Today 1:00 PM</button>
-            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 2:00 PM">🕑 Today 2:00 PM</button>
-            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 5:00 PM">🕔 Today 5:00 PM</button>
-            <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 11:00 AM">🌅 Tomorrow 11 AM</button>
-            <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 3:00 PM">🌇 Tomorrow 3 PM</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 13:00">🕐 Today 13:00</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 14:00">🕑 Today 14:00</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 17:00">🕔 Today 17:00</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 11:00">🌅 Tomorrow 11:00</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 15:00">🌇 Tomorrow 15:00</button>
             <span id="composer-todo-live-timer" class="badge badge-auto" style="margin-left: auto; font-size: 11.5px;">⏱️ Next Follow-Up: —</span>
           </div>
 
@@ -859,7 +859,7 @@
             <div class="card-icon-cap">🕐</div>
             <div>
               <h2 style="margin: 0;" id="todos-section-heading">Chronological Follow-Up &amp; Task Timeline</h2>
-              <div class="muted small-text" style="font-size: 11px;">Calculated Local Time (BDT · GMT+6) with automatic Client Original Timezone conversion</div>
+              <div class="muted small-text" style="font-size: 11px;">Calculated Local Time (24h BDT · GMT+6) with automatic Client Original Timezone conversion</div>
             </div>
           </div>
           <span id="todos-count-label" class="badge badge-source mono-text" style="font-size: 11px; padding: 4px 10px;"></span>
@@ -905,7 +905,7 @@
           <div class="studio-subpanel" style="margin: 12px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
               <span style="font-size: 12.5px; font-weight: 600; color: var(--rose-light);">
-                🕒 Reschedule Follow-Up Date / Time (2-Way Synced):
+                🕒 Reschedule Follow-Up Date / Time (24h · 2-Way Synced):
               </span>
               <span id="edit-todo-live-timer" class="badge badge-auto" style="font-size: 11.5px;">⏱️ Next Follow-Up: —</span>
             </div>
@@ -913,15 +913,15 @@
               <button type="button" class="ghost small edit-todo-slot" data-phrase="in 30 minutes">+30m</button>
               <button type="button" class="ghost small edit-todo-slot" data-phrase="in 1 hour">+1 Hour</button>
               <button type="button" class="ghost small edit-todo-slot" data-phrase="in 2 hours">+2 Hours</button>
-              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 1:00 PM">Today 1:00 PM</button>
-              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 2:00 PM">Today 2:00 PM</button>
-              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 5:00 PM">Today 5:00 PM</button>
-              <button type="button" class="ghost small edit-todo-slot" data-phrase="Tomorrow 11:00 AM">Tomorrow 11 AM</button>
-              <button type="button" class="ghost small edit-todo-slot" data-phrase="Tomorrow 3:00 PM">Tomorrow 3 PM</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 13:00">Today 13:00</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 14:00">Today 14:00</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 17:00">Today 17:00</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Tomorrow 11:00">Tomorrow 11:00</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Tomorrow 15:00">Tomorrow 15:00</button>
             </div>
             <div class="row">
-              <label>Natural Time / Date <span class="muted">(e.g. Today 1 PM, Tomorrow, 21 date)</span>
-                <input id="edit-todo-time-phrase" placeholder="e.g. Today 1:00 PM / 21 date" />
+              <label>Natural Time / Date <span class="muted">(e.g. Today 13:00, Tomorrow, 21 date)</span>
+                <input id="edit-todo-time-phrase" placeholder="e.g. Today 13:00 / 21 date" />
               </label>
               <label>Or Exact Date &amp; Time Picker
                 <input type="datetime-local" id="edit-todo-datetime" />

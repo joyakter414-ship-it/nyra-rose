@@ -9,7 +9,7 @@ const el = (tag, cls, text) => {
   if (text !== undefined) n.textContent = text;
   return n;
 };
-const fmtTime = (ms) => new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+const fmtTime = (ms) => new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "short", hour12: false });
 const fmtNum = (n) => Math.round(n).toLocaleString();
 
 let password = localStorage.getItem("nr_password") || localStorage.getItem("lj_password") || "";
@@ -912,11 +912,9 @@ function resolveRecordTimezoneInfo(record) {
 function formatSingleTzClock(ms, offsetHours, tzCode, nowMs = Date.now()) {
   const offsetMs = offsetHours * 3600000;
   const d = new Date(ms + offsetMs);
-  let hours = d.getUTCHours();
-  const mins = d.getUTCMinutes();
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12 || 12;
-  const timeStr = `${hours}:${String(mins).padStart(2, "0")} ${ampm} ${tzCode}`;
+  const hours = String(d.getUTCHours()).padStart(2, "0");
+  const mins = String(d.getUTCMinutes()).padStart(2, "0");
+  const timeStr = `${hours}:${mins} ${tzCode}`;
   const dayDiff = Math.floor((ms + offsetMs) / 86400000) - Math.floor((nowMs + offsetMs) / 86400000);
   if (dayDiff === 0) return `Today, ${timeStr}`;
   if (dayDiff === 1) return `Tomorrow, ${timeStr}`;
@@ -1011,7 +1009,7 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now(), fallbackTzOffset
     }
   }
 
-  // Detect explicit timezone mention in phrase (e.g. "today 2 pm est", "tomorrow 4pm gmt")
+  // Detect explicit timezone mention in phrase (e.g. "today 14:00 est", "tomorrow 4pm gmt")
   const tzMatch = p.match(/\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|edt|pst|pdt|cst|cdt|mst|mdt|gmt|utc|bdt|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst|aest|aedt|nzst|cet|wat|eat|trt|brt)\b/i);
   const effOffsetHours = tzMatch ? getTzOffsetHours(tzMatch[1]) : fallbackTzOffsetHours;
   const tzOffsetMs = effOffsetHours * 3600 * 1000;
@@ -1101,7 +1099,7 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now(), fallbackTzOffset
   } else if (colonMatch) {
     let h = parseInt(colonMatch[1], 10);
     const m = parseInt(colonMatch[2], 10);
-    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 1 && h <= 8 && !colonMatch[1].startsWith("0")) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;
@@ -1109,7 +1107,7 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now(), fallbackTzOffset
   } else if (prepMatch) {
     let h = parseInt(prepMatch[1], 10);
     const m = prepMatch[2] ? parseInt(prepMatch[2], 10) : 0;
-    if (h >= 1 && h <= 8) h += 12;
+    if (h >= 1 && h <= 8 && !prepMatch[1].startsWith("0")) h += 12;
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       hour = h;
       minute = m;
@@ -1296,11 +1294,9 @@ function splitClockParts(ms, fallbackText = "") {
   const nowMs = Date.now();
   const offsetMs = 6 * 3600000;
   const d = new Date(ms + offsetMs);
-  let hours = d.getUTCHours();
-  const mins = d.getUTCMinutes();
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12 || 12;
-  const timeStr = `${hours}:${String(mins).padStart(2, "0")} ${ampm}`;
+  const hours = String(d.getUTCHours()).padStart(2, "0");
+  const mins = String(d.getUTCMinutes()).padStart(2, "0");
+  const timeStr = `${hours}:${mins}`;
   const dayDiff = Math.floor((ms + offsetMs) / 86400000) - Math.floor((nowMs + offsetMs) / 86400000);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   let dayStr = `${months[d.getUTCMonth()]} ${d.getUTCDate()} · BDT`;
@@ -1644,15 +1640,15 @@ function buildStudioTodoCard(t, allLeads) {
       await loadTodos();
     });
 
-    const tmrwBtn = el("button", "ghost small task-slot-pill", "🌅 Tomorrow 11a");
+    const tmrwBtn = el("button", "ghost small task-slot-pill", "🌅 Tomorrow 11:00");
     tmrwBtn.type = "button";
-    tmrwBtn.title = "Reschedule to Tomorrow 11:00 AM BDT";
+    tmrwBtn.title = "Reschedule to Tomorrow 11:00 BDT";
     tmrwBtn.addEventListener("click", async () => {
-      const nextMs = parseClientNaturalTimeToMs("Tomorrow 11:00 AM");
+      const nextMs = parseClientNaturalTimeToMs("Tomorrow 11:00");
       await api("PATCH", "/api/todos", {
         id: t.id,
         scheduledAtMs: nextMs,
-        timePhrase: "Tomorrow 11:00 AM",
+        timePhrase: "Tomorrow 11:00",
         dueDate: formatBdtClock(nextMs),
       });
       await loadTodos();
@@ -2386,12 +2382,10 @@ function fmtTimeInBookingTz(ms, tz) {
   const offsetHours = getTzOffsetHours(tz);
   const localMs = ms + offsetHours * 3600 * 1000;
   const d = new Date(localMs);
-  let h = d.getUTCHours();
-  const min = d.getUTCMinutes();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
+  const h = String(d.getUTCHours()).padStart(2, "0");
+  const min = String(d.getUTCMinutes()).padStart(2, "0");
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${h}:${String(min).padStart(2, "0")} ${ampm} ${tz.toUpperCase()}`;
+  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${h}:${min} ${tz.toUpperCase()}`;
 }
 
 function formatNextFollowupTimer(b) {
@@ -3458,14 +3452,12 @@ $$(".hero-metric-card[data-jump-tab]").forEach((card) => {
 function updateStudioPulse() {
   const now = Date.now();
   const bdtDate = new Date(now + 6 * 3600000);
-  let hr = bdtDate.getUTCHours();
+  const hr = String(bdtDate.getUTCHours()).padStart(2, "0");
   const mn = String(bdtDate.getUTCMinutes()).padStart(2, "0");
   const sc = String(bdtDate.getUTCSeconds()).padStart(2, "0");
-  const ampm = hr >= 12 ? "PM" : "AM";
-  hr = hr % 12 || 12;
 
   const clockEl = $("#topbar-clock-text");
-  if (clockEl) clockEl.textContent = `${hr}:${mn}:${sc} ${ampm} BDT`;
+  if (clockEl) clockEl.textContent = `${hr}:${mn}:${sc} BDT`;
 
   const gw = overview?.gateway;
   const gwDot = $("#topbar-gw-dot");

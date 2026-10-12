@@ -423,11 +423,9 @@ export async function upsertBookingTodo(
       let callLabel = b.scheduled_at || "";
       if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BDT") {
         const bdtDate = new Date(b.call_time_ms + 6 * 3600000);
-        let h = bdtDate.getUTCHours();
+        const h = String(bdtDate.getUTCHours()).padStart(2, "0");
         const m = String(bdtDate.getUTCMinutes()).padStart(2, "0");
-        const ampm = h >= 12 ? "PM" : "AM";
-        h = h % 12 || 12;
-        const localCallStr = `${h}:${m} ${ampm} BDT`;
+        const localCallStr = `${h}:${m} BDT`;
         callLabel = b.scheduled_at
           ? `Local: ${localCallStr} · Client: ${b.scheduled_at}`
           : localCallStr;
