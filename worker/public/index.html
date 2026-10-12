@@ -141,6 +141,20 @@
           <div id="home-paused-chats-list" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;"></div>
         </div>
       </div>
+
+      <!-- Today's AI Follow-Up & Task Schedule Preview on Home -->
+      <div class="card" id="home-today-tasks-card" style="margin-top: 16px;">
+        <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 style="margin: 0;">📅 Today's AI Follow-Up & Task Timeline</h2>
+            <p class="muted small-text" style="margin-top: 4px;">
+              Live schedule of when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send. Auto-updates when clients say <i>"tomorrow"</i>, <i>"today 1 pm"</i>, or <i>"21 date"</i>.
+            </p>
+          </div>
+          <button type="button" id="home-open-tasks-btn" class="small">✅ Open Task Command Center</button>
+        </div>
+        <div id="home-today-tasks-list" class="rules-list" style="margin-top: 12px;"></div>
+      </div>
     </section>
 
     <!-- Test chat -->
@@ -507,24 +521,226 @@
       </div>
     </section>
 
-    <!-- Tasks & To-Dos -->
+    <!-- Tasks & AI Follow-Up Schedule Command Center -->
     <section id="tab-todos" class="page hidden">
-      <div class="card" style="margin-bottom: 16px;">
-        <div class="chat-head">
-          <div>
-            <h2>Tasks & To-Dos ✅</h2>
-            <p class="muted small-text">Track your to-dos on WhatsApp using <code>/todo &lt;task&gt;</code>, <code>/todos</code>, and <code>/done &lt;id&gt;</code>.</p>
-          </div>
+      <!-- Live KPI Stats Row -->
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); margin-bottom: 16px;">
+        <div class="card" style="padding: 14px 16px;">
+          <div class="muted small-text">📅 Today's Schedule</div>
+          <div class="big" id="stat-todos-today" style="color: var(--rose-light); font-size: 24px;">0</div>
+          <div class="muted small-text" style="font-size: 11.5px;">Follow-ups & tasks due today</div>
         </div>
-        <form id="new-todo-form" style="display: flex; gap: 8px; margin-top: 12px;">
-          <input id="todo-input" placeholder="What do you need to get done?" required />
-          <button type="submit" style="white-space: nowrap;">Add Task</button>
-        </form>
+        <div class="card" style="padding: 14px 16px;">
+          <div class="muted small-text">⚡ Next AI Action</div>
+          <div class="big" id="stat-todos-next" style="color: #34d399; font-size: 20px; margin: 6px 0;">—</div>
+          <div class="muted small-text" id="stat-todos-next-sub" style="font-size: 11.5px;">Live countdown</div>
+        </div>
+        <div class="card" style="padding: 14px 16px;">
+          <div class="muted small-text">🤖 Auto-Added by Client</div>
+          <div class="big" id="stat-todos-client-date" style="color: #38bdf8; font-size: 24px;">0</div>
+          <div class="muted small-text" style="font-size: 11.5px;">"Tomorrow / 1 PM / 21 date"</div>
+        </div>
+        <div class="card" style="padding: 14px 16px;">
+          <div class="muted small-text">✅ Sent & Completed</div>
+          <div class="big" id="stat-todos-completed" style="color: #a78bfa; font-size: 24px;">0</div>
+          <div class="muted small-text" style="font-size: 11.5px;">Delivered & finished tasks</div>
+        </div>
       </div>
 
+      <!-- Smart AI Task Bar & Composer -->
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="chat-head" style="flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2>AI Follow-Up Schedule & Daily Task Bar ✅</h2>
+            <p class="muted small-text">
+              Check when Nyra Rose will follow up with each client today and the exact WhatsApp message she will send. Auto-adds tasks whenever a client says <b>"I'll message you tomorrow"</b>, <b>"today 1 PM"</b>, or <b>"21 date"</b> — and you can add or re-edit any task & AI message below.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button type="button" id="toggle-ai-todo-composer-btn" class="small">+ Schedule AI Client Follow-Up</button>
+            <button type="button" id="refresh-todos-btn" class="ghost small">↻ Sync Schedule</button>
+          </div>
+        </div>
+
+        <!-- Quick Smart Input Bar (supports plain tasks OR natural language like "Today 1pm follow up Akter - Hey bro!") -->
+        <form id="new-todo-form" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+          <input id="todo-input" placeholder="⚡ Quick Add: e.g. 'Today 1pm follow up Akter — Hey bro, ready for your video edit?' or any task..." style="margin: 0; flex: 1; min-width: 240px;" required />
+          <button type="submit" style="white-space: nowrap;">+ Add to Schedule</button>
+        </form>
+
+        <!-- Full AI Follow-Up Task & Message Composer (Collapsible) -->
+        <form id="ai-todo-composer" class="hidden" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px;">
+          <h3 style="margin-top: 0; color: var(--rose-light); font-size: 15px;">🎯 Schedule AI Client Follow-Up or Custom Task</h3>
+          <div class="row">
+            <label>Select Existing Lead / Client <span class="muted">(optional)</span>
+              <select id="todo-client-select">
+                <option value="">— Or type client name & phone manually —</option>
+              </select>
+            </label>
+            <label>Client Name
+              <input id="todo-client-name" placeholder="e.g. Akter / Marcus" />
+            </label>
+            <label>WhatsApp Phone Number
+              <input id="todo-phone" placeholder="e.g. 8801873877905" />
+            </label>
+            <label>Task Category
+              <select id="todo-task-type">
+                <option value="client_followup">⚡ AI Client Follow-Up</option>
+                <option value="client_date">📅 Client-Requested Date/Time</option>
+                <option value="call_reminder">🔔 30m Pre-Call Reminder</option>
+                <option value="ai_scheduled">🤖 Custom Scheduled AI Message</option>
+                <option value="general">📝 General Internal Task</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 10px;">
+            <label>When Should Nyra Follow Up? <span class="muted">(e.g. Today 1 PM, Tomorrow 3 PM, 21 date)</span>
+              <input id="todo-time-phrase" placeholder="e.g. Today 1:00 PM / Tomorrow 2 PM / 21 date" />
+            </label>
+            <label>Or Pick Exact Date & Time
+              <input type="datetime-local" id="todo-datetime-picker" />
+            </label>
+            <label>Task Title / Summary
+              <input id="todo-title-input" placeholder="e.g. Follow up Akter on Growth Package" />
+            </label>
+          </div>
+
+          <!-- Quick Time Slot Buttons -->
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px;">
+            <span class="muted small-text" style="margin-right: 4px;">Quick Slots:</span>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="in 30 minutes">⏱️ +30m</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="in 1 hour">⏱️ +1 Hour</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="in 2 hours">⏱️ +2 Hours</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 1:00 PM">🕐 Today 1:00 PM</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 2:00 PM">🕑 Today 2:00 PM</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Today 5:00 PM">🕔 Today 5:00 PM</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 11:00 AM">🌅 Tomorrow 11 AM</button>
+            <button type="button" class="ghost small todo-quick-slot" data-phrase="Tomorrow 3:00 PM">🌇 Tomorrow 3 PM</button>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <label style="margin: 0; font-weight: 600; font-size: 13.5px;">💬 Exact WhatsApp Message Nyra Rose Will Send at Scheduled Time:</label>
+              <button type="button" id="todo-generate-msg-btn" class="ghost small">✨ Auto-Write AI Message</button>
+            </div>
+            <textarea id="todo-ai-message" rows="3" placeholder="Write the exact message Nyra will send to this client on WhatsApp when the timer hits (or click Auto-Write AI Message)..." style="margin-top: 6px;"></textarea>
+          </div>
+
+          <label class="switch" style="margin-top: 10px;">
+            <input type="checkbox" id="todo-auto-send" checked />
+            <span><b>Auto-Send via Nyra WhatsApp at Scheduled Time</b> <small class="muted">(Nyra automatically sends this message when the time arrives)</small></span>
+          </label>
+
+          <div class="actions" style="margin-top: 12px;">
+            <button type="submit">💾 Save & Schedule AI Task</button>
+            <button type="button" id="cancel-ai-todo-composer-btn" class="ghost small">Cancel</button>
+            <span id="todo-composer-error" class="error"></span>
+          </div>
+        </form>
+
+        <!-- Timeline Filters & Search -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);">
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="todo-filter-tabs">
+            <button type="button" class="small ghost todo-filter-btn active" data-filter="active">⚡ Active Schedule</button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="today">📅 Today's Timeline</button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="client_date">🤖 Client-Requested Dates</button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="call_reminder">🔔 30m Call Reminders</button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="completed">✅ Sent / Completed</button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="all">All</button>
+          </div>
+          <div style="min-width: 220px; flex: 1; max-width: 320px;">
+            <input id="todos-search" placeholder="Search client, phone, time, or message..." style="margin: 0; padding: 7px 11px; font-size: 13px;" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Chronological Timeline List -->
       <div class="card">
-        <h2>Task List</h2>
+        <div class="chat-head">
+          <h2 style="margin: 0;" id="todos-section-heading">📅 Live AI Follow-Up & Task Timeline</h2>
+          <span id="todos-count-label" class="muted small-text"></span>
+        </div>
         <div id="todos-list" class="rules-list"></div>
+      </div>
+
+      <!-- Re-Edit Task & AI Message Modal -->
+      <div id="todo-edit-modal" class="hidden" style="position: fixed; inset: 0; background: #000000cc; backdrop-filter: blur(8px); z-index: 100; place-items: center; padding: 16px;">
+        <div class="card" style="width: min(640px, 100%); margin: auto; max-height: 92vh; overflow-y: auto;">
+          <div class="chat-head">
+            <h2 id="todo-edit-modal-title" style="margin: 0;">✏️ Edit Scheduled Task & AI Message</h2>
+            <button type="button" id="close-todo-edit-modal" class="ghost small">✕</button>
+          </div>
+          <p class="muted small-text" id="todo-edit-modal-sub" style="margin-top: 4px;">
+            Update when Nyra Rose follows up and edit the exact WhatsApp message she will send. Changes sync automatically with the CRM.
+          </p>
+
+          <div class="row" style="margin-top: 10px;">
+            <label>Task Title / Goal
+              <input id="edit-todo-task" />
+            </label>
+            <label>Task Type
+              <select id="edit-todo-type">
+                <option value="client_followup">⚡ AI Client Follow-Up</option>
+                <option value="client_date">📅 Client-Requested Date/Time</option>
+                <option value="call_reminder">🔔 30m Pre-Call Reminder</option>
+                <option value="ai_scheduled">🤖 Custom Scheduled AI Message</option>
+                <option value="general">📝 General Internal Task</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 10px;">
+            <label>Client Name
+              <input id="edit-todo-client-name" placeholder="e.g. Akter" />
+            </label>
+            <label>WhatsApp Phone
+              <input id="edit-todo-phone" placeholder="e.g. 8801873877905" />
+            </label>
+          </div>
+
+          <div style="margin: 12px 0; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px;">
+            <div style="font-size: 13px; font-weight: 600; color: var(--rose-light); margin-bottom: 8px;">
+              🕒 Reschedule Follow-Up Date / Time:
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="in 30 minutes">+30m</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="in 1 hour">+1 Hour</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="in 2 hours">+2 Hours</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 1:00 PM">Today 1:00 PM</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 2:00 PM">Today 2:00 PM</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Today 5:00 PM">Today 5:00 PM</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Tomorrow 11:00 AM">Tomorrow 11 AM</button>
+              <button type="button" class="ghost small edit-todo-slot" data-phrase="Tomorrow 3:00 PM">Tomorrow 3 PM</button>
+            </div>
+            <div class="row">
+              <label>Natural Time / Date <span class="muted">(e.g. Today 1 PM, Tomorrow, 21 date)</span>
+                <input id="edit-todo-time-phrase" placeholder="e.g. Today 1:00 PM / 21 date" />
+              </label>
+              <label>Or Exact Date & Time Picker
+                <input type="datetime-local" id="edit-todo-datetime" />
+              </label>
+            </div>
+          </div>
+
+          <label style="margin-top: 10px; font-weight: 600;">💬 Exact WhatsApp Message Nyra Will Send:
+            <textarea id="edit-todo-ai-message" rows="4" placeholder="Write or edit the exact WhatsApp message Nyra will send to this client..." style="font-family: inherit; font-size: 14px; line-height: 1.5;"></textarea>
+          </label>
+
+          <label class="switch" style="margin-top: 10px;">
+            <input type="checkbox" id="edit-todo-auto-send" checked />
+            <span><b>Auto-Send on WhatsApp when timer expires</b></span>
+          </label>
+
+          <div class="actions" style="margin-top: 14px; flex-wrap: wrap; gap: 8px;">
+            <button type="button" id="save-todo-edit-btn">💾 Save Changes & Sync Timer</button>
+            <button type="button" id="send-todo-now-btn" class="small" style="background: linear-gradient(135deg, #10b981, #059669);">
+              🚀 Send Now via Nyra WhatsApp
+            </button>
+            <button type="button" id="cancel-todo-edit-btn" class="ghost small">Cancel</button>
+          </div>
+          <div id="todo-edit-feedback" class="muted small-text" style="margin-top: 8px;"></div>
+        </div>
       </div>
     </section>
 

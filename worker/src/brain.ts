@@ -3,6 +3,7 @@ import {
   addUsage,
   createBooking,
   findLatestBookingForChat,
+  getDueAiTodos,
   getDueFollowups,
   getEnabledRules,
   getNotes,
@@ -10,6 +11,8 @@ import {
   insertMessage,
   recentMessages,
   updateBooking,
+  updateTodo,
+  upsertBookingTodo,
   upsertChat,
   type Booking,
   type BookingStatus,
@@ -406,9 +409,28 @@ export function parseScheduledTimeToMs(
   let explicitDay: number | null = null;
   const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const monthMatch = p.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\b/i);
+  const reverseMonthMatch = !monthMatch
+    ? p.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i)
+    : null;
+  const bareDateMatch = !monthMatch && !reverseMonthMatch
+    ? p.match(/\b(?:on\s+(?:the\s+)?)?(\d{1,2})(?:\s*(?:st|nd|rd|th)?\s+date\b|\s*(?:tarik|tarikh)\b|\s*(?:st|nd|rd|th)\b)/i)
+    : null;
+
   if (monthMatch) {
     explicitMonth = monthNames.indexOf(monthMatch[1].slice(0, 3).toLowerCase());
     explicitDay = parseInt(monthMatch[2], 10);
+  } else if (reverseMonthMatch) {
+    explicitDay = parseInt(reverseMonthMatch[1], 10);
+    explicitMonth = monthNames.indexOf(reverseMonthMatch[2].slice(0, 3).toLowerCase());
+  } else if (bareDateMatch) {
+    const dayNum = parseInt(bareDateMatch[1], 10);
+    if (dayNum >= 1 && dayNum <= 31) {
+      explicitDay = dayNum;
+      explicitMonth = localDate.getUTCMonth();
+      if (dayNum < localDate.getUTCDate()) {
+        explicitMonth = (explicitMonth + 1) % 12;
+      }
+    }
   }
 
   let dayOffset = 0;
@@ -744,9 +766,9 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   // Detect client name mentions safely without matching adjectives like "free" or "busy"
   const clientName = extractClientNameFromText(normalizedText);
 
-  // Detect time/date mentions and relative phrases ("today 1:30 pm", "in 1:30", "2 hour later", "5 min later knock me", "tomorrow at 4pm", "at 2 pm", "in 7 pm")
+  // Detect time/date mentions and relative phrases ("today 1:30 pm", "in 1:30", "2 hour later", "5 min later knock me", "tomorrow at 4pm", "at 2 pm", "in 7 pm", "21 date", "21st")
   const timePhraseRegex =
-    /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+    /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b(?:on\s+(?:the\s+)?)?\d{1,2}(?:\s*(?:st|nd|rd|th)?\s+date\b|\s*(?:tarik|tarikh)\b|\s*(?:st|nd|rd|th)\b)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
   const timePhraseMatch = normalizedText.match(timePhraseRegex);
   let time: string | null = null;
   if (timePhraseMatch) {
@@ -765,7 +787,7 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
     }
   }
   if (!time) {
-    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning|next week)/i;
+    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|\b\d{1,2}\s*date\b|\b\d{1,2}\s*tarik\b|evening|morning|next week)/i;
     const looseMatch = normalizedText.match(looseTime);
     if (looseMatch) {
       const sentence = normalizedText.split(/[.?!,\n]/).find((s) => looseTime.test(s));
@@ -1054,6 +1076,7 @@ export function generateFollowupText(b: {
   followup_count?: number;
   requirements?: string | null;
   notes?: string | null;
+  custom_followup_msg?: string | null;
 }): string | null {
   const name = b.client_name && b.client_name !== "New Lead" && b.client_name !== "Dashboard Lead" ? b.client_name.trim() : "there";
   const type = b.followup_type || "auto_day1";
@@ -1064,6 +1087,11 @@ export function generateFollowupText(b: {
   // If rejected, not interested, or fake lead -> strictly NO follow-up
   if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
+  }
+
+  // If Management or Admin wrote/edited a custom message for this client's scheduled task/follow-up, use it!
+  if (b.custom_followup_msg && b.custom_followup_msg.trim()) {
+    return b.custom_followup_msg.trim();
   }
 
   // Stage 4: Client Choice Time / Date Follow-Up ("i msg you 2 hour later", "5 min later knock me", "i am free at 2 pm")
@@ -1143,14 +1171,35 @@ export function generateFollowupText(b: {
 }
 
 /**
- * Checks all bookings with `next_followup_at <= now` and dispatches due messages.
+ * Automatically syncs a CRM Booking's scheduled follow-up into the Tasks (`todos`) table
+ * so Management and Admin can inspect, edit, or reschedule every AI follow-up in the Task Bar.
+ */
+export async function syncBookingToTodo(
+  env: AppEnv,
+  b: Booking | null | undefined,
+  nowMs: number = Date.now(),
+): Promise<void> {
+  if (!b) return;
+  const formattedDue = b.next_followup_at
+    ? formatTimeInTimezone(b.next_followup_at, b.timezone, b.phone || b.chat_id, nowMs)
+    : b.scheduled_at || null;
+  const defaultMsg = generateFollowupText(b);
+  await upsertBookingTodo(env, b, formattedDue, defaultMsg);
+}
+
+/**
+ * Checks all bookings with `next_followup_at <= now` AND standalone AI tasks with `scheduled_at_ms <= now`
+ * and dispatches due WhatsApp messages.
  * Also transitions stages automatically (Day 1 -> Next 3 Days -> 30 Days -> Fake Lead).
  */
 export async function processDueFollowups(
   env: AppEnv,
 ): Promise<Array<{ jid: string; text: string; bookingId: string }>> {
   const now = Date.now();
-  const dueList = await getDueFollowups(env, now).catch(() => []);
+  const [dueList, dueAiTodos] = await Promise.all([
+    getDueFollowups(env, now).catch(() => []),
+    getDueAiTodos(env, now).catch(() => []),
+  ]);
   const outbound: Array<{ jid: string; text: string; bookingId: string }> = [];
 
   for (const b of dueList) {
@@ -1164,18 +1213,20 @@ export async function processDueFollowups(
       b.followup_type !== "call_reminder" &&
       elapsedHours >= 24 * 30
     ) {
-      await updateBooking(env, b.id, {
+      const stopped = await updateBooking(env, b.id, {
         status: "fake_lead",
         followup_type: "rejected",
         next_followup_at: null,
         followup_interval_hours: 0,
       });
+      await syncBookingToTodo(env, stopped, now);
       continue;
     }
 
     const message = generateFollowupText(b);
     if (!message) {
-      await updateBooking(env, b.id, { next_followup_at: null });
+      const cleared = await updateBooking(env, b.id, { next_followup_at: null });
+      await syncBookingToTodo(env, cleared, now);
       continue;
     }
 
@@ -1232,14 +1283,16 @@ export async function processDueFollowups(
       nextFollowupAt = now + 3.5 * 3600 * 1000;
     }
 
-    await updateBooking(env, b.id, {
+    const updatedBooking = await updateBooking(env, b.id, {
       status: nextStatus,
       followup_type: nextType,
       followup_interval_hours: nextInterval,
       last_followup_at: now,
       followup_count: (b.followup_count || 0) + 1,
       next_followup_at: nextFollowupAt,
+      custom_followup_msg: null, // Clear one-time custom message so subsequent stage uses fresh template unless re-edited
     });
+    await syncBookingToTodo(env, updatedBooking, now);
 
     if (jid) {
       outbound.push({ jid, text: message, bookingId: b.id });
@@ -1256,6 +1309,33 @@ export async function processDueFollowups(
         created_at: now,
       }).catch(() => {});
     }
+  }
+
+  // Also dispatch standalone AI scheduled tasks created directly in the Task Bar
+  for (const t of dueAiTodos) {
+    const cleanPhone = (t.phone || "").replace(/[^0-9]/g, "");
+    const msg = t.ai_message?.trim();
+    if (cleanPhone.length < 7 || !msg) {
+      await updateTodo(env, t.id, { completed: 1 });
+      continue;
+    }
+    const jid = `${cleanPhone}@s.whatsapp.net`;
+    outbound.push({ jid, text: msg, bookingId: t.id });
+    await Promise.all([
+      updateTodo(env, t.id, { completed: 1, sent_at: now }),
+      insertMessage(env, {
+        id: `task:${crypto.randomUUID()}`,
+        chat_id: jid,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: msg,
+        source: "whatsapp",
+        model: "auto:task",
+        neurons: 0,
+        created_at: now,
+      }).catch(() => {}),
+    ]);
   }
 
   return outbound;
@@ -1415,7 +1495,7 @@ async function generateReply(
             (useExplicitTz && bookingInfo.timezone !== existing.timezone)
           );
 
-          await updateBooking(env, existing.id, {
+          const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
             email: effEmail,
@@ -1430,6 +1510,7 @@ async function generateReply(
             followup_interval_hours: hasBooked ? 0 : 3.5,
             last_client_reply_at: nowMs,
           });
+          await syncBookingToTodo(env, saved, nowMs);
 
           if (wasAlreadyBooked && timeOrTzChanged) {
             bookingContext = `The client updated their call time/timezone to "${formattedScheduledAt}" (${tzDisplayName}). Confirm warmly that you have updated their booked call to ${formattedScheduledAt} and will send a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
@@ -1447,7 +1528,7 @@ async function generateReply(
             bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time yet. Acknowledge the email and ask what day and time works best for a quick 15-minute call${phoneTz ? ` (in their ${phoneTz.label} timezone)` : ""}.`;
           }
         } else {
-          await createBooking(env, {
+          const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
             phone: computedPhone,
@@ -1464,6 +1545,7 @@ async function generateReply(
             last_client_reply_at: nowMs,
             source: c.source,
           });
+          await syncBookingToTodo(env, saved, nowMs);
 
           if (effEmail && formattedScheduledAt) {
             const tzConfirmNote = phoneTz && !useExplicitTz
@@ -1480,7 +1562,7 @@ async function generateReply(
           }
         }
       }
-      // CASE 2: Client says when they are free / will message later ("no 5 min latter knock me", "i msg you 2 hour later", "i am free at 2 pm", "follow up tomorrow")
+      // CASE 2: Client says when they are free / will message later ("no 5 min latter knock me", "i msg you 2 hour later", "i am free at 2 pm", "follow up tomorrow", "21 date")
       else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
         const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
         const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 2 * 3600 * 1000;
@@ -1492,7 +1574,7 @@ async function generateReply(
             : "lead");
 
         if (existing) {
-          await updateBooking(env, existing.id, {
+          const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || existing.client_name,
             phone: computedPhone || existing.phone,
             email: bookingInfo.email || existing.email,
@@ -1505,8 +1587,9 @@ async function generateReply(
             followup_interval_hours: Math.max(0.1, Math.round(((targetFollowupMs - nowMs) / (3600 * 1000)) * 10) / 10),
             last_client_reply_at: nowMs,
           });
+          await syncBookingToTodo(env, saved, nowMs);
         } else {
-          await createBooking(env, {
+          const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
             phone: computedPhone,
@@ -1523,6 +1606,7 @@ async function generateReply(
             last_client_reply_at: nowMs,
             source: c.source,
           });
+          await syncBookingToTodo(env, saved, nowMs);
         }
 
         bookingContext = `The client mentioned they will be free or asked you to knock/message them around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
@@ -1573,7 +1657,7 @@ async function generateReply(
             nextInterval = 3.5;
           }
 
-          await updateBooking(env, existing.id, {
+          const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
             timezone: existing.timezone || phoneTz?.code || "BDT",
@@ -1585,6 +1669,7 @@ async function generateReply(
             next_followup_at: nextFollowupAt,
             followup_interval_hours: nextInterval,
           });
+          await syncBookingToTodo(env, saved, nowMs);
         } else if (c.chatId !== "dashboard") {
           const nextStatus: BookingStatus = bookingInfo.inferredStatus || "lead";
           const isStopped = bookingInfo.inferredFollowupType === "rejected" || nextStatus === "not_interested";
@@ -1593,7 +1678,7 @@ async function generateReply(
             : bookingInfo.inferredFollowupType || "auto_day1";
           const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 3.5;
 
-          await createBooking(env, {
+          const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
             phone: computedPhone,
@@ -1609,6 +1694,7 @@ async function generateReply(
             last_client_reply_at: nowMs,
             source: c.source,
           });
+          await syncBookingToTodo(env, saved, nowMs);
         }
       }
     } catch (err) {

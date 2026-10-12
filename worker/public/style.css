@@ -755,9 +755,55 @@ code {
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7), 0 0 40px rgba(244, 63, 94, 0.15);
 }
 
-.timer-preset-btn:hover {
+.timer-preset-btn:hover,
+.todo-quick-slot:hover,
+.edit-todo-slot:hover {
   border-color: var(--rose) !important;
   color: #fff !important;
   background: rgba(244, 63, 94, 0.16) !important;
   transform: translateY(-1px);
 }
+
+/* ── AI Follow-Up & Daily Task Timeline Styles ───────────────────── */
+
+.todo-filter-btn.active {
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.25), rgba(190, 18, 60, 0.35)) !important;
+  border-color: rgba(251, 113, 133, 0.65) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 16px rgba(244, 63, 94, 0.2);
+}
+
+.todo-timeline-card {
+  animation: fadeInUp 0.32s var(--ease-out) both;
+}
+
+.todo-timeline-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(251, 113, 133, 0.32) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45), 0 0 24px rgba(244, 63, 94, 0.08);
+}
+
+.todo-msg-box {
+  transition: all 0.2s var(--ease-out);
+}
+
+.todo-msg-box:hover {
+  border-color: rgba(251, 113, 133, 0.55) !important;
+  background: rgba(244, 63, 94, 0.08) !important;
+}
+
+.todo-home-row {
+  transition: all 0.2s var(--ease-out);
+}
+
+.todo-home-row:hover {
+  transform: translateX(3px);
+  border-color: rgba(251, 113, 133, 0.35) !important;
+}
+
+#todo-edit-modal .card {
+  animation: modalPop 0.35s var(--ease-spring);
+  border-color: rgba(251, 113, 133, 0.35);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), 0 0 40px rgba(244, 63, 94, 0.16);
+}
+

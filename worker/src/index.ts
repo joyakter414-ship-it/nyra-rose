@@ -9,6 +9,7 @@ import {
   handleIncoming,
   parseScheduledTimeToMs,
   processDueFollowups,
+  syncBookingToTodo,
   type IncomingMessage,
 } from "./brain";
 import {
@@ -31,9 +32,11 @@ import {
   toggleTodo,
   updateBooking,
   updateRule,
+  updateTodo,
   type Booking,
   type BookingStatus,
   type FollowupType,
+  type Todo,
 } from "./db";
 import { getSettings, MODELS, saveSettings, type Settings } from "./settings";
 
@@ -381,21 +384,291 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
     case "GET /api/todos": {
       const chat = url.searchParams.get("chat") || undefined;
-      return json({ todos: await getTodos(env, chat) });
+      const now = Date.now();
+      const allBookings = await getBookings(env).catch(() => []);
+      for (const b of allBookings) {
+        if (!b.timezone) {
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+        }
+        if (b.next_followup_at) {
+          await syncBookingToTodo(env, b, now);
+        }
+      }
+      const todos = await getTodos(env, chat);
+      return json({ todos, bookings: allBookings });
     }
 
     case "POST /api/todos": {
-      const body = (await request.json()) as { chatId?: string; task: string; dueDate?: string };
-      if (!body?.task?.trim()) return json({ error: "Task content required" }, 400);
-      const todo = await createTodo(env, body.chatId || "dashboard", body.task, body.dueDate);
+      const body = (await request.json()) as {
+        chatId?: string;
+        task?: string;
+        dueDate?: string;
+        scheduledAtMs?: number | string | null;
+        timePhrase?: string;
+        delayHours?: number;
+        timezone?: string;
+        clientName?: string;
+        phone?: string;
+        aiMessage?: string;
+        taskType?: string;
+        bookingId?: string;
+        autoSend?: boolean | number;
+      };
+      const now = Date.now();
+      const cleanPhone = (body.phone || "").replace(/[^0-9]/g, "") || null;
+      const effTz = body.timezone || detectTimezoneFromPhone(cleanPhone || body.chatId)?.code || "BDT";
+
+      let targetMs: number | null = null;
+      if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
+        targetMs = body.scheduledAtMs;
+      } else if (typeof body.scheduledAtMs === "string" && body.scheduledAtMs.trim()) {
+        const parsed = Date.parse(body.scheduledAtMs);
+        if (!Number.isNaN(parsed)) targetMs = parsed;
+      }
+      if (!targetMs && body.delayHours && body.delayHours > 0) {
+        targetMs = Math.round(now + body.delayHours * 3600 * 1000);
+      }
+      if (!targetMs && (body.timePhrase || body.dueDate)) {
+        targetMs = parseScheduledTimeToMs(body.timePhrase || body.dueDate, effTz, now, cleanPhone || body.chatId);
+      }
+
+      const formattedDue = targetMs
+        ? formatTimeInTimezone(targetMs, effTz, cleanPhone || body.chatId, now)
+        : body.dueDate || body.timePhrase || null;
+
+      // Match existing booking by bookingId or phone if applicable
+      let linkedBooking: Booking | null = null;
+      if (body.bookingId) {
+        linkedBooking = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.bookingId).first<Booking>();
+      } else if (cleanPhone && cleanPhone.length >= 7) {
+        linkedBooking = await env.DB.prepare(
+          "SELECT * FROM bookings WHERE phone LIKE ? OR chat_id LIKE ? ORDER BY created_at DESC LIMIT 1"
+        )
+          .bind(`%${cleanPhone.slice(-8)}%`, `%${cleanPhone.slice(-8)}%`)
+          .first<Booking>();
+      }
+
+      const clientLabel = body.clientName?.trim() || linkedBooking?.client_name || (cleanPhone ? `+${cleanPhone}` : null);
+      const taskTitle =
+        body.task?.trim() ||
+        (clientLabel
+          ? `⚡ Follow up ${clientLabel}${formattedDue ? ` (${formattedDue})` : ""}`
+          : "Scheduled AI Task");
+
+      const defaultMsg =
+        body.aiMessage?.trim() ||
+        (linkedBooking
+          ? generateFollowupText({
+              ...linkedBooking,
+              client_name: clientLabel || linkedBooking.client_name,
+              scheduled_at: formattedDue || linkedBooking.scheduled_at,
+            })
+          : clientLabel
+          ? `Hey ${clientLabel}! Just following up as promised to see if you had any questions about your video edits or if now is a good time to chat?`
+          : null);
+
+      if (linkedBooking && (targetMs || body.aiMessage)) {
+        const updatedB = await updateBooking(env, linkedBooking.id, {
+          client_name: clientLabel || linkedBooking.client_name,
+          phone: cleanPhone || linkedBooking.phone,
+          timezone: effTz,
+          next_followup_at: targetMs ?? linkedBooking.next_followup_at,
+          scheduled_at: formattedDue ? `Follow-up: ${formattedDue}` : linkedBooking.scheduled_at,
+          followup_type: targetMs ? "client_date" : linkedBooking.followup_type,
+          custom_followup_msg: body.aiMessage?.trim() || linkedBooking.custom_followup_msg || null,
+        });
+        await syncBookingToTodo(env, updatedB, now);
+        const syncedTodo = await env.DB.prepare("SELECT * FROM todos WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1")
+          .bind(linkedBooking.id)
+          .first<Todo>();
+        if (syncedTodo && body.task?.trim()) {
+          const finalTodo = await updateTodo(env, syncedTodo.id, { task: body.task.trim() });
+          return json({ todo: finalTodo, booking: updatedB });
+        }
+        return json({ todo: syncedTodo, booking: updatedB });
+      }
+
+      const todo = await createTodo(
+        env,
+        body.chatId || (cleanPhone ? `${cleanPhone}@s.whatsapp.net` : "dashboard"),
+        taskTitle,
+        formattedDue,
+        {
+          client_name: clientLabel,
+          phone: cleanPhone,
+          scheduled_at_ms: targetMs,
+          timezone: effTz,
+          ai_message: defaultMsg,
+          task_type: body.taskType || (cleanPhone || defaultMsg ? "ai_scheduled" : "general"),
+          booking_id: linkedBooking?.id || null,
+          auto_send: body.autoSend !== undefined ? (body.autoSend ? 1 : 0) : cleanPhone && defaultMsg ? 1 : 0,
+        }
+      );
       return json({ todo });
     }
 
     case "PATCH /api/todos": {
-      const body = (await request.json()) as { id: string; completed?: boolean };
+      const body = (await request.json()) as {
+        id: string;
+        completed?: boolean;
+        task?: string;
+        dueDate?: string | null;
+        scheduledAtMs?: number | string | null;
+        timePhrase?: string;
+        delayHours?: number;
+        timezone?: string;
+        clientName?: string | null;
+        phone?: string | null;
+        aiMessage?: string | null;
+        taskType?: string;
+        autoSend?: boolean | number;
+      };
       if (!body?.id) return json({ error: "id is required" }, 400);
-      const todo = await toggleTodo(env, body.id, body.completed);
+
+      const existing = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(body.id).first<Todo>();
+      if (!existing) return json({ error: "Task not found" }, 404);
+
+      const isSimpleToggle =
+        body.completed !== undefined &&
+        body.task === undefined &&
+        body.dueDate === undefined &&
+        body.scheduledAtMs === undefined &&
+        body.timePhrase === undefined &&
+        body.delayHours === undefined &&
+        body.aiMessage === undefined &&
+        body.clientName === undefined &&
+        body.phone === undefined &&
+        body.autoSend === undefined;
+
+      if (isSimpleToggle) {
+        const todo = await toggleTodo(env, body.id, body.completed);
+        return json({ todo });
+      }
+
+      const now = Date.now();
+      const cleanPhone =
+        body.phone !== undefined
+          ? (body.phone || "").replace(/[^0-9]/g, "") || null
+          : existing.phone;
+      const effTz = body.timezone || existing.timezone || detectTimezoneFromPhone(cleanPhone || existing.chat_id)?.code || "BDT";
+
+      let targetMs: number | null | undefined = undefined;
+      if (body.scheduledAtMs === null || body.scheduledAtMs === "") {
+        targetMs = null;
+      } else if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
+        targetMs = body.scheduledAtMs;
+      } else if (typeof body.scheduledAtMs === "string" && body.scheduledAtMs.trim()) {
+        const parsed = Date.parse(body.scheduledAtMs);
+        if (!Number.isNaN(parsed)) targetMs = parsed;
+      }
+      if (targetMs === undefined && body.delayHours && body.delayHours > 0) {
+        targetMs = Math.round(now + body.delayHours * 3600 * 1000);
+      }
+      if (targetMs === undefined && body.timePhrase) {
+        targetMs = parseScheduledTimeToMs(body.timePhrase, effTz, now, cleanPhone || existing.chat_id);
+      }
+
+      const finalMs = targetMs !== undefined ? targetMs : existing.scheduled_at_ms;
+      const formattedDue =
+        targetMs !== undefined && targetMs !== null
+          ? formatTimeInTimezone(targetMs, effTz, cleanPhone || existing.chat_id, now)
+          : body.dueDate !== undefined
+          ? body.dueDate
+          : existing.due_date;
+
+      const patch: Partial<Todo> = {
+        task: body.task !== undefined ? body.task : existing.task,
+        completed: body.completed !== undefined ? (body.completed ? 1 : 0) : existing.completed,
+        due_date: formattedDue,
+        scheduled_at_ms: finalMs,
+        timezone: effTz,
+        client_name: body.clientName !== undefined ? body.clientName : existing.client_name,
+        phone: cleanPhone,
+        ai_message: body.aiMessage !== undefined ? body.aiMessage : existing.ai_message,
+        task_type: body.taskType !== undefined ? body.taskType : existing.task_type,
+        auto_send: body.autoSend !== undefined ? (body.autoSend ? 1 : 0) : existing.auto_send,
+      };
+
+      const todo = await updateTodo(env, body.id, patch);
+
+      // Sync back to linked CRM booking if present
+      if (todo?.booking_id) {
+        const bookingPatch: Partial<Booking> = {};
+        if (targetMs !== undefined) {
+          bookingPatch.next_followup_at = targetMs;
+          if (formattedDue) bookingPatch.scheduled_at = `Follow-up: ${formattedDue}`;
+        }
+        if (body.aiMessage !== undefined) {
+          bookingPatch.custom_followup_msg = body.aiMessage?.trim() || null;
+        }
+        if (body.clientName !== undefined && body.clientName) {
+          bookingPatch.client_name = body.clientName.trim();
+        }
+        if (cleanPhone) {
+          bookingPatch.phone = cleanPhone;
+        }
+        if (Object.keys(bookingPatch).length > 0) {
+          await updateBooking(env, todo.booking_id, bookingPatch);
+        }
+      }
+
       return json({ todo });
+    }
+
+    case "POST /api/todos/send": {
+      const body = (await request.json()) as { id: string; customText?: string };
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const t = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(body.id).first<Todo>();
+      if (!t) return json({ error: "Task not found" }, 404);
+
+      const cleanPhone = (t.phone || (t.chat_id?.includes("@") ? t.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "");
+      if (cleanPhone.length < 7) {
+        return json({ error: "No valid WhatsApp phone number on this task to send." }, 400);
+      }
+      const message = body.customText?.trim() || t.ai_message?.trim() || t.task;
+      if (!message) {
+        return json({ error: "No message content to send." }, 400);
+      }
+
+      const now = Date.now();
+      const jid = `${cleanPhone}@s.whatsapp.net`;
+      const existingQueue = (await kvGet<Array<{ jid: string; text: string; bookingId?: string }>>(env, "gateway_outbound_queue")) || [];
+      existingQueue.push({ jid, text: message, bookingId: t.booking_id || t.id });
+      await kvSet(env, "gateway_outbound_queue", existingQueue);
+
+      await insertMessage(env, {
+        id: `task:${crypto.randomUUID()}`,
+        chat_id: jid,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: message,
+        source: "whatsapp",
+        model: "task:manual_send",
+        neurons: 0,
+        created_at: now,
+      }).catch(() => {});
+
+      let updatedTodo: Todo | null = null;
+      if (t.booking_id) {
+        const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first<Booking>();
+        if (b) {
+          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 3.5;
+          const nextFollowupAt = b.followup_type === "call_reminder" ? null : Math.round(now + nextInterval * 3600 * 1000);
+          const updatedB = await updateBooking(env, b.id, {
+            last_followup_at: now,
+            followup_count: (b.followup_count || 0) + 1,
+            next_followup_at: nextFollowupAt,
+            custom_followup_msg: null,
+          });
+          await syncBookingToTodo(env, updatedB, now);
+          updatedTodo = await updateTodo(env, t.id, { sent_at: now });
+        }
+      } else {
+        updatedTodo = await updateTodo(env, t.id, { completed: 1, sent_at: now, ai_message: message });
+      }
+
+      return json({ ok: true, queuedToGateway: true, todo: updatedTodo, message });
     }
 
     case "DELETE /api/todos": {
@@ -442,6 +715,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         customFollowupAt?: string | number;
         source?: string;
         notes?: string;
+        customFollowupMsg?: string;
       };
       const now = Date.now();
       const status: BookingStatus = body.status || "booked";
@@ -495,7 +769,9 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         last_client_reply_at: now,
         source: body.source || "dashboard",
         notes: body.notes,
+        custom_followup_msg: body.customFollowupMsg,
       });
+      await syncBookingToTodo(env, booking, now);
       return json({ booking });
     }
 
@@ -517,6 +793,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         delayHours?: number;
         customFollowupAt?: string | number | null;
         notes?: string;
+        custom_followup_msg?: string | null;
         last_followup_at?: number;
         followup_count?: number;
       };
@@ -635,6 +912,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       }
 
       const booking = await updateBooking(env, body.id, patch);
+      await syncBookingToTodo(env, booking, now);
       return json({ booking });
     }
 
@@ -644,6 +922,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         markSent?: boolean;
         sendViaGateway?: boolean;
         customText?: string;
+        saveCustomText?: boolean;
         followupType?: FollowupType;
         delayHours?: number;
       };
@@ -653,6 +932,10 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       if (!b) return json({ error: "Booking not found" }, 404);
 
       const now = Date.now();
+      if (body.saveCustomText && body.customText !== undefined) {
+        b.custom_followup_msg = body.customText.trim() || null;
+        await updateBooking(env, b.id, { custom_followup_msg: b.custom_followup_msg });
+      }
       if (body.followupType && body.followupType !== b.followup_type) {
         const nextPatch: Partial<Booking> = { followup_type: body.followupType };
         if (body.followupType !== "rejected" && (b.status === "not_interested" || b.status === "fake_lead")) {
@@ -678,6 +961,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       }
 
       if (b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
+        await syncBookingToTodo(env, b, now);
         return json(
           {
             error: `Follow-ups are disabled for this lead (marked as ${b.status === "fake_lead" ? "Fake Lead" : "Rejected / Not Interested"}).`,
@@ -745,9 +1029,12 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           last_followup_at: now,
           followup_count: nextCount,
           next_followup_at: nextFollowupAt,
+          custom_followup_msg: null,
         });
         if (patched) updatedBooking = patched;
       }
+
+      await syncBookingToTodo(env, updatedBooking, now);
 
       return json({
         message,

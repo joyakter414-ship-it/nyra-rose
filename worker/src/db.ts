@@ -204,6 +204,15 @@ export interface Todo {
   task: string;
   completed: number;
   due_date: string | null;
+  client_name: string | null;
+  phone: string | null;
+  scheduled_at_ms: number | null;
+  timezone: string | null;
+  ai_message: string | null;
+  task_type: string | null;
+  booking_id: string | null;
+  auto_send: number;
+  sent_at: number | null;
   created_at: number;
 }
 
@@ -223,7 +232,7 @@ export async function getTodos(env: AppEnv, chatId?: string, onlyPending = false
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY completed ASC, created_at DESC LIMIT 100";
+  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 200";
 
   const { results } = await env.DB.prepare(query).bind(...params).all<Todo>();
   return results;
@@ -233,17 +242,118 @@ export async function createTodo(
   env: AppEnv,
   chatId: string,
   task: string,
-  dueDate?: string
+  dueDate?: string | null,
+  extra?: {
+    client_name?: string | null;
+    phone?: string | null;
+    scheduled_at_ms?: number | null;
+    timezone?: string | null;
+    ai_message?: string | null;
+    task_type?: string | null;
+    booking_id?: string | null;
+    auto_send?: number;
+  }
 ): Promise<Todo> {
   const id = `todo_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
+  const client_name = extra?.client_name?.trim() || null;
+  const phone = extra?.phone?.trim() || null;
+  const scheduled_at_ms = extra?.scheduled_at_ms ?? null;
+  const timezone = extra?.timezone?.trim() || "BDT";
+  const ai_message = extra?.ai_message?.trim() || null;
+  const task_type = extra?.task_type || (ai_message || phone ? "ai_scheduled" : "general");
+  const booking_id = extra?.booking_id || null;
+  const auto_send = extra?.auto_send !== undefined ? extra.auto_send : ai_message && phone ? 1 : 0;
+
   await env.DB.prepare(
-    `INSERT INTO todos (id, chat_id, task, completed, due_date, created_at)
-     VALUES (?, ?, ?, 0, ?, ?)`
+    `INSERT INTO todos (
+       id, chat_id, task, completed, due_date, client_name, phone,
+       scheduled_at_ms, timezone, ai_message, task_type, booking_id, auto_send, sent_at, created_at
+     ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)`
   )
-    .bind(id, chatId, task.trim(), dueDate ?? null, created_at)
+    .bind(
+      id,
+      chatId,
+      task.trim(),
+      dueDate ?? null,
+      client_name,
+      phone,
+      scheduled_at_ms,
+      timezone,
+      ai_message,
+      task_type,
+      booking_id,
+      auto_send,
+      created_at
+    )
     .run();
-  return { id, chat_id: chatId, task: task.trim(), completed: 0, due_date: dueDate ?? null, created_at };
+
+  return {
+    id,
+    chat_id: chatId,
+    task: task.trim(),
+    completed: 0,
+    due_date: dueDate ?? null,
+    client_name,
+    phone,
+    scheduled_at_ms,
+    timezone,
+    ai_message,
+    task_type,
+    booking_id,
+    auto_send,
+    sent_at: null,
+    created_at,
+  };
+}
+
+export async function updateTodo(
+  env: AppEnv,
+  id: string,
+  patch: Partial<Todo>
+): Promise<Todo | null> {
+  const existing = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(id).first<Todo>();
+  if (!existing) return null;
+  const next: Todo = {
+    ...existing,
+    ...patch,
+    task: patch.task !== undefined ? patch.task.trim() : existing.task,
+  };
+
+  await env.DB.prepare(
+    `UPDATE todos SET
+       task = ?,
+       completed = ?,
+       due_date = ?,
+       client_name = ?,
+       phone = ?,
+       scheduled_at_ms = ?,
+       timezone = ?,
+       ai_message = ?,
+       task_type = ?,
+       booking_id = ?,
+       auto_send = ?,
+       sent_at = ?
+     WHERE id = ?`
+  )
+    .bind(
+      next.task,
+      next.completed ?? 0,
+      next.due_date ?? null,
+      next.client_name ?? null,
+      next.phone ?? null,
+      next.scheduled_at_ms ?? null,
+      next.timezone ?? "BDT",
+      next.ai_message ?? null,
+      next.task_type ?? "general",
+      next.booking_id ?? null,
+      next.auto_send ?? 1,
+      next.sent_at ?? null,
+      id
+    )
+    .run();
+
+  return next;
 }
 
 export async function toggleTodo(env: AppEnv, id: string, completed?: boolean): Promise<Todo | null> {
@@ -257,6 +367,114 @@ export async function toggleTodo(env: AppEnv, id: string, completed?: boolean): 
 export async function deleteTodo(env: AppEnv, id: string): Promise<boolean> {
   const res = await env.DB.prepare("DELETE FROM todos WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
+}
+
+export async function getDueAiTodos(env: AppEnv, now: number): Promise<Todo[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM todos
+     WHERE completed = 0
+       AND auto_send = 1
+       AND booking_id IS NULL
+       AND scheduled_at_ms IS NOT NULL
+       AND scheduled_at_ms <= ?
+       AND phone IS NOT NULL
+       AND ai_message IS NOT NULL
+     ORDER BY scheduled_at_ms ASC
+     LIMIT 5`
+  )
+    .bind(now)
+    .all<Todo>();
+  return results;
+}
+
+export async function upsertBookingTodo(
+  env: AppEnv,
+  b: Booking,
+  formattedDueDate: string | null,
+  defaultAiMessage: string | null
+): Promise<Todo | null> {
+  try {
+    const existing = await env.DB.prepare("SELECT * FROM todos WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1")
+      .bind(b.id)
+      .first<Todo>();
+
+    const isStopped =
+      !b.next_followup_at ||
+      b.followup_type === "rejected" ||
+      b.status === "not_interested" ||
+      b.status === "fake_lead" ||
+      b.status === "completed" ||
+      b.status === "cancelled";
+
+    if (isStopped) {
+      if (existing && existing.completed === 0) {
+        return await updateTodo(env, existing.id, { completed: 1 });
+      }
+      return existing || null;
+    }
+
+    const clientLabel = b.client_name && b.client_name !== "New Lead" ? b.client_name : b.phone ? `+${b.phone}` : "Client";
+    let taskTitle = `⚡ Follow up ${clientLabel}`;
+    let taskType = "client_followup";
+    if (b.followup_type === "client_date") {
+      taskTitle = `📅 Client Requested Follow-Up: ${clientLabel}`;
+      taskType = "client_date";
+    } else if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+      taskTitle = `🔔 30m Call Reminder: ${clientLabel}${b.scheduled_at ? ` (Call: ${b.scheduled_at})` : ""}`;
+      taskType = "call_reminder";
+    } else if (b.followup_type === "custom_timer") {
+      taskTitle = `⏱️ Custom Timer Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "not_attended" || b.status === "not_attended") {
+      taskTitle = `⚠️ Missed Call Reschedule: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
+      taskTitle = `⏳ Closing Follow-Up (Buying Soon): ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "no_reply_3d") {
+      taskTitle = `⏳ Stage 2 (8h) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "long_term_30d") {
+      taskTitle = `📆 Stage 3 (Daily) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else {
+      taskTitle = `⚡ Stage 1 (Day 1 Auto) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    }
+
+    const effectiveMsg = b.custom_followup_msg?.trim() || defaultAiMessage || null;
+    const cleanPhone = (b.phone || (b.chat_id?.includes("@") ? b.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "") || null;
+
+    if (existing) {
+      return await updateTodo(env, existing.id, {
+        chat_id: b.chat_id || existing.chat_id,
+        task: taskTitle,
+        completed: 0,
+        due_date: formattedDueDate,
+        client_name: b.client_name || existing.client_name,
+        phone: cleanPhone || existing.phone,
+        scheduled_at_ms: b.next_followup_at,
+        timezone: b.timezone || existing.timezone || "BDT",
+        ai_message: effectiveMsg,
+        task_type: taskType,
+        auto_send: 1,
+      });
+    }
+
+    return await createTodo(env, b.chat_id || "dashboard", taskTitle, formattedDueDate, {
+      client_name: b.client_name,
+      phone: cleanPhone,
+      scheduled_at_ms: b.next_followup_at,
+      timezone: b.timezone || "BDT",
+      ai_message: effectiveMsg,
+      task_type: taskType,
+      booking_id: b.id,
+      auto_send: 1,
+    });
+  } catch (err) {
+    console.warn("upsertBookingTodo error:", err);
+    return null;
+  }
 }
 
 // ─── Bookings & Leads CRM Sheet ──────────────────────────────────────────────
@@ -305,6 +523,7 @@ export interface Booking {
   followup_interval_hours: number | null;
   source: string;
   notes: string | null;
+  custom_followup_msg?: string | null;
   last_followup_at: number | null;
   followup_count: number;
   created_at: number;
@@ -352,6 +571,7 @@ export async function createBooking(
     followup_interval_hours?: number | null;
     source?: string;
     notes?: string | null;
+    custom_followup_msg?: string | null;
   }
 ): Promise<Booking> {
   const id = `book_${crypto.randomUUID().slice(0, 8)}`;
@@ -367,8 +587,8 @@ export async function createBooking(
        id, chat_id, client_name, phone, email, scheduled_at, timezone,
        company_or_website, requirements, status, followup_type,
        next_followup_at, call_time_ms, last_client_reply_at, followup_interval_hours,
-       source, notes, last_followup_at, followup_count, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
+       source, notes, custom_followup_msg, last_followup_at, followup_count, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   )
     .bind(
       id,
@@ -388,6 +608,7 @@ export async function createBooking(
       followup_interval_hours,
       source,
       b.notes?.trim() ?? null,
+      b.custom_followup_msg?.trim() ?? null,
       created_at
     )
     .run();
@@ -410,6 +631,7 @@ export async function createBooking(
     followup_interval_hours,
     source,
     notes: b.notes?.trim() ?? null,
+    custom_followup_msg: b.custom_followup_msg?.trim() ?? null,
     last_followup_at: null,
     followup_count: 0,
     created_at,
@@ -445,6 +667,7 @@ export async function updateBooking(
        last_client_reply_at = ?,
        followup_interval_hours = ?,
        notes = ?,
+       custom_followup_msg = ?,
        last_followup_at = ?,
        followup_count = ?
      WHERE id = ?`
@@ -464,6 +687,7 @@ export async function updateBooking(
       next.last_client_reply_at ?? null,
       next.followup_interval_hours ?? 3.5,
       next.notes,
+      next.custom_followup_msg ?? null,
       next.last_followup_at,
       next.followup_count,
       id
@@ -489,6 +713,7 @@ export async function getDueFollowups(env: AppEnv, now: number): Promise<Booking
 }
 
 export async function deleteBooking(env: AppEnv, id: string): Promise<boolean> {
+  await env.DB.prepare("DELETE FROM todos WHERE booking_id = ?").bind(id).run().catch(() => {});
   const res = await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
 }

@@ -124,18 +124,98 @@ async function getTodos(env, chatId, onlyPending = false) {
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY completed ASC, created_at DESC LIMIT 100";
+  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 200";
   const { results } = await env.DB.prepare(query).bind(...params).all();
   return results;
 }
-async function createTodo(env, chatId, task, dueDate) {
+async function createTodo(env, chatId, task, dueDate, extra) {
   const id = `todo_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
+  const client_name = extra?.client_name?.trim() || null;
+  const phone = extra?.phone?.trim() || null;
+  const scheduled_at_ms = extra?.scheduled_at_ms ?? null;
+  const timezone = extra?.timezone?.trim() || "BDT";
+  const ai_message = extra?.ai_message?.trim() || null;
+  const task_type = extra?.task_type || (ai_message || phone ? "ai_scheduled" : "general");
+  const booking_id = extra?.booking_id || null;
+  const auto_send = extra?.auto_send !== void 0 ? extra.auto_send : ai_message && phone ? 1 : 0;
   await env.DB.prepare(
-    `INSERT INTO todos (id, chat_id, task, completed, due_date, created_at)
-     VALUES (?, ?, ?, 0, ?, ?)`
-  ).bind(id, chatId, task.trim(), dueDate ?? null, created_at).run();
-  return { id, chat_id: chatId, task: task.trim(), completed: 0, due_date: dueDate ?? null, created_at };
+    `INSERT INTO todos (
+       id, chat_id, task, completed, due_date, client_name, phone,
+       scheduled_at_ms, timezone, ai_message, task_type, booking_id, auto_send, sent_at, created_at
+     ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)`
+  ).bind(
+    id,
+    chatId,
+    task.trim(),
+    dueDate ?? null,
+    client_name,
+    phone,
+    scheduled_at_ms,
+    timezone,
+    ai_message,
+    task_type,
+    booking_id,
+    auto_send,
+    created_at
+  ).run();
+  return {
+    id,
+    chat_id: chatId,
+    task: task.trim(),
+    completed: 0,
+    due_date: dueDate ?? null,
+    client_name,
+    phone,
+    scheduled_at_ms,
+    timezone,
+    ai_message,
+    task_type,
+    booking_id,
+    auto_send,
+    sent_at: null,
+    created_at
+  };
+}
+async function updateTodo(env, id, patch) {
+  const existing = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(id).first();
+  if (!existing) return null;
+  const next = {
+    ...existing,
+    ...patch,
+    task: patch.task !== void 0 ? patch.task.trim() : existing.task
+  };
+  await env.DB.prepare(
+    `UPDATE todos SET
+       task = ?,
+       completed = ?,
+       due_date = ?,
+       client_name = ?,
+       phone = ?,
+       scheduled_at_ms = ?,
+       timezone = ?,
+       ai_message = ?,
+       task_type = ?,
+       booking_id = ?,
+       auto_send = ?,
+       sent_at = ?
+     WHERE id = ?`
+  ).bind(
+    next.task,
+    next.completed ?? 0,
+    next.due_date ?? null,
+    next.client_name ?? null,
+    next.phone ?? null,
+    next.scheduled_at_ms ?? null,
+    next.timezone ?? "BDT",
+    next.ai_message ?? null,
+    next.task_type ?? "general",
+    next.booking_id ?? null,
+    next.auto_send ?? 1,
+    next.sent_at ?? null,
+    id
+  ).run();
+  return next;
 }
 async function toggleTodo(env, id, completed) {
   const existing = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(id).first();
@@ -147,6 +227,91 @@ async function toggleTodo(env, id, completed) {
 async function deleteTodo(env, id) {
   const res = await env.DB.prepare("DELETE FROM todos WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
+}
+async function getDueAiTodos(env, now) {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM todos
+     WHERE completed = 0
+       AND auto_send = 1
+       AND booking_id IS NULL
+       AND scheduled_at_ms IS NOT NULL
+       AND scheduled_at_ms <= ?
+       AND phone IS NOT NULL
+       AND ai_message IS NOT NULL
+     ORDER BY scheduled_at_ms ASC
+     LIMIT 5`
+  ).bind(now).all();
+  return results;
+}
+async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
+  try {
+    const existing = await env.DB.prepare("SELECT * FROM todos WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1").bind(b.id).first();
+    const isStopped = !b.next_followup_at || b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead" || b.status === "completed" || b.status === "cancelled";
+    if (isStopped) {
+      if (existing && existing.completed === 0) {
+        return await updateTodo(env, existing.id, { completed: 1 });
+      }
+      return existing || null;
+    }
+    const clientLabel = b.client_name && b.client_name !== "New Lead" ? b.client_name : b.phone ? `+${b.phone}` : "Client";
+    let taskTitle = `\u26A1 Follow up ${clientLabel}`;
+    let taskType = "client_followup";
+    if (b.followup_type === "client_date") {
+      taskTitle = `\u{1F4C5} Client Requested Follow-Up: ${clientLabel}`;
+      taskType = "client_date";
+    } else if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+      taskTitle = `\u{1F514} 30m Call Reminder: ${clientLabel}${b.scheduled_at ? ` (Call: ${b.scheduled_at})` : ""}`;
+      taskType = "call_reminder";
+    } else if (b.followup_type === "custom_timer") {
+      taskTitle = `\u23F1\uFE0F Custom Timer Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "not_attended" || b.status === "not_attended") {
+      taskTitle = `\u26A0\uFE0F Missed Call Reschedule: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
+      taskTitle = `\u23F3 Closing Follow-Up (Buying Soon): ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "no_reply_3d") {
+      taskTitle = `\u23F3 Stage 2 (8h) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "long_term_30d") {
+      taskTitle = `\u{1F4C6} Stage 3 (Daily) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else {
+      taskTitle = `\u26A1 Stage 1 (Day 1 Auto) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    }
+    const effectiveMsg = b.custom_followup_msg?.trim() || defaultAiMessage || null;
+    const cleanPhone = (b.phone || (b.chat_id?.includes("@") ? b.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "") || null;
+    if (existing) {
+      return await updateTodo(env, existing.id, {
+        chat_id: b.chat_id || existing.chat_id,
+        task: taskTitle,
+        completed: 0,
+        due_date: formattedDueDate,
+        client_name: b.client_name || existing.client_name,
+        phone: cleanPhone || existing.phone,
+        scheduled_at_ms: b.next_followup_at,
+        timezone: b.timezone || existing.timezone || "BDT",
+        ai_message: effectiveMsg,
+        task_type: taskType,
+        auto_send: 1
+      });
+    }
+    return await createTodo(env, b.chat_id || "dashboard", taskTitle, formattedDueDate, {
+      client_name: b.client_name,
+      phone: cleanPhone,
+      scheduled_at_ms: b.next_followup_at,
+      timezone: b.timezone || "BDT",
+      ai_message: effectiveMsg,
+      task_type: taskType,
+      booking_id: b.id,
+      auto_send: 1
+    });
+  } catch (err) {
+    console.warn("upsertBookingTodo error:", err);
+    return null;
+  }
 }
 async function getBookings(env, status, followupType) {
   let query = "SELECT * FROM bookings";
@@ -180,8 +345,8 @@ async function createBooking(env, b) {
        id, chat_id, client_name, phone, email, scheduled_at, timezone,
        company_or_website, requirements, status, followup_type,
        next_followup_at, call_time_ms, last_client_reply_at, followup_interval_hours,
-       source, notes, last_followup_at, followup_count, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
+       source, notes, custom_followup_msg, last_followup_at, followup_count, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   ).bind(
     id,
     b.chat_id,
@@ -200,6 +365,7 @@ async function createBooking(env, b) {
     followup_interval_hours,
     source,
     b.notes?.trim() ?? null,
+    b.custom_followup_msg?.trim() ?? null,
     created_at
   ).run();
   return {
@@ -220,6 +386,7 @@ async function createBooking(env, b) {
     followup_interval_hours,
     source,
     notes: b.notes?.trim() ?? null,
+    custom_followup_msg: b.custom_followup_msg?.trim() ?? null,
     last_followup_at: null,
     followup_count: 0,
     created_at
@@ -248,6 +415,7 @@ async function updateBooking(env, id, patch) {
        last_client_reply_at = ?,
        followup_interval_hours = ?,
        notes = ?,
+       custom_followup_msg = ?,
        last_followup_at = ?,
        followup_count = ?
      WHERE id = ?`
@@ -266,6 +434,7 @@ async function updateBooking(env, id, patch) {
     next.last_client_reply_at ?? null,
     next.followup_interval_hours ?? 3.5,
     next.notes,
+    next.custom_followup_msg ?? null,
     next.last_followup_at,
     next.followup_count,
     id
@@ -285,6 +454,8 @@ async function getDueFollowups(env, now) {
   return results;
 }
 async function deleteBooking(env, id) {
+  await env.DB.prepare("DELETE FROM todos WHERE booking_id = ?").bind(id).run().catch(() => {
+  });
   const res = await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
 }
@@ -1065,9 +1236,23 @@ function parseScheduledTimeToMs(phrase, timezone, nowMs = Date.now(), phoneFallb
   let explicitDay = null;
   const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const monthMatch = p.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\b/i);
+  const reverseMonthMatch = !monthMatch ? p.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i) : null;
+  const bareDateMatch = !monthMatch && !reverseMonthMatch ? p.match(/\b(?:on\s+(?:the\s+)?)?(\d{1,2})(?:\s*(?:st|nd|rd|th)?\s+date\b|\s*(?:tarik|tarikh)\b|\s*(?:st|nd|rd|th)\b)/i) : null;
   if (monthMatch) {
     explicitMonth = monthNames.indexOf(monthMatch[1].slice(0, 3).toLowerCase());
     explicitDay = parseInt(monthMatch[2], 10);
+  } else if (reverseMonthMatch) {
+    explicitDay = parseInt(reverseMonthMatch[1], 10);
+    explicitMonth = monthNames.indexOf(reverseMonthMatch[2].slice(0, 3).toLowerCase());
+  } else if (bareDateMatch) {
+    const dayNum = parseInt(bareDateMatch[1], 10);
+    if (dayNum >= 1 && dayNum <= 31) {
+      explicitDay = dayNum;
+      explicitMonth = localDate.getUTCMonth();
+      if (dayNum < localDate.getUTCDate()) {
+        explicitMonth = (explicitMonth + 1) % 12;
+      }
+    }
   }
   let dayOffset = 0;
   if (p.includes("yesterday")) {
@@ -1364,7 +1549,7 @@ function extractBookingDetails(text, history) {
   const phoneMatch = normalizedText.match(phoneRegex);
   const phone = phoneMatch && phoneMatch[0].replace(/\D/g, "").length >= 7 ? phoneMatch[0].trim() : null;
   const clientName = extractClientNameFromText(normalizedText);
-  const timePhraseRegex = /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
+  const timePhraseRegex = /(?:(?:in|after)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?|(?:next\s+)?(?:tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|morning|evening|afternoon|noon|night))?|\b(?:on\s+(?:the\s+)?)?\d{1,2}(?:\s*(?:st|nd|rd|th)?\s+date\b|\s*(?:tarik|tarikh)\b|\s*(?:st|nd|rd|th)\b)(?:\s+(?:at\s+|in\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?|\b\d{1,2}:\d{2}\s*(?:am|pm)?\b|\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?)/i;
   const timePhraseMatch = normalizedText.match(timePhraseRegex);
   let time = null;
   if (timePhraseMatch) {
@@ -1380,7 +1565,7 @@ function extractBookingDetails(text, history) {
     }
   }
   if (!time) {
-    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|evening|morning|next week)/i;
+    const looseTime = /(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}\s*(am|pm)\b|\b\d{1,2}\s*date\b|\b\d{1,2}\s*tarik\b|evening|morning|next week)/i;
     const looseMatch = normalizedText.match(looseTime);
     if (looseMatch) {
       const sentence = normalizedText.split(/[.?!,\n]/).find((s) => looseTime.test(s));
@@ -1573,6 +1758,9 @@ function generateFollowupText(b) {
   if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
   }
+  if (b.custom_followup_msg && b.custom_followup_msg.trim()) {
+    return b.custom_followup_msg.trim();
+  }
   if (type === "client_date") {
     const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
     return `Hi ${name}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
@@ -1633,25 +1821,36 @@ function generateFollowupText(b) {
   }
   return `Hey ${name}! Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
 }
+async function syncBookingToTodo(env, b, nowMs = Date.now()) {
+  if (!b) return;
+  const formattedDue = b.next_followup_at ? formatTimeInTimezone(b.next_followup_at, b.timezone, b.phone || b.chat_id, nowMs) : b.scheduled_at || null;
+  const defaultMsg = generateFollowupText(b);
+  await upsertBookingTodo(env, b, formattedDue, defaultMsg);
+}
 async function processDueFollowups(env) {
   const now = Date.now();
-  const dueList = await getDueFollowups(env, now).catch(() => []);
+  const [dueList, dueAiTodos] = await Promise.all([
+    getDueFollowups(env, now).catch(() => []),
+    getDueAiTodos(env, now).catch(() => [])
+  ]);
   const outbound = [];
   for (const b of dueList) {
     const lastReplyMs = b.last_client_reply_at || b.created_at || now;
     const elapsedHours = (now - lastReplyMs) / (3600 * 1e3);
     if (b.status !== "booked" && b.status !== "confirmed" && b.followup_type !== "call_reminder" && elapsedHours >= 24 * 30) {
-      await updateBooking(env, b.id, {
+      const stopped = await updateBooking(env, b.id, {
         status: "fake_lead",
         followup_type: "rejected",
         next_followup_at: null,
         followup_interval_hours: 0
       });
+      await syncBookingToTodo(env, stopped, now);
       continue;
     }
     const message = generateFollowupText(b);
     if (!message) {
-      await updateBooking(env, b.id, { next_followup_at: null });
+      const cleared = await updateBooking(env, b.id, { next_followup_at: null });
+      await syncBookingToTodo(env, cleared, now);
       continue;
     }
     const cleanPhone = (b.phone || (b.chat_id?.includes("@") ? b.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "");
@@ -1694,14 +1893,17 @@ async function processDueFollowups(env) {
       nextInterval = 3.5;
       nextFollowupAt = now + 3.5 * 3600 * 1e3;
     }
-    await updateBooking(env, b.id, {
+    const updatedBooking = await updateBooking(env, b.id, {
       status: nextStatus,
       followup_type: nextType,
       followup_interval_hours: nextInterval,
       last_followup_at: now,
       followup_count: (b.followup_count || 0) + 1,
-      next_followup_at: nextFollowupAt
+      next_followup_at: nextFollowupAt,
+      custom_followup_msg: null
+      // Clear one-time custom message so subsequent stage uses fresh template unless re-edited
     });
+    await syncBookingToTodo(env, updatedBooking, now);
     if (jid) {
       outbound.push({ jid, text: message, bookingId: b.id });
       await insertMessage(env, {
@@ -1718,6 +1920,32 @@ async function processDueFollowups(env) {
       }).catch(() => {
       });
     }
+  }
+  for (const t of dueAiTodos) {
+    const cleanPhone = (t.phone || "").replace(/[^0-9]/g, "");
+    const msg = t.ai_message?.trim();
+    if (cleanPhone.length < 7 || !msg) {
+      await updateTodo(env, t.id, { completed: 1 });
+      continue;
+    }
+    const jid = `${cleanPhone}@s.whatsapp.net`;
+    outbound.push({ jid, text: msg, bookingId: t.id });
+    await Promise.all([
+      updateTodo(env, t.id, { completed: 1, sent_at: now }),
+      insertMessage(env, {
+        id: `task:${crypto.randomUUID()}`,
+        chat_id: jid,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: msg,
+        source: "whatsapp",
+        model: "auto:task",
+        neurons: 0,
+        created_at: now
+      }).catch(() => {
+      })
+    ]);
   }
   return outbound;
 }
@@ -1798,7 +2026,7 @@ async function generateReply(env, s, rules, c) {
           const timeOrTzChanged = Boolean(
             bookingInfo.time && formattedScheduledAt !== existing.scheduled_at || useExplicitTz && bookingInfo.timezone !== existing.timezone
           );
-          await updateBooking(env, existing.id, {
+          const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" || existing.client_name === "Dashboard Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
             email: effEmail,
@@ -1813,6 +2041,7 @@ async function generateReply(env, s, rules, c) {
             followup_interval_hours: hasBooked ? 0 : 3.5,
             last_client_reply_at: nowMs
           });
+          await syncBookingToTodo(env, saved, nowMs);
           if (wasAlreadyBooked && timeOrTzChanged) {
             bookingContext = `The client updated their call time/timezone to "${formattedScheduledAt}" (${tzDisplayName}). Confirm warmly that you have updated their booked call to ${formattedScheduledAt} and will send a reminder 30 minutes before the meeting. NEVER say "CRM", "app", or "database".`;
           } else if (effEmail && formattedScheduledAt) {
@@ -1825,7 +2054,7 @@ async function generateReply(env, s, rules, c) {
             bookingContext = `The client shared their email (${effEmail}), but hasn't given a preferred day/time yet. Acknowledge the email and ask what day and time works best for a quick 15-minute call${phoneTz ? ` (in their ${phoneTz.label} timezone)` : ""}.`;
           }
         } else {
-          await createBooking(env, {
+          const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
             phone: computedPhone,
@@ -1842,6 +2071,7 @@ async function generateReply(env, s, rules, c) {
             last_client_reply_at: nowMs,
             source: c.source
           });
+          await syncBookingToTodo(env, saved, nowMs);
           if (effEmail && formattedScheduledAt) {
             const tzConfirmNote = phoneTz && !useExplicitTz ? ` Explicitly tell the client: "I've set your call for ${formattedScheduledAt} (${phoneTz.label}, based on your number) \u2014 please let me know if that timezone works for you, or if you prefer another time/timezone!"` : "";
             bookingContext = `The client provided their name (${computedName}), email (${effEmail}), and preferred time (${formattedScheduledAt}). Confirm naturally that you've booked their call for ${formattedScheduledAt} and noted ${effEmail}, and you'll remind them 30 minutes before the meeting.${tzConfirmNote}`;
@@ -1858,7 +2088,7 @@ async function generateReply(env, s, rules, c) {
         const formattedFollowupTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
         const nextStatus = bookingInfo.inferredStatus || (existing?.status && existing.status !== "fake_lead" && existing.status !== "booked" && existing.status !== "confirmed" ? existing.status : "lead");
         if (existing) {
-          await updateBooking(env, existing.id, {
+          const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || existing.client_name,
             phone: computedPhone || existing.phone,
             email: bookingInfo.email || existing.email,
@@ -1871,8 +2101,9 @@ async function generateReply(env, s, rules, c) {
             followup_interval_hours: Math.max(0.1, Math.round((targetFollowupMs - nowMs) / (3600 * 1e3) * 10) / 10),
             last_client_reply_at: nowMs
           });
+          await syncBookingToTodo(env, saved, nowMs);
         } else {
-          await createBooking(env, {
+          const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
             phone: computedPhone,
@@ -1889,6 +2120,7 @@ async function generateReply(env, s, rules, c) {
             last_client_reply_at: nowMs,
             source: c.source
           });
+          await syncBookingToTodo(env, saved, nowMs);
         }
         bookingContext = `The client mentioned they will be free or asked you to knock/message them around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
       } else {
@@ -1925,7 +2157,7 @@ async function generateReply(env, s, rules, c) {
             nextFollowupAt = nowMs + 3.5 * 3600 * 1e3;
             nextInterval = 3.5;
           }
-          await updateBooking(env, existing.id, {
+          const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
             phone: computedPhone || existing.phone,
             timezone: existing.timezone || phoneTz?.code || "BDT",
@@ -1937,12 +2169,13 @@ async function generateReply(env, s, rules, c) {
             next_followup_at: nextFollowupAt,
             followup_interval_hours: nextInterval
           });
+          await syncBookingToTodo(env, saved, nowMs);
         } else if (c.chatId !== "dashboard") {
           const nextStatus = bookingInfo.inferredStatus || "lead";
           const isStopped = bookingInfo.inferredFollowupType === "rejected" || nextStatus === "not_interested";
           const nextFollowupType = isStopped ? "rejected" : bookingInfo.inferredFollowupType || "auto_day1";
           const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 3.5;
-          await createBooking(env, {
+          const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
             phone: computedPhone,
@@ -1958,6 +2191,7 @@ async function generateReply(env, s, rules, c) {
             last_client_reply_at: nowMs,
             source: c.source
           });
+          await syncBookingToTodo(env, saved, nowMs);
         }
       }
     } catch (err) {
@@ -2320,19 +2554,203 @@ async function dashboardRoutes(request, env, url) {
     }
     case "GET /api/todos": {
       const chat = url.searchParams.get("chat") || void 0;
-      return json({ todos: await getTodos(env, chat) });
+      const now = Date.now();
+      const allBookings = await getBookings(env).catch(() => []);
+      for (const b of allBookings) {
+        if (!b.timezone) {
+          b.timezone = detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT";
+        }
+        if (b.next_followup_at) {
+          await syncBookingToTodo(env, b, now);
+        }
+      }
+      const todos = await getTodos(env, chat);
+      return json({ todos, bookings: allBookings });
     }
     case "POST /api/todos": {
       const body = await request.json();
-      if (!body?.task?.trim()) return json({ error: "Task content required" }, 400);
-      const todo = await createTodo(env, body.chatId || "dashboard", body.task, body.dueDate);
+      const now = Date.now();
+      const cleanPhone = (body.phone || "").replace(/[^0-9]/g, "") || null;
+      const effTz = body.timezone || detectTimezoneFromPhone(cleanPhone || body.chatId)?.code || "BDT";
+      let targetMs = null;
+      if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
+        targetMs = body.scheduledAtMs;
+      } else if (typeof body.scheduledAtMs === "string" && body.scheduledAtMs.trim()) {
+        const parsed = Date.parse(body.scheduledAtMs);
+        if (!Number.isNaN(parsed)) targetMs = parsed;
+      }
+      if (!targetMs && body.delayHours && body.delayHours > 0) {
+        targetMs = Math.round(now + body.delayHours * 3600 * 1e3);
+      }
+      if (!targetMs && (body.timePhrase || body.dueDate)) {
+        targetMs = parseScheduledTimeToMs(body.timePhrase || body.dueDate, effTz, now, cleanPhone || body.chatId);
+      }
+      const formattedDue = targetMs ? formatTimeInTimezone(targetMs, effTz, cleanPhone || body.chatId, now) : body.dueDate || body.timePhrase || null;
+      let linkedBooking = null;
+      if (body.bookingId) {
+        linkedBooking = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(body.bookingId).first();
+      } else if (cleanPhone && cleanPhone.length >= 7) {
+        linkedBooking = await env.DB.prepare(
+          "SELECT * FROM bookings WHERE phone LIKE ? OR chat_id LIKE ? ORDER BY created_at DESC LIMIT 1"
+        ).bind(`%${cleanPhone.slice(-8)}%`, `%${cleanPhone.slice(-8)}%`).first();
+      }
+      const clientLabel = body.clientName?.trim() || linkedBooking?.client_name || (cleanPhone ? `+${cleanPhone}` : null);
+      const taskTitle = body.task?.trim() || (clientLabel ? `\u26A1 Follow up ${clientLabel}${formattedDue ? ` (${formattedDue})` : ""}` : "Scheduled AI Task");
+      const defaultMsg = body.aiMessage?.trim() || (linkedBooking ? generateFollowupText({
+        ...linkedBooking,
+        client_name: clientLabel || linkedBooking.client_name,
+        scheduled_at: formattedDue || linkedBooking.scheduled_at
+      }) : clientLabel ? `Hey ${clientLabel}! Just following up as promised to see if you had any questions about your video edits or if now is a good time to chat?` : null);
+      if (linkedBooking && (targetMs || body.aiMessage)) {
+        const updatedB = await updateBooking(env, linkedBooking.id, {
+          client_name: clientLabel || linkedBooking.client_name,
+          phone: cleanPhone || linkedBooking.phone,
+          timezone: effTz,
+          next_followup_at: targetMs ?? linkedBooking.next_followup_at,
+          scheduled_at: formattedDue ? `Follow-up: ${formattedDue}` : linkedBooking.scheduled_at,
+          followup_type: targetMs ? "client_date" : linkedBooking.followup_type,
+          custom_followup_msg: body.aiMessage?.trim() || linkedBooking.custom_followup_msg || null
+        });
+        await syncBookingToTodo(env, updatedB, now);
+        const syncedTodo = await env.DB.prepare("SELECT * FROM todos WHERE booking_id = ? ORDER BY created_at DESC LIMIT 1").bind(linkedBooking.id).first();
+        if (syncedTodo && body.task?.trim()) {
+          const finalTodo = await updateTodo(env, syncedTodo.id, { task: body.task.trim() });
+          return json({ todo: finalTodo, booking: updatedB });
+        }
+        return json({ todo: syncedTodo, booking: updatedB });
+      }
+      const todo = await createTodo(
+        env,
+        body.chatId || (cleanPhone ? `${cleanPhone}@s.whatsapp.net` : "dashboard"),
+        taskTitle,
+        formattedDue,
+        {
+          client_name: clientLabel,
+          phone: cleanPhone,
+          scheduled_at_ms: targetMs,
+          timezone: effTz,
+          ai_message: defaultMsg,
+          task_type: body.taskType || (cleanPhone || defaultMsg ? "ai_scheduled" : "general"),
+          booking_id: linkedBooking?.id || null,
+          auto_send: body.autoSend !== void 0 ? body.autoSend ? 1 : 0 : cleanPhone && defaultMsg ? 1 : 0
+        }
+      );
       return json({ todo });
     }
     case "PATCH /api/todos": {
       const body = await request.json();
       if (!body?.id) return json({ error: "id is required" }, 400);
-      const todo = await toggleTodo(env, body.id, body.completed);
+      const existing = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(body.id).first();
+      if (!existing) return json({ error: "Task not found" }, 404);
+      const isSimpleToggle = body.completed !== void 0 && body.task === void 0 && body.dueDate === void 0 && body.scheduledAtMs === void 0 && body.timePhrase === void 0 && body.delayHours === void 0 && body.aiMessage === void 0 && body.clientName === void 0 && body.phone === void 0 && body.autoSend === void 0;
+      if (isSimpleToggle) {
+        const todo2 = await toggleTodo(env, body.id, body.completed);
+        return json({ todo: todo2 });
+      }
+      const now = Date.now();
+      const cleanPhone = body.phone !== void 0 ? (body.phone || "").replace(/[^0-9]/g, "") || null : existing.phone;
+      const effTz = body.timezone || existing.timezone || detectTimezoneFromPhone(cleanPhone || existing.chat_id)?.code || "BDT";
+      let targetMs = void 0;
+      if (body.scheduledAtMs === null || body.scheduledAtMs === "") {
+        targetMs = null;
+      } else if (typeof body.scheduledAtMs === "number" && body.scheduledAtMs > 0) {
+        targetMs = body.scheduledAtMs;
+      } else if (typeof body.scheduledAtMs === "string" && body.scheduledAtMs.trim()) {
+        const parsed = Date.parse(body.scheduledAtMs);
+        if (!Number.isNaN(parsed)) targetMs = parsed;
+      }
+      if (targetMs === void 0 && body.delayHours && body.delayHours > 0) {
+        targetMs = Math.round(now + body.delayHours * 3600 * 1e3);
+      }
+      if (targetMs === void 0 && body.timePhrase) {
+        targetMs = parseScheduledTimeToMs(body.timePhrase, effTz, now, cleanPhone || existing.chat_id);
+      }
+      const finalMs = targetMs !== void 0 ? targetMs : existing.scheduled_at_ms;
+      const formattedDue = targetMs !== void 0 && targetMs !== null ? formatTimeInTimezone(targetMs, effTz, cleanPhone || existing.chat_id, now) : body.dueDate !== void 0 ? body.dueDate : existing.due_date;
+      const patch = {
+        task: body.task !== void 0 ? body.task : existing.task,
+        completed: body.completed !== void 0 ? body.completed ? 1 : 0 : existing.completed,
+        due_date: formattedDue,
+        scheduled_at_ms: finalMs,
+        timezone: effTz,
+        client_name: body.clientName !== void 0 ? body.clientName : existing.client_name,
+        phone: cleanPhone,
+        ai_message: body.aiMessage !== void 0 ? body.aiMessage : existing.ai_message,
+        task_type: body.taskType !== void 0 ? body.taskType : existing.task_type,
+        auto_send: body.autoSend !== void 0 ? body.autoSend ? 1 : 0 : existing.auto_send
+      };
+      const todo = await updateTodo(env, body.id, patch);
+      if (todo?.booking_id) {
+        const bookingPatch = {};
+        if (targetMs !== void 0) {
+          bookingPatch.next_followup_at = targetMs;
+          if (formattedDue) bookingPatch.scheduled_at = `Follow-up: ${formattedDue}`;
+        }
+        if (body.aiMessage !== void 0) {
+          bookingPatch.custom_followup_msg = body.aiMessage?.trim() || null;
+        }
+        if (body.clientName !== void 0 && body.clientName) {
+          bookingPatch.client_name = body.clientName.trim();
+        }
+        if (cleanPhone) {
+          bookingPatch.phone = cleanPhone;
+        }
+        if (Object.keys(bookingPatch).length > 0) {
+          await updateBooking(env, todo.booking_id, bookingPatch);
+        }
+      }
       return json({ todo });
+    }
+    case "POST /api/todos/send": {
+      const body = await request.json();
+      if (!body?.id) return json({ error: "id is required" }, 400);
+      const t = await env.DB.prepare("SELECT * FROM todos WHERE id = ?").bind(body.id).first();
+      if (!t) return json({ error: "Task not found" }, 404);
+      const cleanPhone = (t.phone || (t.chat_id?.includes("@") ? t.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "");
+      if (cleanPhone.length < 7) {
+        return json({ error: "No valid WhatsApp phone number on this task to send." }, 400);
+      }
+      const message = body.customText?.trim() || t.ai_message?.trim() || t.task;
+      if (!message) {
+        return json({ error: "No message content to send." }, 400);
+      }
+      const now = Date.now();
+      const jid = `${cleanPhone}@s.whatsapp.net`;
+      const existingQueue = await kvGet(env, "gateway_outbound_queue") || [];
+      existingQueue.push({ jid, text: message, bookingId: t.booking_id || t.id });
+      await kvSet(env, "gateway_outbound_queue", existingQueue);
+      await insertMessage(env, {
+        id: `task:${crypto.randomUUID()}`,
+        chat_id: jid,
+        role: "assistant",
+        sender: null,
+        sender_name: "Nyra Rose",
+        content: message,
+        source: "whatsapp",
+        model: "task:manual_send",
+        neurons: 0,
+        created_at: now
+      }).catch(() => {
+      });
+      let updatedTodo = null;
+      if (t.booking_id) {
+        const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first();
+        if (b) {
+          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 3.5;
+          const nextFollowupAt = b.followup_type === "call_reminder" ? null : Math.round(now + nextInterval * 3600 * 1e3);
+          const updatedB = await updateBooking(env, b.id, {
+            last_followup_at: now,
+            followup_count: (b.followup_count || 0) + 1,
+            next_followup_at: nextFollowupAt,
+            custom_followup_msg: null
+          });
+          await syncBookingToTodo(env, updatedB, now);
+          updatedTodo = await updateTodo(env, t.id, { sent_at: now });
+        }
+      } else {
+        updatedTodo = await updateTodo(env, t.id, { completed: 1, sent_at: now, ai_message: message });
+      }
+      return json({ ok: true, queuedToGateway: true, todo: updatedTodo, message });
     }
     case "DELETE /api/todos": {
       const id = url.searchParams.get("id");
@@ -2405,8 +2823,10 @@ async function dashboardRoutes(request, env, url) {
         followup_interval_hours: intervalHours,
         last_client_reply_at: now,
         source: body.source || "dashboard",
-        notes: body.notes
+        notes: body.notes,
+        custom_followup_msg: body.customFollowupMsg
       });
+      await syncBookingToTodo(env, booking, now);
       return json({ booking });
     }
     case "PATCH /api/bookings": {
@@ -2507,6 +2927,7 @@ async function dashboardRoutes(request, env, url) {
         }
       }
       const booking = await updateBooking(env, body.id, patch);
+      await syncBookingToTodo(env, booking, now);
       return json({ booking });
     }
     case "POST /api/bookings/followup": {
@@ -2516,6 +2937,10 @@ async function dashboardRoutes(request, env, url) {
       const b = results?.[0];
       if (!b) return json({ error: "Booking not found" }, 404);
       const now = Date.now();
+      if (body.saveCustomText && body.customText !== void 0) {
+        b.custom_followup_msg = body.customText.trim() || null;
+        await updateBooking(env, b.id, { custom_followup_msg: b.custom_followup_msg });
+      }
       if (body.followupType && body.followupType !== b.followup_type) {
         const nextPatch = { followup_type: body.followupType };
         if (body.followupType !== "rejected" && (b.status === "not_interested" || b.status === "fake_lead")) {
@@ -2540,6 +2965,7 @@ async function dashboardRoutes(request, env, url) {
         await updateBooking(env, b.id, nextPatch);
       }
       if (b.followup_type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
+        await syncBookingToTodo(env, b, now);
         return json(
           {
             error: `Follow-ups are disabled for this lead (marked as ${b.status === "fake_lead" ? "Fake Lead" : "Rejected / Not Interested"}).`,
@@ -2593,10 +3019,12 @@ async function dashboardRoutes(request, env, url) {
         const patched = await updateBooking(env, b.id, {
           last_followup_at: now,
           followup_count: nextCount,
-          next_followup_at: nextFollowupAt
+          next_followup_at: nextFollowupAt,
+          custom_followup_msg: null
         });
         if (patched) updatedBooking = patched;
       }
+      await syncBookingToTodo(env, updatedBooking, now);
       return json({
         message,
         waLink,

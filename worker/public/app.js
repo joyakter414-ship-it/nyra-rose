@@ -57,6 +57,7 @@ $("#logout").addEventListener("click", signOut);
 
 async function enterApp() {
   await refreshOverview();
+  loadTodos().catch(() => {});
   $("#login").classList.add("hidden");
   $("#app").classList.remove("hidden");
   clearInterval(pollTimer);
@@ -66,6 +67,23 @@ async function enterApp() {
     tick++;
     if (!$("#tab-home").classList.contains("hidden")) {
       refreshOverview().catch(() => {});
+      if (tick % 2 === 0) {
+        loadTodos().catch(() => {});
+      } else if (typeof renderHomeTodayTasks === "function") {
+        renderHomeTodayTasks();
+      }
+    } else if (!$("#tab-todos").classList.contains("hidden")) {
+      const activeTag = document.activeElement?.tagName;
+      const modalOpen = !$("#todo-edit-modal")?.classList.contains("hidden");
+      const composerOpen = !$("#ai-todo-composer")?.classList.contains("hidden");
+      if (!modalOpen && !composerOpen && activeTag !== "SELECT" && activeTag !== "INPUT" && activeTag !== "TEXTAREA") {
+        if (tick % 2 === 0) {
+          loadTodos().catch(() => {});
+        } else {
+          updateTodoStats();
+          renderTodos();
+        }
+      }
     } else if (!$("#tab-bookings").classList.contains("hidden")) {
       const activeTag = document.activeElement?.tagName;
       const modalOpen = !$("#followup-modal")?.classList.contains("hidden");
@@ -90,7 +108,10 @@ document.querySelectorAll(".tab").forEach((btn) =>
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
     document.querySelectorAll(".page").forEach((p) => p.classList.add("hidden"));
     $(`#tab-${btn.dataset.tab}`).classList.remove("hidden");
-    if (btn.dataset.tab === "home") refreshOverview();
+    if (btn.dataset.tab === "home") {
+      refreshOverview();
+      loadTodos().catch(() => {});
+    }
     if (btn.dataset.tab === "chat") loadDashboardChat();
     if (btn.dataset.tab === "chats") loadChats();
     if (btn.dataset.tab === "bookings") loadBookings();
@@ -741,60 +762,862 @@ $("#new-note-form").addEventListener("submit", async (e) => {
   input.value = "";
 });
 
-// ─── Tasks & To-Dos ────────────────────────────────────────────────────────
+// ─── Tasks & AI Follow-Up Timeline ──────────────────────────────────────────
 
 let todos = [];
+let todoBookingsCache = [];
+let todoFilter = "active";
+let todoSearch = "";
+let currentEditingTodoId = null;
+
+function isSameBdtDay(ms1, ms2) {
+  if (!ms1 || !ms2) return false;
+  const bdtOffset = 6 * 3600000;
+  return Math.floor((ms1 + bdtOffset) / 86400000) === Math.floor((ms2 + bdtOffset) / 86400000);
+}
+
+function isTomorrowBdtDay(ms, nowMs = Date.now()) {
+  if (!ms) return false;
+  const bdtOffset = 6 * 3600000;
+  return Math.floor((ms + bdtOffset) / 86400000) === Math.floor((nowMs + bdtOffset) / 86400000) + 1;
+}
+
+function formatBdtClock(ms, fallbackText = "") {
+  if (!ms || !Number.isFinite(ms)) return fallbackText || "No fixed time";
+  const now = Date.now();
+  const bdtOffset = 6 * 3600000;
+  const bdtDate = new Date(ms + bdtOffset);
+  let hours = bdtDate.getUTCHours();
+  const mins = bdtDate.getUTCMinutes();
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  const timeStr = `${hours}:${String(mins).padStart(2, "0")} ${ampm} BDT`;
+
+  if (isSameBdtDay(ms, now)) {
+    return `Today, ${timeStr}`;
+  }
+  if (isTomorrowBdtDay(ms, now)) {
+    return `Tomorrow, ${timeStr}`;
+  }
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthName = months[bdtDate.getUTCMonth()];
+  const dayNum = bdtDate.getUTCDate();
+  return `${monthName} ${dayNum}, ${timeStr}`;
+}
+
+function formatTodoCountdown(t) {
+  const now = Date.now();
+  if (t.completed) {
+    return {
+      label: t.sent_at ? `✓ Sent by Nyra (${fmtTime(t.sent_at)})` : "✓ Completed",
+      color: "#34d399",
+      bg: "rgba(16, 185, 129, 0.14)",
+      border: "rgba(16, 185, 129, 0.35)",
+      urgent: false,
+    };
+  }
+  const ms = t.scheduled_at_ms;
+  if (!ms) {
+    return {
+      label: t.due_date ? `🗓️ ${t.due_date}` : "📌 Open Task",
+      color: "#cbd5e1",
+      bg: "rgba(148, 163, 184, 0.12)",
+      border: "rgba(148, 163, 184, 0.28)",
+      urgent: false,
+    };
+  }
+  const diff = ms - now;
+  if (diff <= 0) {
+    return {
+      label: t.auto_send && t.phone ? "⚡ Due Now — Nyra Sending..." : "⚡ Due Now!",
+      color: "#fda4af",
+      bg: "rgba(244, 63, 94, 0.2)",
+      border: "rgba(244, 63, 94, 0.5)",
+      urgent: true,
+    };
+  }
+  if (diff < 3600000) {
+    const mins = Math.max(1, Math.ceil(diff / 60000));
+    return {
+      label: `⏳ in ${mins}m`,
+      color: "#fcd34d",
+      bg: "rgba(245, 158, 11, 0.16)",
+      border: "rgba(245, 158, 11, 0.42)",
+      urgent: true,
+    };
+  }
+  if (diff < 86400000) {
+    const hrs = Math.floor(diff / 3600000);
+    const mins = Math.round((diff % 3600000) / 60000);
+    return {
+      label: `⏱ in ${hrs}h ${mins}m`,
+      color: "#93c5fd",
+      bg: "rgba(59, 130, 246, 0.15)",
+      border: "rgba(59, 130, 246, 0.38)",
+      urgent: false,
+    };
+  }
+  const days = Math.floor(diff / 86400000);
+  const hrs = Math.round((diff % 86400000) / 3600000);
+  return {
+    label: `📅 in ${days}d ${hrs}h`,
+    color: "#c4b5fd",
+    bg: "rgba(139, 92, 246, 0.15)",
+    border: "rgba(139, 92, 246, 0.38)",
+    urgent: false,
+  };
+}
+
+function getTaskTypeMeta(taskType) {
+  switch (taskType) {
+    case "client_date":
+      return { badge: "🗓️ Auto-Added (Client Time)", cls: "badge-client_date", accent: "#f59e0b" };
+    case "call_reminder":
+      return { badge: "⏰ Call Reminder", cls: "badge-call_reminder", accent: "#a855f7" };
+    case "ai_followup":
+      return { badge: "🤖 Nyra AI Follow-Up", cls: "badge-auto_day1", accent: "#fb7185" };
+    case "manual_ai":
+      return { badge: "✍️ Custom AI Schedule", cls: "badge-custom_timer", accent: "#38bdf8" };
+    default:
+      return { badge: "📌 Manual Task", cls: "badge-source", accent: "#94a3b8" };
+  }
+}
+
+function generateSmartAiDraft(clientName, taskType, timeLabel) {
+  const name = (clientName || "there").trim().split(/\s+/)[0] || "there";
+  if (taskType === "call_reminder") {
+    return `Hey ${name}! Quick heads-up — our strategy call with Arnob is coming up (${timeLabel || "soon"}). Let me know once you're ready to hop on!`;
+  }
+  if (taskType === "client_date") {
+    return `Hey ${name}! Knocking you right on time as you asked 😊 Are you free for a quick 2-minute chat now?`;
+  }
+  return `Hey ${name}! Hope your day is going well. Just following up on our earlier chat — do you have 2 minutes to connect right now?`;
+}
+
 async function loadTodos() {
   const res = await api("GET", "/api/todos");
   todos = res.todos || [];
+  if (Array.isArray(res.bookings)) {
+    todoBookingsCache = res.bookings;
+  }
+  populateTodoClientSelect();
+  updateTodoStats();
   renderTodos();
+  renderHomeTodayTasks();
 }
 
-function renderTodos() {
-  const container = $("#todos-list");
-  if (todos.length === 0) {
-    container.replaceChildren(el("div", "muted", "No tasks in your list. Use /todo <task> on WhatsApp or add one above."));
+function populateTodoClientSelect() {
+  const sel = $("#todo-client-select");
+  if (!sel) return;
+  const currentVal = sel.value;
+  const list = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+  const opts = [Object.assign(el("option", null, "— Type new client / phone or select existing lead —"), { value: "" })];
+  for (const b of list) {
+    const label = `${b.client_name || "Lead"} (${b.phone || b.email || "No phone"}) · [${(b.status || "lead").toUpperCase()}]`;
+    opts.push(Object.assign(el("option", null, label), { value: b.id }));
+  }
+  sel.replaceChildren(...opts);
+  if (currentVal) sel.value = currentVal;
+}
+
+function updateTodoStats() {
+  const now = Date.now();
+  const active = todos.filter((t) => !t.completed);
+  const todayTasks = active.filter(
+    (t) => t.scheduled_at_ms && (isSameBdtDay(t.scheduled_at_ms, now) || (t.scheduled_at_ms > now && t.scheduled_at_ms - now <= 86400000)),
+  );
+  const scheduledActive = active
+    .filter((t) => t.scheduled_at_ms)
+    .sort((a, b) => (a.scheduled_at_ms || 0) - (b.scheduled_at_ms || 0));
+  const nextTask = scheduledActive[0] || null;
+  const clientDateCount = active.filter((t) => t.task_type === "client_date" || t.task_type === "call_reminder").length;
+  const completedCount = todos.filter((t) => t.completed).length;
+
+  const statToday = $("#stat-todos-today");
+  if (statToday) statToday.textContent = String(todayTasks.length);
+
+  const statNext = $("#stat-todos-next");
+  const statNextSub = $("#stat-todos-next-sub");
+  if (statNext && statNextSub) {
+    if (nextTask) {
+      const cd = formatTodoCountdown(nextTask);
+      statNext.textContent = formatBdtClock(nextTask.scheduled_at_ms, nextTask.due_date).replace(/^(Today,\s*)/i, "");
+      statNextSub.textContent = `${cd.label} · ${nextTask.client_name || nextTask.task}`;
+    } else {
+      statNext.textContent = "—";
+      statNextSub.textContent = "No active timers queued";
+    }
+  }
+
+  const statClientDate = $("#stat-todos-client-date");
+  if (statClientDate) statClientDate.textContent = String(clientDateCount);
+
+  const statCompleted = $("#stat-todos-completed");
+  if (statCompleted) statCompleted.textContent = String(completedCount);
+
+  // Update topbar tab badge count
+  const tabBtn = document.querySelector('.tab[data-tab="todos"]');
+  if (tabBtn) {
+    tabBtn.textContent = active.length > 0 ? `Tasks ✅ (${active.length})` : "Tasks ✅";
+  }
+}
+
+function renderHomeTodayTasks() {
+  const container = $("#home-today-tasks-list");
+  if (!container) return;
+
+  const active = todos
+    .filter((t) => !t.completed)
+    .sort((a, b) => (a.scheduled_at_ms || 9999999999999) - (b.scheduled_at_ms || 9999999999999));
+
+  if (active.length === 0) {
+    container.replaceChildren(
+      el(
+        "div",
+        "muted small-text",
+        "No upcoming AI follow-ups or tasks queued right now. Add a task in Tasks ✅ or let Nyra auto-schedule when a client replies with a time.",
+      ),
+    );
     return;
   }
-  container.replaceChildren(
-    ...todos.map((t) => {
-      const item = el("div", `rule-item ${t.completed ? "disabled" : ""}`);
-      const info = el("div", "rule-content");
-      const title = el("div", "rule-triggers", `${t.completed ? "✓ " : "○ "} ${t.task}`);
-      if (t.completed) title.style.textDecoration = "line-through";
-      info.append(title, el("div", "rule-resp", `${fmtTime(t.created_at)} · Chat: ${t.chat_id}`));
 
-      const ctrls = el("div", "rule-ctrls");
-      const tog = el("button", "ghost small", t.completed ? "Mark Pending" : "Mark Done");
-      tog.addEventListener("click", async () => {
-        const next = !t.completed;
-        await api("PATCH", "/api/todos", { id: t.id, completed: next });
-        t.completed = next ? 1 : 0;
-        renderTodos();
+  const topItems = active.slice(0, 5);
+  container.replaceChildren(
+    ...topItems.map((t) => {
+      const cd = formatTodoCountdown(t);
+      const meta = getTaskTypeMeta(t.task_type);
+      const clockText = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date) : t.due_date || "Anytime";
+
+      const row = el("div", "todo-home-row");
+      row.style.cssText = `display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:10px; background:rgba(15,17,26,0.65); border:1px solid rgba(255,255,255,0.07); border-left:3px solid ${meta.accent}; flex-wrap:wrap;`;
+
+      const left = el("div");
+      left.style.cssText = "flex:1; min-width:220px;";
+
+      const topLine = el("div");
+      topLine.style.cssText = "display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;";
+
+      const timePill = el("span", "badge", `🕐 ${clockText}`);
+      timePill.style.cssText = "background:rgba(244,63,94,0.16); color:#fda4af; border:1px solid rgba(244,63,94,0.35); font-weight:700;";
+
+      const cdPill = el("span", "badge", cd.label);
+      cdPill.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:600;`;
+
+      const typeBadge = el("span", `badge ${meta.cls}`, meta.badge);
+      topLine.append(timePill, cdPill, typeBadge);
+
+      const titleLine = el("div", null, t.task);
+      titleLine.style.cssText = "font-weight:600; font-size:13.5px; color:#f8fafc; margin-bottom:3px;";
+      left.append(topLine, titleLine);
+
+      if (t.ai_message) {
+        const msgPreview = el("div", "small-text", `💬 "${t.ai_message}"`);
+        msgPreview.style.cssText =
+          "color:#cbd5e1; background:rgba(255,255,255,0.03); padding:5px 8px; border-radius:6px; border:1px dashed rgba(255,255,255,0.1); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:680px;";
+        left.append(msgPreview);
+      }
+
+      const right = el("div");
+      right.style.cssText = "display:flex; gap:6px; align-items:center; flex-shrink:0;";
+
+      const editBtn = el("button", "ghost small", "✏️ Edit / Msg");
+      editBtn.type = "button";
+      editBtn.addEventListener("click", () => {
+        openTodoEditModal(t);
       });
-      const del = el("button", "danger small", "Delete");
-      del.addEventListener("click", async () => {
-        if (!confirm("Delete this task?")) return;
-        await api("DELETE", `/api/todos?id=${t.id}`);
-        todos = todos.filter((x) => x.id !== t.id);
-        renderTodos();
-      });
-      ctrls.append(tog, del);
-      item.append(info, ctrls);
-      return item;
+
+      right.append(editBtn);
+      row.append(left, right);
+      return row;
     }),
   );
 }
 
-$("#new-todo-form").addEventListener("submit", async (e) => {
+$("#home-open-tasks-btn")?.addEventListener("click", () => {
+  document.querySelector('.tab[data-tab="todos"]')?.click();
+});
+
+function getFilteredTodos() {
+  const now = Date.now();
+  const q = todoSearch.trim().toLowerCase();
+  return todos.filter((t) => {
+    if (todoFilter === "active" && t.completed) return false;
+    if (todoFilter === "completed" && !t.completed) return false;
+    if (todoFilter === "today") {
+      if (t.completed) return false;
+      if (!t.scheduled_at_ms) return false;
+      if (!isSameBdtDay(t.scheduled_at_ms, now) && !(t.scheduled_at_ms > now && t.scheduled_at_ms - now <= 86400000)) {
+        return false;
+      }
+    }
+    if (todoFilter === "client_date") {
+      if (t.completed || t.task_type !== "client_date") return false;
+    }
+    if (todoFilter === "call_reminder") {
+      if (t.completed || t.task_type !== "call_reminder") return false;
+    }
+    if (q) {
+      const hay = `${t.task || ""} ${t.client_name || ""} ${t.phone || ""} ${t.ai_message || ""} ${t.due_date || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTodos() {
+  const container = $("#todos-list");
+  if (!container) return;
+
+  const filtered = getFilteredTodos();
+  const countLabel = $("#todos-count-label");
+  if (countLabel) {
+    countLabel.textContent = `${filtered.length} task${filtered.length === 1 ? "" : "s"} shown (${todos.filter((x) => !x.completed).length} active total)`;
+  }
+
+  const headingEl = $("#todos-section-heading");
+  if (headingEl) {
+    const titles = {
+      active: "🕐 Chronological Follow-Up & Task Timeline",
+      today: "📅 Today's Scheduled Follow-Ups & Tasks (Next 24h)",
+      client_date: "🗓️ Auto-Added Client Requested Dates & Times",
+      call_reminder: "⏰ Upcoming Booked Call Reminders",
+      completed: "✅ Sent & Completed Follow-Ups / Tasks",
+      all: "📋 All Tasks & Follow-Up History",
+    };
+    headingEl.textContent = titles[todoFilter] || titles.active;
+  }
+
+  if (filtered.length === 0) {
+    container.replaceChildren(
+      el(
+        "div",
+        "muted",
+        "No matching tasks in this view. Type a schedule above (e.g. 'Today 1pm follow up Akter — Hey bro...') or click '+ Schedule AI Follow-Up / Task'.",
+      ),
+    );
+    return;
+  }
+
+  container.replaceChildren(
+    ...filtered.map((t) => {
+      const cd = formatTodoCountdown(t);
+      const meta = getTaskTypeMeta(t.task_type);
+      const clockStr = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date) : t.due_date || "No fixed time";
+
+      const card = el("div", `todo-timeline-card ${t.completed ? "disabled" : ""}`);
+      card.style.cssText = `background:rgba(15, 18, 28, 0.78); border:1px solid rgba(255,255,255,0.08); border-left:4px solid ${
+        t.completed ? "#10b981" : meta.accent
+      }; border-radius:14px; padding:14px 16px; margin-bottom:10px; transition:all 0.2s ease; opacity:${t.completed ? "0.74" : "1"};`;
+
+      // Top metadata row: Clock Pill + Countdown + Task Type + Auto-Send status
+      const topRow = el("div");
+      topRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;";
+
+      const badgesLeft = el("div");
+      badgesLeft.style.cssText = "display:flex; align-items:center; gap:6px; flex-wrap:wrap;";
+
+      const clockBadge = el("span", "badge todo-time-pill", `🕐 ${clockStr}`);
+      clockBadge.style.cssText =
+        "background:rgba(244, 63, 94, 0.16); color:#fda4af; border:1px solid rgba(244, 63, 94, 0.38); font-weight:700; font-size:12.5px; padding:4px 10px;";
+
+      const cdBadge = el("span", "badge", cd.label);
+      cdBadge.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:700; font-size:12px; padding:4px 10px;`;
+
+      const typeBadge = el("span", `badge ${meta.cls}`, meta.badge);
+      badgesLeft.append(clockBadge, cdBadge, typeBadge);
+
+      if (t.phone) {
+        const autoBadge = el(
+          "span",
+          "badge",
+          t.auto_send ? "🚀 Auto-Send on WhatsApp" : "⏸️ Auto-Send Paused",
+        );
+        autoBadge.style.cssText = t.auto_send
+          ? "background:rgba(16,185,129,0.12); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3);"
+          : "background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25);";
+        badgesLeft.append(autoBadge);
+      }
+
+      const metaRight = el("div", "small-text muted");
+      metaRight.textContent = t.booking_id ? "🔗 Synced with CRM Lead" : `Added ${fmtTime(t.created_at)}`;
+      topRow.append(badgesLeft, metaRight);
+
+      // Middle row: Task title + Client & Phone chips
+      const titleRow = el("div");
+      titleRow.style.cssText = "display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;";
+
+      const titleText = el("div", null, `${t.completed ? "✓ " : ""}${t.task}`);
+      titleText.style.cssText = `font-size:15px; font-weight:700; color:#f8fafc; ${t.completed ? "text-decoration:line-through; color:#94a3b8;" : ""}`;
+      titleRow.append(titleText);
+
+      if (t.client_name) {
+        const clientChip = el("span", "badge", `👤 ${t.client_name}`);
+        clientChip.style.cssText = "background:rgba(255,255,255,0.06); color:#e2e8f0; border:1px solid rgba(255,255,255,0.12);";
+        titleRow.append(clientChip);
+      }
+      if (t.phone) {
+        const cleanPh = String(t.phone).replace(/[^\d]/g, "");
+        const phoneLink = el("a", "booking-link-pill", `📱 +${cleanPh}`);
+        phoneLink.href = `https://wa.me/${cleanPh}`;
+        phoneLink.target = "_blank";
+        phoneLink.rel = "noopener";
+        titleRow.append(phoneLink);
+      }
+
+      card.append(topRow, titleRow);
+
+      // Exact WhatsApp AI Message Box (clickable to edit)
+      if (t.ai_message || t.phone || t.booking_id) {
+        const msgBox = el("div", "todo-msg-box");
+        msgBox.style.cssText =
+          "background:rgba(9, 11, 19, 0.72); border:1px solid rgba(244, 63, 94, 0.22); border-radius:10px; padding:10px 12px; margin-bottom:10px; cursor:pointer;";
+        msgBox.title = "Click to edit this WhatsApp message or reschedule time";
+        msgBox.addEventListener("click", () => openTodoEditModal(t));
+
+        const msgHeader = el("div");
+        msgHeader.style.cssText = "display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;";
+        const msgLabel = el(
+          "span",
+          "small-text",
+          t.completed && t.sent_at
+            ? "💬 WhatsApp Message Dispatched by Nyra Rose:"
+            : "💬 Exact WhatsApp Message Nyra Rose Will Send at Scheduled Time:",
+        );
+        msgLabel.style.cssText = "color:#fda4af; font-weight:600; font-size:11.5px;";
+        const editHint = el("span", "small-text muted", "✏️ Click to rewrite message or change time");
+        editHint.style.fontSize = "11px";
+        msgHeader.append(msgLabel, editHint);
+
+        const msgBody = el(
+          "div",
+          null,
+          t.ai_message || "(No message drafted yet — click here to write the WhatsApp message Nyra will send)",
+        );
+        msgBody.style.cssText = "color:#e2e8f0; font-size:13.5px; line-height:1.45; white-space:pre-wrap;";
+        msgBox.append(msgHeader, msgBody);
+        card.append(msgBox);
+      }
+
+      // Action controls row
+      const actions = el("div");
+      actions.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:6px;";
+
+      const leftBtns = el("div");
+      leftBtns.style.cssText = "display:flex; gap:6px; flex-wrap:wrap; align-items:center;";
+
+      const editBtn = el("button", "ghost small", "✏️ Edit Time / Message");
+      editBtn.type = "button";
+      editBtn.style.borderColor = "rgba(244, 63, 94, 0.4)";
+      editBtn.style.color = "#fda4af";
+      editBtn.addEventListener("click", () => openTodoEditModal(t));
+      leftBtns.append(editBtn);
+
+      if (!t.completed && (t.phone || (t.chat_id && t.chat_id !== "dashboard"))) {
+        const sendNowBtn = el("button", "small", "🚀 Send Now via Nyra");
+        sendNowBtn.type = "button";
+        sendNowBtn.style.cssText = "background:linear-gradient(135deg, #059669, #10b981); border-color:#10b981; color:#fff;";
+        sendNowBtn.addEventListener("click", async () => {
+          sendNowBtn.disabled = true;
+          sendNowBtn.textContent = "⏳ Sending...";
+          try {
+            await api("POST", "/api/todos/send", { id: t.id, customMessage: t.ai_message });
+            await loadTodos();
+          } catch (err) {
+            alert(`Failed to send via WhatsApp: ${err.message}`);
+            sendNowBtn.disabled = false;
+            sendNowBtn.textContent = "🚀 Send Now via Nyra";
+          }
+        });
+        leftBtns.append(sendNowBtn);
+      }
+
+      if (!t.completed) {
+        const plus1hBtn = el("button", "ghost small", "⏱ +1h");
+        plus1hBtn.type = "button";
+        plus1hBtn.title = "Push scheduled time forward by 1 hour";
+        plus1hBtn.addEventListener("click", async () => {
+          const base = t.scheduled_at_ms && t.scheduled_at_ms > Date.now() ? t.scheduled_at_ms : Date.now();
+          await api("PATCH", "/api/todos", { id: t.id, scheduledAtMs: base + 3600000 });
+          await loadTodos();
+        });
+
+        const tmrwBtn = el("button", "ghost small", "🌅 Tomorrow 11 AM");
+        tmrwBtn.type = "button";
+        tmrwBtn.title = "Reschedule to Tomorrow 11:00 AM BDT";
+        tmrwBtn.addEventListener("click", async () => {
+          await api("PATCH", "/api/todos", { id: t.id, timePhrase: "tomorrow 11am" });
+          await loadTodos();
+        });
+
+        leftBtns.append(plus1hBtn, tmrwBtn);
+      }
+
+      const rightBtns = el("div");
+      rightBtns.style.cssText = "display:flex; gap:6px; align-items:center;";
+
+      const togBtn = el("button", "ghost small", t.completed ? "↺ Reopen Task" : "✓ Mark Done");
+      togBtn.type = "button";
+      togBtn.addEventListener("click", async () => {
+        const next = !t.completed;
+        await api("PATCH", "/api/todos", { id: t.id, completed: next });
+        await loadTodos();
+      });
+
+      const delBtn = el("button", "danger small", "🗑️ Delete");
+      delBtn.type = "button";
+      delBtn.addEventListener("click", async () => {
+        if (!confirm("Delete this scheduled task?")) return;
+        await api("DELETE", `/api/todos?id=${t.id}`);
+        todos = todos.filter((x) => x.id !== t.id);
+        updateTodoStats();
+        renderTodos();
+        renderHomeTodayTasks();
+      });
+
+      rightBtns.append(togBtn, delBtn);
+      actions.append(leftBtns, rightBtns);
+      card.append(actions);
+      return card;
+    }),
+  );
+}
+
+// Smart Natural-Language Quick-Add Parser
+function parseQuickTodoInput(raw) {
+  let text = raw.trim();
+  let aiMessage = "";
+
+  // 1. Check for message separator: " — ", " -- ", " | ", " with msg ", " with message ", " msg: "
+  const msgSplitRegex = /\s+(?:—|--|\||with\s+msg|with\s+message|msg:)\s+/i;
+  const splitMatch = text.match(msgSplitRegex);
+  if (splitMatch && splitMatch.index !== undefined) {
+    aiMessage = text.slice(splitMatch.index + splitMatch[0].length).trim();
+    text = text.slice(0, splitMatch.index).trim();
+  }
+
+  // 2. Match existing client from todoBookingsCache or bookings
+  const allLeads = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+  let matchedLead = null;
+  const lowerText = text.toLowerCase();
+  for (const b of allLeads) {
+    const cName = (b.client_name || "").trim();
+    if (cName && cName.length >= 2 && lowerText.includes(cName.toLowerCase())) {
+      matchedLead = b;
+      break;
+    }
+    const cPhone = String(b.phone || "").replace(/[^\d]/g, "");
+    if (cPhone && cPhone.length >= 7 && lowerText.includes(cPhone)) {
+      matchedLead = b;
+      break;
+    }
+  }
+
+  // Also check if raw text contains a phone number directly
+  let extractedPhone = matchedLead?.phone || "";
+  if (!extractedPhone) {
+    const phoneMatch = text.match(/(?:\+?\d[\d\s-]{7,15}\d)/);
+    if (phoneMatch) {
+      extractedPhone = phoneMatch[0].replace(/[^\d]/g, "");
+    }
+  }
+
+  const clientName = matchedLead?.client_name || "";
+  const bookingId = matchedLead?.id || undefined;
+
+  // 3. Pass the task portion as timePhrase so backend parseScheduledTimeToMs extracts "today 1pm", "tomorrow", "21 date", "+2h", etc.
+  const timePhrase = text;
+
+  // 4. If user didn't type an explicit message but there's a client or phone, draft a smart follow-up message
+  if (!aiMessage && (clientName || extractedPhone || /follow\s*up|knock|msg|message|call/i.test(text))) {
+    aiMessage = matchedLead?.custom_followup_msg || generateSmartAiDraft(clientName, "manual_ai", "");
+  }
+
+  const taskType = clientName || extractedPhone ? "manual_ai" : "general";
+
+  return {
+    task: text,
+    timePhrase,
+    clientName: clientName || undefined,
+    phone: extractedPhone || undefined,
+    bookingId,
+    aiMessage: aiMessage || undefined,
+    taskType,
+    autoSend: Boolean(extractedPhone),
+  };
+}
+
+$("#new-todo-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("#todo-input");
-  const task = input.value.trim();
-  if (!task) return;
-  const res = await api("POST", "/api/todos", { task, chatId: "dashboard" });
-  todos.unshift(res.todo);
-  renderTodos();
+  const raw = input?.value?.trim() || "";
+  if (!raw) return;
+  const parsed = parseQuickTodoInput(raw);
+  const res = await api("POST", "/api/todos", {
+    ...parsed,
+    chatId: "dashboard",
+  });
+  if (res.todo) {
+    await loadTodos();
+  }
   input.value = "";
+});
+
+// Filter tabs & Search in #tab-todos
+document.querySelectorAll(".todo-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".todo-filter-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    todoFilter = btn.dataset.filter || "active";
+    renderTodos();
+  });
+});
+
+$("#todos-search")?.addEventListener("input", (e) => {
+  todoSearch = e.target.value || "";
+  renderTodos();
+});
+
+$("#refresh-todos-btn")?.addEventListener("click", () => {
+  loadTodos();
+});
+
+// Full AI Follow-Up & Task Composer (#ai-todo-composer)
+$("#toggle-ai-todo-composer-btn")?.addEventListener("click", () => {
+  const comp = $("#ai-todo-composer");
+  if (!comp) return;
+  comp.classList.toggle("hidden");
+  populateTodoClientSelect();
+});
+
+$("#cancel-ai-todo-composer-btn")?.addEventListener("click", () => {
+  $("#ai-todo-composer")?.classList.add("hidden");
+  if ($("#todo-composer-error")) $("#todo-composer-error").textContent = "";
+});
+
+$("#todo-client-select")?.addEventListener("change", (e) => {
+  const bId = e.target.value;
+  const list = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+  const found = list.find((x) => x.id === bId);
+  if (!found) return;
+  if ($("#todo-client-name")) $("#todo-client-name").value = found.client_name || "";
+  if ($("#todo-phone")) $("#todo-phone").value = found.phone || "";
+  if ($("#todo-title-input") && !$("#todo-title-input").value.trim()) {
+    $("#todo-title-input").value = `Follow up ${found.client_name || found.phone || "Client"}`;
+  }
+  if ($("#todo-ai-message") && !$("#todo-ai-message").value.trim()) {
+    $("#todo-ai-message").value =
+      found.custom_followup_msg || generateSmartAiDraft(found.client_name, $("#todo-task-type")?.value || "manual_ai", "");
+  }
+});
+
+document.querySelectorAll(".todo-quick-slot").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const phrase = btn.dataset.phrase || "";
+    if ($("#todo-time-phrase")) $("#todo-time-phrase").value = phrase;
+    if ($("#todo-datetime-picker")) $("#todo-datetime-picker").value = "";
+  });
+});
+
+$("#todo-generate-msg-btn")?.addEventListener("click", () => {
+  const cName = $("#todo-client-name")?.value?.trim() || "";
+  const tType = $("#todo-task-type")?.value || "manual_ai";
+  const tPhrase = $("#todo-time-phrase")?.value?.trim() || "";
+  if ($("#todo-ai-message")) {
+    $("#todo-ai-message").value = generateSmartAiDraft(cName, tType, tPhrase);
+  }
+});
+
+$("#ai-todo-composer")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = $("#todo-composer-error");
+  if (errEl) errEl.textContent = "";
+
+  const bookingId = $("#todo-client-select")?.value || undefined;
+  const clientName = $("#todo-client-name")?.value?.trim() || "";
+  const phone = $("#todo-phone")?.value?.trim() || "";
+  const taskType = $("#todo-task-type")?.value || "manual_ai";
+  const timePhrase = $("#todo-time-phrase")?.value?.trim() || "";
+  const dtVal = $("#todo-datetime-picker")?.value || "";
+  const scheduledAtMs = dtVal ? new Date(dtVal).getTime() : undefined;
+  const rawTitle = $("#todo-title-input")?.value?.trim() || "";
+  const aiMessage = $("#todo-ai-message")?.value?.trim() || "";
+  const autoSend = $("#todo-auto-send") ? $("#todo-auto-send").checked : true;
+
+  const task = rawTitle || (clientName ? `Follow up ${clientName}` : "Scheduled AI Follow-Up");
+  if (!timePhrase && !scheduledAtMs && !rawTitle) {
+    if (errEl) errEl.textContent = "Please enter a time (e.g. 'Today 1pm') or task title.";
+    return;
+  }
+
+  try {
+    await api("POST", "/api/todos", {
+      task,
+      bookingId,
+      clientName: clientName || undefined,
+      phone: phone || undefined,
+      taskType,
+      timePhrase: timePhrase || undefined,
+      scheduledAtMs,
+      aiMessage: aiMessage || generateSmartAiDraft(clientName, taskType, timePhrase),
+      autoSend,
+      chatId: phone ? `${phone.replace(/[^\d]/g, "")}@s.whatsapp.net` : "dashboard",
+    });
+    $("#ai-todo-composer").reset();
+    $("#ai-todo-composer").classList.add("hidden");
+    await loadTodos();
+  } catch (err) {
+    if (errEl) errEl.textContent = err.message || "Failed to save scheduled task";
+  }
+});
+
+// ─── Re-Edit Task & AI Message Modal (#todo-edit-modal) ──────────────────────
+
+function openTodoEditModal(t) {
+  currentEditingTodoId = t.id;
+  const modal = $("#todo-edit-modal");
+  if (!modal) return;
+
+  if ($("#todo-edit-modal-title")) {
+    $("#todo-edit-modal-title").textContent = `✏️ Edit Scheduled Task & AI Message — ${t.client_name || t.task}`;
+  }
+  if ($("#edit-todo-task")) $("#edit-todo-task").value = t.task || "";
+  if ($("#edit-todo-type")) $("#edit-todo-type").value = t.task_type || "manual_ai";
+  if ($("#edit-todo-client-name")) $("#edit-todo-client-name").value = t.client_name || "";
+  if ($("#edit-todo-phone")) $("#edit-todo-phone").value = t.phone || "";
+  if ($("#edit-todo-time-phrase")) {
+    $("#edit-todo-time-phrase").value = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date) : t.due_date || "";
+    $("#edit-todo-time-phrase").dataset.initial = $("#edit-todo-time-phrase").value;
+  }
+  if ($("#edit-todo-datetime")) $("#edit-todo-datetime").value = "";
+  if ($("#edit-todo-ai-message")) {
+    $("#edit-todo-ai-message").value =
+      t.ai_message || generateSmartAiDraft(t.client_name, t.task_type || "manual_ai", t.due_date || "");
+  }
+  if ($("#edit-todo-auto-send")) {
+    $("#edit-todo-auto-send").checked = t.auto_send !== undefined ? Boolean(t.auto_send) : true;
+  }
+  if ($("#todo-edit-feedback")) $("#todo-edit-feedback").textContent = "";
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+}
+
+function closeTodoEditModal() {
+  const modal = $("#todo-edit-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+  currentEditingTodoId = null;
+}
+
+$("#close-todo-edit-modal")?.addEventListener("click", closeTodoEditModal);
+$("#cancel-todo-edit-btn")?.addEventListener("click", closeTodoEditModal);
+
+document.querySelectorAll(".edit-todo-slot").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const phrase = btn.dataset.phrase || "";
+    if ($("#edit-todo-time-phrase")) {
+      $("#edit-todo-time-phrase").value = phrase;
+    }
+    if ($("#edit-todo-datetime")) {
+      $("#edit-todo-datetime").value = "";
+    }
+  });
+});
+
+async function saveCurrentTodoEdits() {
+  if (!currentEditingTodoId) return null;
+  const task = $("#edit-todo-task")?.value?.trim() || "";
+  const taskType = $("#edit-todo-type")?.value || "manual_ai";
+  const clientName = $("#edit-todo-client-name")?.value?.trim() || "";
+  const phone = $("#edit-todo-phone")?.value?.trim() || "";
+  const timeInput = $("#edit-todo-time-phrase");
+  const rawTimePhrase = timeInput?.value?.trim() || "";
+  const initialTimePhrase = timeInput?.dataset?.initial || "";
+  const dtVal = $("#edit-todo-datetime")?.value || "";
+  const aiMessage = $("#edit-todo-ai-message")?.value?.trim() || "";
+  const autoSend = $("#edit-todo-auto-send") ? $("#edit-todo-auto-send").checked : true;
+
+  const payload = {
+    id: currentEditingTodoId,
+    task,
+    taskType,
+    clientName,
+    phone,
+    aiMessage,
+    autoSend,
+  };
+
+  if (dtVal) {
+    const parsedDt = new Date(dtVal).getTime();
+    if (Number.isFinite(parsedDt)) payload.scheduledAtMs = parsedDt;
+  } else if (rawTimePhrase && rawTimePhrase !== initialTimePhrase) {
+    payload.timePhrase = rawTimePhrase;
+  }
+
+  const res = await api("PATCH", "/api/todos", payload);
+  return res.todo;
+}
+
+$("#save-todo-edit-btn")?.addEventListener("click", async () => {
+  const btn = $("#save-todo-edit-btn");
+  const fb = $("#todo-edit-feedback");
+  if (btn) btn.disabled = true;
+  if (fb) {
+    fb.style.color = "#93c5fd";
+    fb.textContent = "Saving task & syncing with Nyra's follow-up timer...";
+  }
+  try {
+    await saveCurrentTodoEdits();
+    await loadTodos();
+    if (typeof loadBookings === "function" && bookings.length > 0) {
+      loadBookings().catch(() => {});
+    }
+    if (fb) {
+      fb.style.color = "#34d399";
+      fb.textContent = "✅ Saved & synced with Nyra's schedule!";
+    }
+    setTimeout(() => closeTodoEditModal(), 650);
+  } catch (err) {
+    if (fb) {
+      fb.style.color = "var(--red)";
+      fb.textContent = `⚠️ ${err.message}`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+$("#send-todo-now-btn")?.addEventListener("click", async () => {
+  if (!currentEditingTodoId) return;
+  const btn = $("#send-todo-now-btn");
+  const fb = $("#todo-edit-feedback");
+  if (btn) btn.disabled = true;
+  if (fb) {
+    fb.style.color = "#93c5fd";
+    fb.textContent = "Saving changes & queuing message to Nyra's WhatsApp Gateway...";
+  }
+  try {
+    await saveCurrentTodoEdits();
+    const customMessage = $("#edit-todo-ai-message")?.value?.trim() || "";
+    await api("POST", "/api/todos/send", {
+      id: currentEditingTodoId,
+      customMessage,
+    });
+    await loadTodos();
+    if (fb) {
+      fb.style.color = "#34d399";
+      fb.textContent = "🚀 Queued to Nyra's WhatsApp! Will deliver on next gateway heartbeat (≤30s) ✓";
+    }
+    setTimeout(() => closeTodoEditModal(), 1000);
+  } catch (err) {
+    if (fb) {
+      fb.style.color = "var(--red)";
+      fb.textContent = `⚠️ ${err.message}`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 // ─── Booked Calls CRM ────────────────────────────────────────────────────────
