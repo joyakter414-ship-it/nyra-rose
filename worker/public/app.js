@@ -1144,11 +1144,123 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now(), fallbackTzOffset
   return targetUtcMs;
 }
 
-function formatTodoCountdown(t) {
-  const now = Date.now();
+function formatDurationHms(diffMs) {
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return "00m 00s";
+  const totalSec = Math.max(0, Math.floor(diffMs / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  if (days > 0) {
+    return `${days}d ${pad(hrs)}h ${pad(mins)}m ${pad(secs)}s`;
+  }
+  if (hrs > 0) {
+    return `${pad(hrs)}h ${pad(mins)}m ${pad(secs)}s`;
+  }
+  return `${pad(mins)}m ${pad(secs)}s`;
+}
+
+function computeRunningTimerState(t, now = Date.now()) {
   if (t.completed) {
     return {
-      label: t.sent_at ? `✓ Sent by Nyra (${fmtTime(t.sent_at)})` : "✓ Completed",
+      hms: "00m 00s",
+      clockLabel: t.sent_at ? `✓ Dispatched on WhatsApp at ${fmtTime(t.sent_at)}` : "✓ Completed",
+      adviceLabel: "✓ Sent — No edit needed",
+      adviceBg: "rgba(16, 185, 129, 0.14)",
+      adviceColor: "#6ee7b7",
+      adviceBorder: "rgba(16, 185, 129, 0.32)",
+      pct: 100,
+      barTone: "tone-emerald",
+      urgencyClass: "",
+    };
+  }
+  const ms = t.scheduled_at_ms;
+  if (!ms || !Number.isFinite(ms)) {
+    return {
+      hms: "—",
+      clockLabel: t.due_date ? `🗓️ Scheduled: ${String(t.due_date).replace(/\bBDT\b/g, "BD")}` : "📌 Open Task (No timer set)",
+      adviceLabel: "✎ Click to set follow-up timer",
+      adviceBg: "rgba(148, 163, 184, 0.14)",
+      adviceColor: "#cbd5e1",
+      adviceBorder: "rgba(148, 163, 184, 0.3)",
+      pct: 0,
+      barTone: "",
+      urgencyClass: "",
+    };
+  }
+
+  const diff = ms - now;
+  const hms = formatDurationHms(diff);
+
+  let pct = 100;
+  if (diff > 0) {
+    const createdMs = t.created_at && t.created_at < ms ? t.created_at : ms - 3.5 * 3600000;
+    const totalSpan = Math.max(60000, ms - createdMs);
+    const elapsedRatio = now > createdMs ? Math.min(1, (now - createdMs) / totalSpan) : 0;
+    const proximityRatio = 1 - Math.min(1, diff / (4 * 3600000));
+    pct = Math.min(99, Math.max(12, Math.round(Math.max(elapsedRatio, proximityRatio * 0.88) * 100)));
+  }
+
+  if (diff <= 0) {
+    return {
+      hms: "00m 00s",
+      clockLabel: t.auto_send && t.phone ? "🚀 Due Now (00m 00s) — Nyra Rose Dispatching…" : "⚡ Due Now (00m 00s)",
+      adviceLabel: "⚡ Dispatching now — Click to edit or pause",
+      adviceBg: "rgba(244, 63, 94, 0.22)",
+      adviceColor: "#fda4af",
+      adviceBorder: "rgba(244, 63, 94, 0.5)",
+      pct: 100,
+      barTone: "tone-rose",
+      urgencyClass: "urgency-due",
+    };
+  }
+
+  if (diff <= 15 * 60000) {
+    return {
+      hms,
+      clockLabel: `🔥 Follow-up in ${hms} (Sending soon)`,
+      adviceLabel: "⚠️ < 15m left — Edit now if you need changes!",
+      adviceBg: "rgba(244, 63, 94, 0.18)",
+      adviceColor: "#fda4af",
+      adviceBorder: "rgba(244, 63, 94, 0.42)",
+      pct,
+      barTone: "tone-rose",
+      urgencyClass: "urgency-imminent",
+    };
+  }
+
+  if (diff <= 60 * 60000) {
+    return {
+      hms,
+      clockLabel: `⚡ Follow-up in ${hms}`,
+      adviceLabel: "⏳ Under 1h left — Review or edit message if needed",
+      adviceBg: "rgba(245, 158, 11, 0.16)",
+      adviceColor: "#fcd34d",
+      adviceBorder: "rgba(245, 158, 11, 0.38)",
+      pct,
+      barTone: "tone-amber",
+      urgencyClass: "urgency-soon",
+    };
+  }
+
+  return {
+    hms,
+    clockLabel: `⏱️ Follow-up in ${hms}`,
+    adviceLabel: `✓ Auto-send ready (${hms} later) — Plenty of time to edit`,
+    adviceBg: "rgba(16, 185, 129, 0.14)",
+    adviceColor: "#6ee7b7",
+    adviceBorder: "rgba(16, 185, 129, 0.32)",
+    pct,
+    barTone: "",
+    urgencyClass: "",
+  };
+}
+
+function formatTodoCountdown(t, now = Date.now()) {
+  if (t.completed) {
+    return {
+      label: t.sent_at ? `✓ Sent (${fmtTime(t.sent_at)})` : "✓ Completed",
       color: "#34d399",
       bg: "rgba(16, 185, 129, 0.14)",
       border: "rgba(16, 185, 129, 0.35)",
@@ -1158,7 +1270,7 @@ function formatTodoCountdown(t) {
   const ms = t.scheduled_at_ms;
   if (!ms) {
     return {
-      label: t.due_date ? `🗓️ ${t.due_date}` : "📌 Open Task",
+      label: t.due_date ? `🗓️ ${String(t.due_date).replace(/\bBDT\b/g, "BD")}` : "📌 Open Task",
       color: "#cbd5e1",
       bg: "rgba(148, 163, 184, 0.12)",
       border: "rgba(148, 163, 184, 0.28)",
@@ -1168,17 +1280,17 @@ function formatTodoCountdown(t) {
   const diff = ms - now;
   if (diff <= 0) {
     return {
-      label: t.auto_send && t.phone ? "⚡ Due Now — Nyra Sending..." : "⚡ Due Now!",
+      label: t.auto_send && t.phone ? "⚡ Due Now — Sending…" : "⚡ Due Now!",
       color: "#fda4af",
       bg: "rgba(244, 63, 94, 0.2)",
       border: "rgba(244, 63, 94, 0.5)",
       urgent: true,
     };
   }
+  const hms = formatDurationHms(diff);
   if (diff < 3600000) {
-    const mins = Math.max(1, Math.ceil(diff / 60000));
     return {
-      label: `⏳ in ${mins}m`,
+      label: `⏳ in ${hms}`,
       color: "#fcd34d",
       bg: "rgba(245, 158, 11, 0.16)",
       border: "rgba(245, 158, 11, 0.42)",
@@ -1186,20 +1298,16 @@ function formatTodoCountdown(t) {
     };
   }
   if (diff < 86400000) {
-    const hrs = Math.floor(diff / 3600000);
-    const mins = Math.round((diff % 3600000) / 60000);
     return {
-      label: `⏱ in ${hrs}h ${mins}m`,
+      label: `⏱ in ${hms}`,
       color: "#93c5fd",
       bg: "rgba(59, 130, 246, 0.15)",
       border: "rgba(59, 130, 246, 0.38)",
       urgent: false,
     };
   }
-  const days = Math.floor(diff / 86400000);
-  const hrs = Math.round((diff % 86400000) / 3600000);
   return {
-    label: `📅 in ${days}d ${hrs}h`,
+    label: `📅 in ${hms}`,
     color: "#c4b5fd",
     bg: "rgba(139, 92, 246, 0.15)",
     border: "rgba(139, 92, 246, 0.38)",
@@ -1329,7 +1437,7 @@ function updateTodoStats() {
   const statNextSub = $("#stat-todos-next-sub");
   if (statNext && statNextSub) {
     if (nextTask) {
-      const cd = formatTodoCountdown(nextTask);
+      const cd = formatTodoCountdown(nextTask, now);
       statNext.textContent = formatBdtClock(nextTask.scheduled_at_ms, nextTask.due_date).replace(/^(Today,\s*)/i, "");
       statNextSub.textContent = `${cd.label} · ${nextTask.client_name || nextTask.task}`;
     } else {
@@ -1337,6 +1445,8 @@ function updateTodoStats() {
       statNextSub.textContent = "No active timers queued";
     }
   }
+
+  renderNextRunningBanner(nextTask, now);
 
   const statClientDate = $("#stat-todos-client-date");
   if (statClientDate) statClientDate.textContent = String(clientDateCount);
@@ -1364,6 +1474,79 @@ function updateTodoStats() {
   }
 }
 
+let currentBannerTodoId = null;
+
+function renderNextRunningBanner(nextTask, now = Date.now()) {
+  const banner = $("#todo-next-running-banner");
+  if (!banner) return;
+  if (!nextTask || !nextTask.scheduled_at_ms) {
+    banner.classList.add("hidden");
+    currentBannerTodoId = null;
+    return;
+  }
+  banner.classList.remove("hidden");
+  const rt = computeRunningTimerState(nextTask, now);
+  const localClock = formatBdtClock(nextTask.scheduled_at_ms, nextTask.due_date);
+  const clientOrig = formatClientOriginalClock(nextTask.scheduled_at_ms, nextTask, now);
+  const clientName = nextTask.client_name || nextTask.task || "Client";
+
+  if (currentBannerTodoId !== nextTask.id || !banner.querySelector("#next-banner-clock")) {
+    currentBannerTodoId = nextTask.id;
+    const topRow = el("div", "next-running-timer-top");
+    const leftGroup = el("div", "next-running-timer-left");
+    const pulseDot = el("span", "next-running-pulse-dot");
+    pulseDot.id = "next-banner-dot";
+
+    const clockBadge = el("span", "next-running-timer-clock", rt.clockLabel);
+    clockBadge.id = "next-banner-clock";
+
+    const clientText = el(
+      "span",
+      "next-running-timer-client",
+      `${clientName} · ${localClock}${clientOrig ? ` (🌍 Client: ${clientOrig.clock})` : ""}`,
+    );
+    clientText.id = "next-banner-client";
+    leftGroup.append(pulseDot, clockBadge, clientText);
+
+    const rightGroup = el("div", "next-running-timer-right");
+    const adviceBadge = el("span", "next-running-timer-advice", rt.adviceLabel);
+    adviceBadge.id = "next-banner-advice";
+    adviceBadge.style.background = rt.adviceBg;
+    adviceBadge.style.color = rt.adviceColor;
+    adviceBadge.style.borderColor = rt.adviceBorder;
+
+    const editNowBtn = el("button", "ghost small task-slot-pill", "✎ Edit Message / Time");
+    editNowBtn.type = "button";
+    editNowBtn.addEventListener("click", () => openTodoEditModal(nextTask));
+    rightGroup.append(adviceBadge, editNowBtn);
+
+    topRow.append(leftGroup, rightGroup);
+
+    const barTrack = el("div", "task-running-bar-track");
+    const barFill = el("div", `task-running-bar-fill ${rt.barTone}`.trim());
+    barFill.id = "next-banner-fill";
+    barFill.style.width = `${rt.pct}%`;
+    barTrack.append(barFill);
+
+    banner.replaceChildren(topRow, barTrack);
+  } else {
+    const clockBadge = banner.querySelector("#next-banner-clock");
+    if (clockBadge) clockBadge.textContent = rt.clockLabel;
+    const adviceBadge = banner.querySelector("#next-banner-advice");
+    if (adviceBadge) {
+      adviceBadge.textContent = rt.adviceLabel;
+      adviceBadge.style.background = rt.adviceBg;
+      adviceBadge.style.color = rt.adviceColor;
+      adviceBadge.style.borderColor = rt.adviceBorder;
+    }
+    const barFill = banner.querySelector("#next-banner-fill");
+    if (barFill) {
+      barFill.className = `task-running-bar-fill ${rt.barTone}`.trim();
+      barFill.style.width = `${rt.pct}%`;
+    }
+  }
+}
+
 function renderHomeTodayTasks() {
   const container = $("#home-today-tasks-list");
   if (!container) return;
@@ -1383,10 +1566,12 @@ function renderHomeTodayTasks() {
     return;
   }
 
+  const now = Date.now();
   const topItems = active.slice(0, 5);
   container.replaceChildren(
     ...topItems.map((t) => {
-      const cd = formatTodoCountdown(t);
+      const cd = formatTodoCountdown(t, now);
+      const rt = computeRunningTimerState(t, now);
       const meta = getTaskTypeMeta(t.task_type);
       const clockParts = splitClockParts(t.scheduled_at_ms, t.due_date);
       const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, t) : null;
@@ -1397,6 +1582,8 @@ function renderHomeTodayTasks() {
       const timeCol = el("div", "todo-home-time");
       const clockEl = el("div", "todo-home-clock", clockParts.time);
       const dayEl = el("div", "todo-home-sub", `${clockParts.day} · ${cd.label}`);
+      dayEl.dataset.runningHomeSub = t.id;
+      dayEl.dataset.dayPrefix = clockParts.day;
       dayEl.style.color = cd.color;
       timeCol.append(clockEl, dayEl);
       if (clientOrig) {
@@ -1412,11 +1599,21 @@ function renderHomeTodayTasks() {
         chip.append(el("span", "task-client-mini-avatar", getMonogram(t.client_name)), el("span", null, t.client_name));
         titleLine.append(chip);
       }
-      titleLine.append(el("span", null, t.task), el("span", `badge ${meta.cls}`, meta.badge));
+      titleLine.append(el("span", null, String(t.task || "").replace(/\bBDT\b/g, "BD")), el("span", `badge ${meta.cls}`, meta.badge));
       bodyCol.append(titleLine);
 
       if (t.ai_message) {
         bodyCol.append(el("div", "todo-home-msg", `💬 "${t.ai_message}"`));
+      }
+
+      if (t.scheduled_at_ms) {
+        const miniBarTrack = el("div", "task-running-bar-track");
+        miniBarTrack.style.marginTop = "4px";
+        const miniBarFill = el("div", `task-running-bar-fill ${rt.barTone}`.trim());
+        miniBarFill.dataset.runningFill = t.id;
+        miniBarFill.style.width = `${rt.pct}%`;
+        miniBarTrack.append(miniBarFill);
+        bodyCol.append(miniBarTrack);
       }
 
       const rightCol = el("div", "task-quick-slots-group");
@@ -1463,6 +1660,7 @@ function getFilteredTodos() {
 }
 
 function buildStudioTodoCard(t, allLeads) {
+  const now = Date.now();
   const linkedBooking = t.booking_id ? allLeads.find((b) => b.id === t.booking_id) : null;
   const effectiveRecord = {
     ...t,
@@ -1470,10 +1668,11 @@ function buildStudioTodoCard(t, allLeads) {
     timezone: t.timezone || linkedBooking?.timezone,
   };
   const tzInfo = resolveRecordTimezoneInfo(effectiveRecord);
-  const cd = formatTodoCountdown(t);
+  const cd = formatTodoCountdown(t, now);
+  const rt = computeRunningTimerState(t, now);
   const meta = getTaskTypeMeta(t.task_type);
   const clockParts = splitClockParts(t.scheduled_at_ms, t.due_date);
-  const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, effectiveRecord) : null;
+  const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, effectiveRecord, now) : null;
 
   const card = el("div", `todo-timeline-card ${t.completed ? "disabled" : ""}`);
   card.style.setProperty("--task-accent", t.completed ? "#10b981" : meta.accent);
@@ -1488,6 +1687,7 @@ function buildStudioTodoCard(t, allLeads) {
   timeRail.append(clockTop);
 
   const cdPill = el("span", "task-countdown-pill", cd.label);
+  cdPill.dataset.runningPill = t.id;
   cdPill.style.background = cd.bg;
   cdPill.style.color = cd.color;
   cdPill.style.border = `1px solid ${cd.border}`;
@@ -1584,6 +1784,35 @@ function buildStudioTodoCard(t, allLeads) {
     }
 
     mainCol.append(clientStrip);
+  }
+
+  // Live Running Follow-Up Time Bar Timer (Shows exact time remaining + Management Edit Guidance)
+  if (t.scheduled_at_ms || t.completed) {
+    const timerBox = el("div", `task-running-timer-box ${rt.urgencyClass}`.trim());
+    timerBox.dataset.runningBox = t.id;
+
+    const timerHead = el("div", "task-running-timer-head");
+    const clockSpan = el("span", "task-running-timer-clock", rt.clockLabel);
+    clockSpan.dataset.runningClock = t.id;
+
+    const adviceSpan = el("span", "task-running-timer-advice", rt.adviceLabel);
+    adviceSpan.dataset.runningAdvice = t.id;
+    adviceSpan.style.background = rt.adviceBg;
+    adviceSpan.style.color = rt.adviceColor;
+    adviceSpan.style.border = `1px solid ${rt.adviceBorder}`;
+    adviceSpan.title = "Click to open Edit Message & Timer drawer";
+    adviceSpan.addEventListener("click", () => openTodoEditModal(t));
+
+    timerHead.append(clockSpan, adviceSpan);
+
+    const barTrack = el("div", "task-running-bar-track");
+    const barFill = el("div", `task-running-bar-fill ${rt.barTone}`.trim());
+    barFill.dataset.runningFill = t.id;
+    barFill.style.width = `${rt.pct}%`;
+    barTrack.append(barFill);
+
+    timerBox.append(timerHead, barTrack);
+    mainCol.append(timerBox);
   }
 
   // WhatsApp Message Dispatch Preview Box (clickable to edit)
@@ -3537,6 +3766,12 @@ function updateStudioPulse() {
   const heroNextSub = $("#hero-metric-next-sub");
   if (heroNext) heroNext.textContent = nextVal;
   if (heroNextSub) heroNextSub.textContent = nextSub;
+
+  // Live-tick the next running follow-up banner every second
+  const scheduledActive = Array.isArray(todos)
+    ? todos.filter((t) => !t.completed && t.scheduled_at_ms).sort((a, b) => a.scheduled_at_ms - b.scheduled_at_ms)
+    : [];
+  renderNextRunningBanner(scheduledActive[0] || null, now);
 }
 setInterval(updateStudioPulse, 1000);
 
