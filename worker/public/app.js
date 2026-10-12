@@ -1286,6 +1286,30 @@ function populateTodoClientSelect() {
   if (currentVal) sel.value = currentVal;
 }
 
+function splitClockParts(ms, fallbackText = "") {
+  if (!ms || !Number.isFinite(ms)) {
+    return {
+      time: fallbackText || "Anytime",
+      day: fallbackText ? "Scheduled" : "Open Task",
+    };
+  }
+  const nowMs = Date.now();
+  const offsetMs = 6 * 3600000;
+  const d = new Date(ms + offsetMs);
+  let hours = d.getUTCHours();
+  const mins = d.getUTCMinutes();
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  const timeStr = `${hours}:${String(mins).padStart(2, "0")} ${ampm}`;
+  const dayDiff = Math.floor((ms + offsetMs) / 86400000) - Math.floor((nowMs + offsetMs) / 86400000);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  let dayStr = `${months[d.getUTCMonth()]} ${d.getUTCDate()} · BDT`;
+  if (dayDiff === 0) dayStr = "Today · BDT";
+  else if (dayDiff === 1) dayStr = "Tomorrow · BDT";
+  else if (dayDiff === -1) dayStr = "Yesterday · BDT";
+  return { time: timeStr, day: dayStr };
+}
+
 function updateTodoStats() {
   const now = Date.now();
   const active = todos.filter((t) => !t.completed);
@@ -1296,7 +1320,9 @@ function updateTodoStats() {
     .filter((t) => t.scheduled_at_ms)
     .sort((a, b) => (a.scheduled_at_ms || 0) - (b.scheduled_at_ms || 0));
   const nextTask = scheduledActive[0] || null;
-  const clientDateCount = active.filter((t) => t.task_type === "client_date" || t.task_type === "call_reminder").length;
+  const onlyClientDateCount = active.filter((t) => t.task_type === "client_date").length;
+  const onlyCallReminderCount = active.filter((t) => t.task_type === "call_reminder").length;
+  const clientDateCount = onlyClientDateCount + onlyCallReminderCount;
   const completedCount = todos.filter((t) => t.completed).length;
 
   const statToday = $("#stat-todos-today");
@@ -1321,10 +1347,23 @@ function updateTodoStats() {
   const statCompleted = $("#stat-todos-completed");
   if (statCompleted) statCompleted.textContent = String(completedCount);
 
-  // Update topbar tab badge count
-  const tabBtn = document.querySelector('.tab[data-tab="todos"]');
-  if (tabBtn) {
-    tabBtn.textContent = active.length > 0 ? `Tasks ✅ (${active.length})` : "Tasks ✅";
+  // Update Segmented Filter Dock live counts
+  const setCnt = (id, val) => {
+    const elNode = $(id);
+    if (elNode) elNode.textContent = String(val);
+  };
+  setCnt("#filter-cnt-active", active.length);
+  setCnt("#filter-cnt-today", todayTasks.length);
+  setCnt("#filter-cnt-client", onlyClientDateCount);
+  setCnt("#filter-cnt-call", onlyCallReminderCount);
+  setCnt("#filter-cnt-done", completedCount);
+  setCnt("#filter-cnt-all", todos.length);
+
+  // Update topbar nav badge without clobbering the SVG icon
+  const navTodosBadge = $("#nav-badge-todos");
+  if (navTodosBadge) {
+    navTodosBadge.textContent = String(active.length);
+    navTodosBadge.classList.toggle("hidden", active.length === 0);
   }
 }
 
@@ -1340,8 +1379,8 @@ function renderHomeTodayTasks() {
     container.replaceChildren(
       el(
         "div",
-        "muted small-text",
-        "No upcoming AI follow-ups or tasks queued right now. Add a task in Tasks ✅ or let Nyra auto-schedule when a client replies with a time.",
+        "empty-state-box",
+        "No upcoming AI follow-ups or tasks queued right now. Add a schedule in Task Bar or let Nyra auto-schedule when a client replies with a time.",
       ),
     );
     return;
@@ -1352,55 +1391,44 @@ function renderHomeTodayTasks() {
     ...topItems.map((t) => {
       const cd = formatTodoCountdown(t);
       const meta = getTaskTypeMeta(t.task_type);
-      const clockText = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date, t) : t.due_date || "Anytime";
+      const clockParts = splitClockParts(t.scheduled_at_ms, t.due_date);
       const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, t) : null;
 
       const row = el("div", "todo-home-row");
-      row.style.cssText = `display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:11px 14px; border-radius:12px; background:var(--panel-2); border:1px solid var(--line); border-left:3px solid ${meta.accent}; flex-wrap:wrap;`;
+      row.style.setProperty("--task-accent", meta.accent);
 
-      const left = el("div");
-      left.style.cssText = "flex:1; min-width:220px;";
-
-      const topLine = el("div");
-      topLine.style.cssText = "display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;";
-
-      const timePill = el("span", "badge", `🕐 ${clockText}`);
-      timePill.style.cssText = "background:rgba(244,63,94,0.14); color:var(--rose-light); border:1px solid rgba(244,63,94,0.35); font-weight:700;";
-
-      const cdPill = el("span", "badge", cd.label);
-      cdPill.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:600;`;
-
-      const typeBadge = el("span", `badge ${meta.cls}`, meta.badge);
-      topLine.append(timePill);
+      const timeCol = el("div", "todo-home-time");
+      const clockEl = el("div", "todo-home-clock", clockParts.time);
+      const dayEl = el("div", "todo-home-sub", `${clockParts.day} · ${cd.label}`);
+      dayEl.style.color = cd.color;
+      timeCol.append(clockEl, dayEl);
       if (clientOrig) {
-        const clientTzPill = el("span", "badge", `🌍 Client: ${clientOrig.clock} (${clientOrig.tzInfo.shortCountry})`);
-        clientTzPill.style.cssText = "background:rgba(14,165,233,0.14); color:#0ea5e9; border:1px solid rgba(14,165,233,0.35); font-weight:600;";
-        topLine.append(clientTzPill);
+        const origSub = el("div", "todo-home-sub", `🌍 ${clientOrig.clock}`);
+        origSub.style.color = "#38bdf8";
+        timeCol.append(origSub);
       }
-      topLine.append(cdPill, typeBadge);
 
-      const titleLine = el("div", null, t.task);
-      titleLine.style.cssText = "font-weight:600; font-size:13.5px; color:var(--text); margin-bottom:3px;";
-      left.append(topLine, titleLine);
+      const bodyCol = el("div", "todo-home-body");
+      const titleLine = el("div", "todo-home-title");
+      if (t.client_name) {
+        const chip = el("span", "task-client-chip");
+        chip.append(el("span", "task-client-mini-avatar", getMonogram(t.client_name)), el("span", null, t.client_name));
+        titleLine.append(chip);
+      }
+      titleLine.append(el("span", null, t.task), el("span", `badge ${meta.cls}`, meta.badge));
+      bodyCol.append(titleLine);
 
       if (t.ai_message) {
-        const msgPreview = el("div", "small-text", `💬 "${t.ai_message}"`);
-        msgPreview.style.cssText =
-          "color:var(--muted); background:var(--surface-inset); padding:5px 9px; border-radius:7px; border:1px dashed var(--line); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:680px;";
-        left.append(msgPreview);
+        bodyCol.append(el("div", "todo-home-msg", `💬 "${t.ai_message}"`));
       }
 
-      const right = el("div");
-      right.style.cssText = "display:flex; gap:6px; align-items:center; flex-shrink:0;";
-
-      const editBtn = el("button", "ghost small", "✏️ Edit / Msg");
+      const rightCol = el("div", "task-quick-slots-group");
+      const editBtn = el("button", "ghost small task-slot-pill", "✎ Edit");
       editBtn.type = "button";
-      editBtn.addEventListener("click", () => {
-        openTodoEditModal(t);
-      });
+      editBtn.addEventListener("click", () => openTodoEditModal(t));
+      rightCol.append(editBtn);
 
-      right.append(editBtn);
-      row.append(left, right);
+      row.append(timeCol, bodyCol, rightCol);
       return row;
     }),
   );
@@ -1437,6 +1465,249 @@ function getFilteredTodos() {
   });
 }
 
+function buildStudioTodoCard(t, allLeads) {
+  const linkedBooking = t.booking_id ? allLeads.find((b) => b.id === t.booking_id) : null;
+  const effectiveRecord = {
+    ...t,
+    phone: t.phone || linkedBooking?.phone || t.chat_id || linkedBooking?.chat_id,
+    timezone: t.timezone || linkedBooking?.timezone,
+  };
+  const tzInfo = resolveRecordTimezoneInfo(effectiveRecord);
+  const cd = formatTodoCountdown(t);
+  const meta = getTaskTypeMeta(t.task_type);
+  const clockParts = splitClockParts(t.scheduled_at_ms, t.due_date);
+  const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, effectiveRecord) : null;
+
+  const card = el("div", `todo-timeline-card ${t.completed ? "disabled" : ""}`);
+  card.style.setProperty("--task-accent", t.completed ? "#10b981" : meta.accent);
+
+  // ── 1. Left Time & Countdown Rail ─────────────────────────────────────────
+  const timeRail = el("div", "task-time-rail");
+  const clockTop = el("div", "task-clock-top");
+  clockTop.append(
+    el("div", "task-clock-time", clockParts.time),
+    el("div", "task-clock-day", clockParts.day),
+  );
+  timeRail.append(clockTop);
+
+  const cdPill = el("span", "task-countdown-pill", cd.label);
+  cdPill.style.background = cd.bg;
+  cdPill.style.color = cd.color;
+  cdPill.style.border = `1px solid ${cd.border}`;
+  timeRail.append(cdPill);
+
+  if (clientOrig) {
+    const foreignBox = el("div", "task-foreign-tz-box");
+    const foreignClock = clientOrig.clock.replace(/^(Today,\s*|Tomorrow,\s*)/i, "");
+    foreignBox.append(
+      el("span", null, `🌍 ${foreignClock}`),
+      el("small", null, `${clientOrig.tzInfo.flag} ${clientOrig.tzInfo.country} Time`),
+    );
+    timeRail.append(foreignBox);
+  }
+
+  // ── 2. Right Main Content Column ──────────────────────────────────────────
+  const mainCol = el("div", "task-main-col");
+
+  // Header row: Interactive check circle + Task Objective Title + Category/Status pills
+  const headRow = el("div", "task-head-row");
+  const titleGroup = el("div", "task-title-group");
+
+  const checkBtn = el("button", `task-check-circle ${t.completed ? "checked" : ""}`, "✓");
+  checkBtn.type = "button";
+  checkBtn.title = t.completed ? "Reopen task" : "Mark task completed";
+  checkBtn.addEventListener("click", async () => {
+    await api("PATCH", "/api/todos", { id: t.id, completed: !t.completed });
+    await loadTodos();
+  });
+
+  const titleText = el("div", `task-objective-title ${t.completed ? "done" : ""}`, t.task);
+  titleGroup.append(checkBtn, titleText);
+
+  const metaPills = el("div", "task-meta-pills");
+  metaPills.append(el("span", `badge ${meta.cls}`, meta.badge));
+
+  if (t.phone) {
+    const autoBadge = el(
+      "span",
+      `badge ${t.auto_send ? "badge-confirmed" : "badge-source"}`,
+      t.auto_send ? "🚀 Auto-Send" : "⏸️ Manual",
+    );
+    metaPills.append(autoBadge);
+  }
+
+  headRow.append(titleGroup, metaPills);
+  mainCol.append(headRow);
+
+  // Client Identity & Contact Metadata Strip
+  if (t.client_name || t.phone || tzInfo || (linkedBooking && linkedBooking.call_time_ms) || t.booking_id) {
+    const clientStrip = el("div", "task-client-strip");
+
+    if (t.client_name) {
+      const clientChip = el("span", "task-client-chip");
+      clientChip.append(
+        el("span", "task-client-mini-avatar", getMonogram(t.client_name)),
+        el("span", null, t.client_name),
+      );
+      clientStrip.append(clientChip);
+    }
+
+    if (t.phone) {
+      const cleanPh = String(t.phone).replace(/[^\d]/g, "");
+      const phoneLink = el("a", "task-meta-tag", `💬 +${cleanPh} ↗`);
+      phoneLink.href = `https://wa.me/${cleanPh}`;
+      phoneLink.target = "_blank";
+      phoneLink.rel = "noopener";
+      clientStrip.append(phoneLink);
+    }
+
+    if (tzInfo) {
+      const tzTag = el("span", "task-meta-tag", `${tzInfo.flag} ${tzInfo.code} (${tzInfo.gmtLabel})`);
+      if (tzInfo.isForeign) {
+        tzTag.style.borderColor = "rgba(14, 165, 233, 0.3)";
+        tzTag.style.color = "#38bdf8";
+      }
+      clientStrip.append(tzTag);
+    }
+
+    if (linkedBooking && linkedBooking.call_time_ms) {
+      const localCallClock = formatSingleTzClock(linkedBooking.call_time_ms, 6, "BDT");
+      const clientCallClock =
+        tzInfo && tzInfo.isForeign ? formatSingleTzClock(linkedBooking.call_time_ms, tzInfo.offset, tzInfo.code) : null;
+      const callTag = el(
+        "span",
+        "task-meta-tag task-call-pill",
+        clientCallClock ? `📅 Call: ${localCallClock} ⇄ ${clientCallClock}` : `📅 Call: ${localCallClock}`,
+      );
+      clientStrip.append(callTag);
+    }
+
+    if (t.booking_id) {
+      clientStrip.append(el("span", "task-meta-tag", "🔗 CRM Synced"));
+    }
+
+    mainCol.append(clientStrip);
+  }
+
+  // WhatsApp Message Dispatch Preview Box (clickable to edit)
+  if (t.ai_message || t.phone || t.booking_id) {
+    const msgBox = el("div", "todo-msg-box");
+    msgBox.title = "Click to edit this WhatsApp message or reschedule time";
+    msgBox.addEventListener("click", () => openTodoEditModal(t));
+
+    const msgHead = el("div", "todo-msg-head");
+    msgHead.append(
+      el(
+        "span",
+        "todo-msg-label",
+        t.completed && t.sent_at ? "✓ Dispatched on WhatsApp by Nyra Rose" : "💬 Scheduled WhatsApp Message",
+      ),
+      el("span", "todo-msg-edit-pill", "✎ Edit Message & Time"),
+    );
+
+    const msgBody = el(
+      "div",
+      "todo-msg-body",
+      t.ai_message || "(No message drafted yet — click to write the WhatsApp message Nyra will send)",
+    );
+    msgBox.append(msgHead, msgBody);
+    mainCol.append(msgBox);
+  }
+
+  // Clean Footer Action Toolbar
+  const actions = el("div", "todo-actions-dock");
+  const leftBtns = el("div", "task-quick-slots-group");
+
+  const editBtn = el("button", "ghost small task-slot-pill", "✎ Edit & Timer");
+  editBtn.type = "button";
+  editBtn.addEventListener("click", () => openTodoEditModal(t));
+  leftBtns.append(editBtn);
+
+  if (!t.completed) {
+    const plus30mBtn = el("button", "ghost small task-slot-pill", "+30m");
+    plus30mBtn.type = "button";
+    plus30mBtn.title = "Push scheduled time forward by 30 minutes";
+    plus30mBtn.addEventListener("click", async () => {
+      const base = t.scheduled_at_ms && t.scheduled_at_ms > Date.now() ? t.scheduled_at_ms : Date.now();
+      const nextMs = base + 1800000;
+      await api("PATCH", "/api/todos", { id: t.id, scheduledAtMs: nextMs, dueDate: formatBdtClock(nextMs) });
+      await loadTodos();
+    });
+
+    const plus1hBtn = el("button", "ghost small task-slot-pill", "+1h");
+    plus1hBtn.type = "button";
+    plus1hBtn.title = "Push scheduled time forward by 1 hour";
+    plus1hBtn.addEventListener("click", async () => {
+      const base = t.scheduled_at_ms && t.scheduled_at_ms > Date.now() ? t.scheduled_at_ms : Date.now();
+      const nextMs = base + 3600000;
+      await api("PATCH", "/api/todos", { id: t.id, scheduledAtMs: nextMs, dueDate: formatBdtClock(nextMs) });
+      await loadTodos();
+    });
+
+    const tmrwBtn = el("button", "ghost small task-slot-pill", "🌅 Tomorrow 11a");
+    tmrwBtn.type = "button";
+    tmrwBtn.title = "Reschedule to Tomorrow 11:00 AM BDT";
+    tmrwBtn.addEventListener("click", async () => {
+      const nextMs = parseClientNaturalTimeToMs("Tomorrow 11:00 AM");
+      await api("PATCH", "/api/todos", {
+        id: t.id,
+        scheduledAtMs: nextMs,
+        timePhrase: "Tomorrow 11:00 AM",
+        dueDate: formatBdtClock(nextMs),
+      });
+      await loadTodos();
+    });
+
+    leftBtns.append(plus30mBtn, plus1hBtn, tmrwBtn);
+  }
+
+  const rightBtns = el("div", "task-quick-slots-group");
+
+  if (!t.completed && (t.phone || (t.chat_id && t.chat_id !== "dashboard"))) {
+    const sendNowBtn = el("button", "small btn-tone-emerald task-slot-pill", "🚀 Send Now");
+    sendNowBtn.type = "button";
+    sendNowBtn.addEventListener("click", async () => {
+      sendNowBtn.disabled = true;
+      sendNowBtn.textContent = "⏳ Sending…";
+      try {
+        await api("POST", "/api/todos/send", { id: t.id, customText: t.ai_message });
+        await loadTodos();
+      } catch (err) {
+        alert(`Failed to send via WhatsApp: ${err.message}`);
+        sendNowBtn.disabled = false;
+        sendNowBtn.textContent = "🚀 Send Now";
+      }
+    });
+    rightBtns.append(sendNowBtn);
+  }
+
+  const togBtn = el("button", "ghost small task-slot-pill", t.completed ? "↺ Reopen" : "✓ Done");
+  togBtn.type = "button";
+  togBtn.addEventListener("click", async () => {
+    await api("PATCH", "/api/todos", { id: t.id, completed: !t.completed });
+    await loadTodos();
+  });
+
+  const delBtn = el("button", "danger small task-slot-pill", "✕");
+  delBtn.type = "button";
+  delBtn.title = "Delete this task";
+  delBtn.addEventListener("click", async () => {
+    if (!confirm("Delete this scheduled task?")) return;
+    await api("DELETE", `/api/todos?id=${t.id}`);
+    todos = todos.filter((x) => x.id !== t.id);
+    updateTodoStats();
+    renderTodos();
+    renderHomeTodayTasks();
+  });
+
+  rightBtns.append(togBtn, delBtn);
+  actions.append(leftBtns, rightBtns);
+  mainCol.append(actions);
+
+  card.append(timeRail, mainCol);
+  return card;
+}
+
 function renderTodos() {
   const container = $("#todos-list");
   if (!container) return;
@@ -1444,18 +1715,18 @@ function renderTodos() {
   const filtered = getFilteredTodos();
   const countLabel = $("#todos-count-label");
   if (countLabel) {
-    countLabel.textContent = `${filtered.length} task${filtered.length === 1 ? "" : "s"} shown (${todos.filter((x) => !x.completed).length} active total)`;
+    countLabel.textContent = `${filtered.length} shown · ${todos.filter((x) => !x.completed).length} active`;
   }
 
   const headingEl = $("#todos-section-heading");
   if (headingEl) {
     const titles = {
-      active: "🕐 Chronological Follow-Up & Task Timeline",
-      today: "📅 Today's Scheduled Follow-Ups & Tasks (Next 24h)",
-      client_date: "🗓️ Auto-Added Client Requested Dates & Times",
-      call_reminder: "⏰ Upcoming Booked Call Reminders",
-      completed: "✅ Sent & Completed Follow-Ups / Tasks",
-      all: "📋 All Tasks & Follow-Up History",
+      active: "Chronological Follow-Up & Task Timeline",
+      today: "Today's Scheduled Follow-Ups & Tasks (Next 24h)",
+      client_date: "Auto-Added Client Requested Dates & Times",
+      call_reminder: "Upcoming Booked Call Reminders",
+      completed: "Sent & Completed Follow-Ups / Tasks",
+      all: "All Tasks & Follow-Up History",
     };
     headingEl.textContent = titles[todoFilter] || titles.active;
   }
@@ -1464,239 +1735,65 @@ function renderTodos() {
     container.replaceChildren(
       el(
         "div",
-        "muted",
-        "No matching tasks in this view. Type a schedule above (e.g. 'Today 1pm follow up Akter — Hey bro...') or click '+ Schedule AI Follow-Up / Task'.",
+        "empty-state-box",
+        "No matching tasks in this view. Type a schedule above (e.g. 'Today 1pm follow up Akter — Hey bro...') or click '+ Schedule AI Client Follow-Up'.",
       ),
     );
     return;
   }
 
   const allLeads = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+  const now = Date.now();
 
+  // Group tasks chronologically for clean visual scanning
+  const groups = [
+    { key: "due", title: "Due Now & Immediate Dispatch", color: "#f43f5e", items: [] },
+    { key: "today", title: "Today's Schedule (BDT · GMT+6)", color: "#10b981", items: [] },
+    { key: "tomorrow", title: "Tomorrow's Schedule", color: "#38bdf8", items: [] },
+    { key: "upcoming", title: "Upcoming Scheduled Dates", color: "#a855f7", items: [] },
+    { key: "unscheduled", title: "Open & Unscheduled Tasks", color: "#94a3b8", items: [] },
+    { key: "completed", title: "Dispatched & Completed", color: "#10b981", items: [] },
+  ];
+  const groupMap = Object.fromEntries(groups.map((g) => [g.key, g]));
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (Boolean(a.completed) !== Boolean(b.completed)) return a.completed ? 1 : -1;
+    if (a.completed && b.completed) return (b.sent_at || b.created_at || 0) - (a.sent_at || a.created_at || 0);
+    return (a.scheduled_at_ms || 9999999999999) - (b.scheduled_at_ms || 9999999999999);
+  });
+
+  for (const t of sorted) {
+    if (t.completed) {
+      groupMap.completed.items.push(t);
+    } else if (!t.scheduled_at_ms) {
+      groupMap.unscheduled.items.push(t);
+    } else if (t.scheduled_at_ms <= now) {
+      groupMap.due.items.push(t);
+    } else if (isSameBdtDay(t.scheduled_at_ms, now)) {
+      groupMap.today.items.push(t);
+    } else if (isSameBdtDay(t.scheduled_at_ms, now + 86400000)) {
+      groupMap.tomorrow.items.push(t);
+    } else {
+      groupMap.upcoming.items.push(t);
+    }
+  }
+
+  const nonEmptyGroups = groups.filter((g) => g.items.length > 0);
   container.replaceChildren(
-    ...filtered.map((t) => {
-      const linkedBooking = t.booking_id ? allLeads.find((b) => b.id === t.booking_id) : null;
-      const effectiveRecord = {
-        ...t,
-        phone: t.phone || linkedBooking?.phone || t.chat_id || linkedBooking?.chat_id,
-        timezone: t.timezone || linkedBooking?.timezone,
-      };
-      const tzInfo = resolveRecordTimezoneInfo(effectiveRecord);
-      const cd = formatTodoCountdown(t);
-      const meta = getTaskTypeMeta(t.task_type);
-      const clockStr = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date, effectiveRecord) : t.due_date || "No fixed time";
-      const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, effectiveRecord) : null;
-
-      const card = el("div", `todo-timeline-card ${t.completed ? "disabled" : ""}`);
-      card.style.cssText = `border-left:4px solid ${
-        t.completed ? "#10b981" : meta.accent
-      } !important; opacity:${t.completed ? "0.74" : "1"};`;
-
-      // Top metadata row: Local Clock Pill + Client Original Clock Pill + Countdown + Task Type + Auto-Send status
-      const topRow = el("div");
-      topRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;";
-
-      const badgesLeft = el("div");
-      badgesLeft.style.cssText = "display:flex; align-items:center; gap:6px; flex-wrap:wrap;";
-
-      const clockBadge = el("span", "badge todo-time-pill", `🕐 ${clockStr}`);
-      clockBadge.style.cssText =
-        "background:rgba(244, 63, 94, 0.14); color:var(--rose-light); border:1px solid rgba(244, 63, 94, 0.38); font-weight:700; font-size:12.5px; padding:4px 10px;";
-      badgesLeft.append(clockBadge);
-
-      if (clientOrig) {
-        const clientOrigBadge = el("span", "badge", `🌍 Client Time: ${clientOrig.clock}`);
-        clientOrigBadge.style.cssText =
-          "background:rgba(14, 165, 233, 0.14); color:#0ea5e9; border:1px solid rgba(14, 165, 233, 0.38); font-weight:700; font-size:12px; padding:4px 10px;";
-        badgesLeft.append(clientOrigBadge);
-      }
-
-      const cdBadge = el("span", "badge", cd.label);
-      cdBadge.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:700; font-size:12px; padding:4px 10px;`;
-
-      const typeBadge = el("span", `badge ${meta.cls}`, meta.badge);
-      badgesLeft.append(cdBadge, typeBadge);
-
-      if (t.phone) {
-        const autoBadge = el(
-          "span",
-          "badge",
-          t.auto_send ? "🚀 Auto-Send on WhatsApp" : "⏸️ Auto-Send Paused",
-        );
-        autoBadge.style.cssText = t.auto_send
-          ? "background:rgba(16,185,129,0.12); color:var(--green); border:1px solid rgba(16,185,129,0.32);"
-          : "background:var(--surface-inset); color:var(--muted); border:1px solid var(--line);";
-        badgesLeft.append(autoBadge);
-      }
-
-      const metaRight = el("div", "small-text muted");
-      metaRight.textContent = t.booking_id ? "🔗 Synced with CRM Lead" : `Added ${fmtTime(t.created_at)}`;
-      topRow.append(badgesLeft, metaRight);
-
-      // Middle row: Task title + Client, Phone & Original Timezone chips
-      const titleRow = el("div");
-      titleRow.style.cssText = "display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;";
-
-      const titleText = el("div", null, `${t.completed ? "✓ " : ""}${t.task}`);
-      titleText.style.cssText = `font-size:15px; font-weight:700; color:var(--text); ${t.completed ? "text-decoration:line-through; color:var(--muted);" : ""}`;
-      titleRow.append(titleText);
-
-      if (t.client_name) {
-        const clientChip = el("span", "badge", `👤 ${t.client_name}`);
-        clientChip.style.cssText = "background:var(--surface-inset); color:var(--text); border:1px solid var(--line);";
-        titleRow.append(clientChip);
-      }
-      if (t.phone) {
-        const cleanPh = String(t.phone).replace(/[^\d]/g, "");
-        const phoneLink = el("a", "booking-link-pill", `📱 +${cleanPh}`);
-        phoneLink.href = `https://wa.me/${cleanPh}`;
-        phoneLink.target = "_blank";
-        phoneLink.rel = "noopener";
-        titleRow.append(phoneLink);
-      }
-      if (tzInfo) {
-        const tzChip = el("span", "badge", `🌐 Client TZ: ${tzInfo.fullBadge}`);
-        tzChip.style.cssText = tzInfo.isForeign
-          ? "background:rgba(14,165,233,0.12); color:#0ea5e9; border:1px solid rgba(14,165,233,0.3); font-size:11.5px; font-weight:600;"
-          : "background:rgba(16,185,129,0.1); color:var(--green); border:1px solid rgba(16,185,129,0.28); font-size:11.5px;";
-        titleRow.append(tzChip);
-      }
-
-      card.append(topRow, titleRow);
-
-      // If this task is a Call Reminder for a booked meeting with a known call_time_ms, display a dedicated Local vs Client Meeting Time bar
-      if (linkedBooking && linkedBooking.call_time_ms) {
-        const localCallClock = formatSingleTzClock(linkedBooking.call_time_ms, 6, "BDT");
-        const clientCallClock = tzInfo && tzInfo.isForeign
-          ? formatSingleTzClock(linkedBooking.call_time_ms, tzInfo.offset, tzInfo.code)
-          : null;
-        const callBanner = el(
-          "div",
-          "small-text",
-          clientCallClock
-            ? `📅 Booked Meeting Time — 🇧🇩 Local (Calculated): ${localCallClock}   ⇄   🌍 Client Original: ${clientCallClock} (${tzInfo.shortCountry})`
-            : `📅 Booked Meeting Time (Local BDT): ${localCallClock}`,
-        );
-        callBanner.style.cssText =
-          "background:rgba(139,92,246,0.12); border:1px solid rgba(139,92,246,0.32); color:var(--text); padding:7px 11px; border-radius:8px; margin-bottom:8px; font-weight:600;";
-        card.append(callBanner);
-      }
-
-      // Exact WhatsApp AI Message Box (clickable to edit)
-      if (t.ai_message || t.phone || t.booking_id) {
-        const msgBox = el("div", "todo-msg-box");
-        msgBox.title = "Click to edit this WhatsApp message or reschedule time";
-        msgBox.addEventListener("click", () => openTodoEditModal(t));
-
-        const msgHeader = el("div");
-        msgHeader.style.cssText = "display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;";
-        const msgLabel = el(
-          "span",
-          "small-text",
-          t.completed && t.sent_at
-            ? "💬 WhatsApp Message Dispatched by Nyra Rose:"
-            : "💬 Exact WhatsApp Message Nyra Rose Will Send at Scheduled Time:",
-        );
-        msgLabel.style.cssText = "color:var(--rose-light); font-weight:600; font-size:11.5px;";
-        const editHint = el("span", "small-text muted", "✏️ Click to rewrite message or change time");
-        editHint.style.fontSize = "11px";
-        msgHeader.append(msgLabel, editHint);
-
-        const msgBody = el(
-          "div",
-          null,
-          t.ai_message || "(No message drafted yet — click here to write the WhatsApp message Nyra will send)",
-        );
-        msgBody.style.cssText = "color:var(--text); font-size:13.5px; line-height:1.45; white-space:pre-wrap;";
-        msgBox.append(msgHeader, msgBody);
-        card.append(msgBox);
-      }
-
-      // Action controls row
-      const actions = el("div", "todo-actions-dock");
-
-      const leftBtns = el("div");
-      leftBtns.style.cssText = "display:flex; gap:6px; flex-wrap:wrap; align-items:center;";
-
-      const editBtn = el("button", "ghost small", "✏️ Edit Time / Message");
-      editBtn.type = "button";
-      editBtn.style.borderColor = "rgba(244, 63, 94, 0.38)";
-      editBtn.style.color = "var(--rose-light)";
-      editBtn.addEventListener("click", () => openTodoEditModal(t));
-      leftBtns.append(editBtn);
-
-      if (!t.completed && (t.phone || (t.chat_id && t.chat_id !== "dashboard"))) {
-        const sendNowBtn = el("button", "small btn-tone-emerald", "🚀 Send Now via Nyra");
-        sendNowBtn.type = "button";
-        sendNowBtn.addEventListener("click", async () => {
-          sendNowBtn.disabled = true;
-          sendNowBtn.textContent = "⏳ Sending...";
-          try {
-            await api("POST", "/api/todos/send", { id: t.id, customText: t.ai_message });
-            await loadTodos();
-          } catch (err) {
-            alert(`Failed to send via WhatsApp: ${err.message}`);
-            sendNowBtn.disabled = false;
-            sendNowBtn.textContent = "🚀 Send Now via Nyra";
-          }
-        });
-        leftBtns.append(sendNowBtn);
-      }
-
-      if (!t.completed) {
-        const plus1hBtn = el("button", "ghost small", "⏱ +1h");
-        plus1hBtn.type = "button";
-        plus1hBtn.title = "Push scheduled time forward by 1 hour";
-        plus1hBtn.addEventListener("click", async () => {
-          const base = t.scheduled_at_ms && t.scheduled_at_ms > Date.now() ? t.scheduled_at_ms : Date.now();
-          const nextMs = base + 3600000;
-          await api("PATCH", "/api/todos", { id: t.id, scheduledAtMs: nextMs, dueDate: formatBdtClock(nextMs) });
-          await loadTodos();
-        });
-
-        const tmrwBtn = el("button", "ghost small", "🌅 Tomorrow 11 AM");
-        tmrwBtn.type = "button";
-        tmrwBtn.title = "Reschedule to Tomorrow 11:00 AM BDT";
-        tmrwBtn.addEventListener("click", async () => {
-          const nextMs = parseClientNaturalTimeToMs("Tomorrow 11:00 AM");
-          await api("PATCH", "/api/todos", {
-            id: t.id,
-            scheduledAtMs: nextMs,
-            timePhrase: "Tomorrow 11:00 AM",
-            dueDate: formatBdtClock(nextMs),
-          });
-          await loadTodos();
-        });
-
-        leftBtns.append(plus1hBtn, tmrwBtn);
-      }
-
-      const rightBtns = el("div");
-      rightBtns.style.cssText = "display:flex; gap:6px; align-items:center;";
-
-      const togBtn = el("button", "ghost small", t.completed ? "↺ Reopen Task" : "✓ Mark Done");
-      togBtn.type = "button";
-      togBtn.addEventListener("click", async () => {
-        const next = !t.completed;
-        await api("PATCH", "/api/todos", { id: t.id, completed: next });
-        await loadTodos();
-      });
-
-      const delBtn = el("button", "danger small", "🗑️ Delete");
-      delBtn.type = "button";
-      delBtn.addEventListener("click", async () => {
-        if (!confirm("Delete this scheduled task?")) return;
-        await api("DELETE", `/api/todos?id=${t.id}`);
-        todos = todos.filter((x) => x.id !== t.id);
-        updateTodoStats();
-        renderTodos();
-        renderHomeTodayTasks();
-      });
-
-      rightBtns.append(togBtn, delBtn);
-      actions.append(leftBtns, rightBtns);
-      card.append(actions);
-      return card;
+    ...nonEmptyGroups.map((g) => {
+      const section = el("div", "task-group-section");
+      const header = el("div", "task-group-header");
+      const dot = el("span", "task-group-dot");
+      dot.style.background = g.color;
+      dot.style.boxShadow = `0 0 8px ${g.color}`;
+      header.append(
+        dot,
+        el("span", "task-group-title", g.title),
+        el("span", "task-group-line"),
+        el("span", "task-group-count", `${g.items.length} ${g.items.length === 1 ? "task" : "tasks"}`),
+      );
+      section.append(header, ...g.items.map((t) => buildStudioTodoCard(t, allLeads)));
+      return section;
     }),
   );
 }
@@ -1778,6 +1875,16 @@ $("#new-todo-form")?.addEventListener("submit", async (e) => {
     await loadTodos();
   }
   input.value = "";
+});
+
+// Quick syntax template chips below Quick Command Bar
+document.querySelectorAll(".todo-syntax-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const input = $("#todo-input");
+    if (!input) return;
+    input.value = chip.dataset.template || "";
+    input.focus();
+  });
 });
 
 // Filter tabs & Search in #tab-todos

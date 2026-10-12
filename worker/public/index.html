@@ -732,11 +732,19 @@
           </div>
         </div>
 
-        <!-- Quick Smart Input Bar (supports plain tasks OR natural language like "Today 1pm follow up Akter - Hey bro!") -->
-        <form id="new-todo-form" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
-          <input id="todo-input" placeholder="⚡ Quick Add: e.g. 'Today 1pm follow up Akter — Hey bro, ready for your video edit?' or any task..." style="margin: 0; flex: 1; min-width: 240px;" required />
-          <button type="submit">+ Add to Schedule</button>
+        <!-- Quick Smart Studio Command Bar -->
+        <form id="new-todo-form" class="todo-command-bar">
+          <span class="todo-command-icon">⚡</span>
+          <input id="todo-input" placeholder="Quick schedule: 'Today 1pm follow up Akter — Hey bro, ready for your video edit?' or any task…" required />
+          <button type="submit" class="small">+ Add to Schedule</button>
         </form>
+        <div class="todo-syntax-chips">
+          <span class="muted small-text" style="font-size: 11px;">Quick templates:</span>
+          <span class="todo-syntax-chip" data-template="Today 2:00 PM follow up ">🕐 Today 2:00 PM follow up…</span>
+          <span class="todo-syntax-chip" data-template="in 2 hours follow up ">⏱️ In 2 hours follow up…</span>
+          <span class="todo-syntax-chip" data-template="Tomorrow 11:00 AM follow up ">🌅 Tomorrow 11 AM follow up…</span>
+          <span class="todo-syntax-chip" data-template="21 date 4:00 PM follow up ">🗓️ 21 date 4 PM follow up…</span>
+        </div>
 
         <!-- Full AI Follow-Up Task & Message Composer (Collapsible) -->
         <form id="ai-todo-composer" class="hidden" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px;">
@@ -810,15 +818,33 @@
           </div>
         </form>
 
-        <!-- Timeline Filters & Search -->
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);">
-          <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="todo-filter-tabs">
-            <button type="button" class="small ghost todo-filter-btn active" data-filter="active">⚡ Active Schedule</button>
-            <button type="button" class="small ghost todo-filter-btn" data-filter="today">📅 Today's Timeline</button>
-            <button type="button" class="small ghost todo-filter-btn" data-filter="client_date">🤖 Client-Requested Dates</button>
-            <button type="button" class="small ghost todo-filter-btn" data-filter="call_reminder">🔔 30m Call Reminders</button>
-            <button type="button" class="small ghost todo-filter-btn" data-filter="completed">✅ Sent / Completed</button>
-            <button type="button" class="small ghost todo-filter-btn" data-filter="all">All</button>
+        <!-- Segmented Timeline Filter Dock & Search -->
+        <div class="todo-filter-toolbar">
+          <div class="todo-filter-dock" id="todo-filter-tabs">
+            <button type="button" class="small ghost todo-filter-btn active" data-filter="active">
+              <span>⚡ Active</span>
+              <span class="todo-filter-count" id="filter-cnt-active">0</span>
+            </button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="today">
+              <span>📅 Today</span>
+              <span class="todo-filter-count" id="filter-cnt-today">0</span>
+            </button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="client_date">
+              <span>🤖 Client Dates</span>
+              <span class="todo-filter-count" id="filter-cnt-client">0</span>
+            </button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="call_reminder">
+              <span>🔔 Call Reminders</span>
+              <span class="todo-filter-count" id="filter-cnt-call">0</span>
+            </button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="completed">
+              <span>✅ Completed</span>
+              <span class="todo-filter-count" id="filter-cnt-done">0</span>
+            </button>
+            <button type="button" class="small ghost todo-filter-btn" data-filter="all">
+              <span>All</span>
+              <span class="todo-filter-count" id="filter-cnt-all">0</span>
+            </button>
           </div>
           <div style="min-width: 220px; flex: 1; max-width: 320px;">
             <input id="todos-search" placeholder="🔍 Search client, phone, time, or message…" style="margin: 0; padding: 7px 11px; font-size: 12.5px;" />
@@ -828,9 +854,15 @@
 
       <!-- Chronological Timeline List -->
       <div class="card">
-        <div class="chat-head">
-          <h2 style="margin: 0;" id="todos-section-heading">📅 Live AI Follow-Up &amp; Task Timeline</h2>
-          <span id="todos-count-label" class="muted small-text mono-text"></span>
+        <div class="chat-head" style="margin-bottom: 14px;">
+          <div class="card-title-group">
+            <div class="card-icon-cap">🕐</div>
+            <div>
+              <h2 style="margin: 0;" id="todos-section-heading">Chronological Follow-Up &amp; Task Timeline</h2>
+              <div class="muted small-text" style="font-size: 11px;">Calculated Local Time (BDT · GMT+6) with automatic Client Original Timezone conversion</div>
+            </div>
+          </div>
+          <span id="todos-count-label" class="badge badge-source mono-text" style="font-size: 11px; padding: 4px 10px;"></span>
         </div>
         <div id="todos-list" class="rules-list"></div>
       </div>
