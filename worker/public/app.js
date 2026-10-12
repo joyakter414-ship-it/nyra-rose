@@ -2,6 +2,7 @@
 // All user/WhatsApp content is inserted with textContent (never innerHTML).
 
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
