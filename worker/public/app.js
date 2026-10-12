@@ -313,31 +313,24 @@ function renderInstantReplyControls() {
   if (quickPill) {
     if (paused) {
       quickPill.textContent = "⏸️ PAUSED (Follow-Ups Active)";
-      quickPill.style.background = "#eab30822";
-      quickPill.style.color = "#fde047";
-      quickPill.style.borderColor = "#eab30866";
+      quickPill.style.background = "rgba(245, 158, 11, 0.14)";
+      quickPill.style.color = "#f59e0b";
+      quickPill.style.border = "1px solid rgba(245, 158, 11, 0.38)";
     } else {
       quickPill.textContent = `⚡ Instant AI Active${pausedChats.length ? ` (${pausedChats.length} chat${pausedChats.length > 1 ? "s" : ""} paused)` : ""}`;
-      quickPill.style.background = "#10b98122";
-      quickPill.style.color = "#34d399";
-      quickPill.style.borderColor = "#10b98144";
+      quickPill.style.background = "rgba(16, 185, 129, 0.12)";
+      quickPill.style.color = "var(--green)";
+      quickPill.style.border = "1px solid rgba(16, 185, 129, 0.34)";
     }
   }
 
   const topbarBtn = $("#topbar-instant-pause-btn");
   if (topbarBtn) {
     topbarBtn.classList.remove("hidden");
-    if (paused) {
-      topbarBtn.textContent = "▶️ Instant Reply: PAUSED (Follow-Ups ON)";
-      topbarBtn.style.background = "#854d0e";
-      topbarBtn.style.color = "#fef08a";
-      topbarBtn.style.borderColor = "#eab308";
-    } else {
-      topbarBtn.textContent = `⏸️ Pause Instant Reply${pausedChats.length ? ` (${pausedChats.length})` : ""}`;
-      topbarBtn.style.background = "var(--panel-2)";
-      topbarBtn.style.color = "var(--text)";
-      topbarBtn.style.borderColor = "var(--line)";
-    }
+    topbarBtn.classList.toggle("btn-tone-amber", paused);
+    topbarBtn.textContent = paused
+      ? "▶️ Instant Reply: PAUSED"
+      : `⏸️ Pause Instant Reply${pausedChats.length ? ` (${pausedChats.length})` : ""}`;
   }
 
   const homeState = $("#home-instant-reply-state");
@@ -345,15 +338,13 @@ function renderInstantReplyControls() {
     homeState.textContent = paused
       ? "⏸️ Global Instant AI Reply is PAUSED — Nyra will NOT send instant replies so you can chat manually, while Scheduled Follow-Ups & 30m Call Reminders remain 100% ACTIVE."
       : "⚡ Global Instant AI Reply is ACTIVE — Nyra replies immediately to incoming chats AND sends scheduled follow-ups.";
-    homeState.style.color = paused ? "#fde047" : "#34d399";
+    homeState.style.color = paused ? "#f59e0b" : "var(--green)";
   }
 
   const homeBtn = $("#home-toggle-instant-pause-btn");
   if (homeBtn) {
     homeBtn.textContent = paused ? "▶️ Resume Global Instant AI Reply" : "⏸️ Pause All Instant AI Replies";
-    homeBtn.style.background = paused ? "#15803d" : "#854d0e";
-    homeBtn.style.color = "#fff";
-    homeBtn.style.borderColor = paused ? "#22c55e" : "#eab308";
+    homeBtn.className = `small ${paused ? "btn-tone-emerald" : "btn-tone-amber"}`;
   }
 
   const crmTitle = $("#crm-instant-reply-banner-title");
@@ -366,9 +357,7 @@ function renderInstantReplyControls() {
   const crmBtn = $("#crm-toggle-instant-pause-btn");
   if (crmBtn) {
     crmBtn.textContent = paused ? "▶️ Resume All Instant Replies" : "⏸️ Pause All Instant Replies";
-    crmBtn.style.background = paused ? "#15803d" : "#854d0e";
-    crmBtn.style.color = "#fff";
-    crmBtn.style.borderColor = paused ? "#22c55e" : "#eab308";
+    crmBtn.className = `small ${paused ? "btn-tone-emerald" : "btn-tone-amber"}`;
   }
 
   const listEl = $("#home-paused-chats-list");
@@ -389,21 +378,15 @@ function renderInstantReplyControls() {
             return bDigits && (bDigits === num || bDigits.endsWith(num) || num.endsWith(bDigits));
           });
           const label = matchedBooking?.client_name ? `${matchedBooking.client_name} (+${num})` : `+${num}`;
-          const pill = el("span", "badge");
-          pill.style.background = "#422006";
-          pill.style.color = "#fde047";
-          pill.style.border = "1px solid #eab30866";
+          const pill = el("span", "badge badge-booked");
           pill.style.display = "inline-flex";
           pill.style.alignItems = "center";
           pill.style.gap = "8px";
           pill.style.padding = "5px 10px";
           pill.append(el("span", null, `⏸️ ${label} (Follow-Ups ON)`));
-          const resumeBtn = el("button", "small", "▶️ Resume");
-          resumeBtn.style.padding = "2px 6px";
+          const resumeBtn = el("button", "small btn-tone-emerald", "▶️ Resume");
+          resumeBtn.style.padding = "2px 8px";
           resumeBtn.style.fontSize = "11px";
-          resumeBtn.style.background = "#15803d";
-          resumeBtn.style.color = "#fff";
-          resumeBtn.style.border = "none";
           resumeBtn.addEventListener("click", () => toggleChatInstantPause(num));
           pill.appendChild(resumeBtn);
           return pill;
@@ -567,19 +550,35 @@ $("#chat-reset").addEventListener("click", async () => {
 
 // ─── Conversations ───────────────────────────────────────────────────────────
 
+function getMonogram(label) {
+  const str = String(label || "").replace(/[^\p{L}\p{N}\s]/gu, "").trim();
+  if (!str) return "💬";
+  const parts = str.split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return str.slice(0, 2).toUpperCase();
+}
+
 async function loadChats() {
   const { chats } = await api("GET", "/api/chats");
   const list = $("#chat-list");
+  if (!chats || chats.length === 0) {
+    list.replaceChildren(el("div", "empty-state-box", "No WhatsApp conversations logged yet."));
+    return;
+  }
   list.replaceChildren(
     ...chats.map((c) => {
       const item = el("div", `chat-item ${currentChat === c.chat_id ? "active" : ""}`);
+      const avatar = el("div", "chat-avatar", getMonogram(c.name || c.chat_id));
       const info = el("div");
+      info.style.flex = "1";
+      info.style.minWidth = "0";
       const paused = isChatInstantPaused(c.chat_id) || Boolean(overview?.settings?.instantReplyPaused);
       info.append(
         el("div", "title", `${c.name || c.chat_id}${paused ? " ⏸️" : ""}`),
-        el("div", "sub", `${c.message_count} messages · ${fmtTime(c.last_at)}${paused ? " · Instant AI Paused (Follow-Ups ON)" : ""}`)
+        el("div", "sub", `${c.message_count} msgs · ${fmtTime(c.last_at)}${paused ? " · Paused" : ""}`)
       );
-      item.append(info);
+      const countBadge = el("span", "badge badge-source", String(c.message_count || 0));
+      item.append(avatar, info, countBadge);
       item.addEventListener("click", () => selectChat(c));
       return item;
     }),
@@ -595,8 +594,7 @@ async function selectChat(c) {
   if (pauseInstantBtn) {
     pauseInstantBtn.classList.remove("hidden");
     pauseInstantBtn.textContent = chatPaused ? "▶️ Resume Instant Reply" : "⏸️ Pause Instant Reply (Keep Follow-Ups)";
-    pauseInstantBtn.style.background = chatPaused ? "#15803d" : "#854d0e";
-    pauseInstantBtn.style.color = "#fff";
+    pauseInstantBtn.className = `small ${chatPaused ? "btn-tone-emerald" : "btn-tone-amber"}`;
     pauseInstantBtn.onclick = async () => {
       await toggleChatInstantPause(c.chat_id);
       await loadChats();
@@ -638,7 +636,7 @@ async function loadRules() {
 function renderRules() {
   const container = $("#rules-list");
   if (rules.length === 0) {
-    container.replaceChildren(el("div", "muted", "No rules created yet. Add one above!"));
+    container.replaceChildren(el("div", "empty-state-box", "No rules created yet. Click '+ Add New Rule' above to create one."));
     return;
   }
 
@@ -732,7 +730,7 @@ async function loadNotes() {
 function renderNotes() {
   const container = $("#notes-list");
   if (notes.length === 0) {
-    container.replaceChildren(el("div", "muted", "No notes stored yet. Use /note <text> on WhatsApp or add one above."));
+    container.replaceChildren(el("div", "empty-state-box", "No notes stored yet. Use /note <text> on WhatsApp or add one above."));
     return;
   }
   container.replaceChildren(
@@ -1615,23 +1613,21 @@ function renderTodos() {
       }
 
       // Action controls row
-      const actions = el("div");
-      actions.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:6px;";
+      const actions = el("div", "todo-actions-dock");
 
       const leftBtns = el("div");
       leftBtns.style.cssText = "display:flex; gap:6px; flex-wrap:wrap; align-items:center;";
 
       const editBtn = el("button", "ghost small", "✏️ Edit Time / Message");
       editBtn.type = "button";
-      editBtn.style.borderColor = "rgba(244, 63, 94, 0.4)";
-      editBtn.style.color = "#fda4af";
+      editBtn.style.borderColor = "rgba(244, 63, 94, 0.38)";
+      editBtn.style.color = "var(--rose-light)";
       editBtn.addEventListener("click", () => openTodoEditModal(t));
       leftBtns.append(editBtn);
 
       if (!t.completed && (t.phone || (t.chat_id && t.chat_id !== "dashboard"))) {
-        const sendNowBtn = el("button", "small", "🚀 Send Now via Nyra");
+        const sendNowBtn = el("button", "small btn-tone-emerald", "🚀 Send Now via Nyra");
         sendNowBtn.type = "button";
-        sendNowBtn.style.cssText = "background:linear-gradient(135deg, #059669, #10b981); border-color:#10b981; color:#fff;";
         sendNowBtn.addEventListener("click", async () => {
           sendNowBtn.disabled = true;
           sendNowBtn.textContent = "⏳ Sending...";
@@ -2371,7 +2367,7 @@ function renderBookings() {
     container.replaceChildren(
       el(
         "div",
-        "muted",
+        "empty-state-box",
         bookings.length === 0
           ? "No leads recorded yet. Nyra will automatically gather lead details from WhatsApp or Web Chat!"
           : "No leads match your search query."
@@ -2395,7 +2391,8 @@ function renderBookings() {
       const isClientChatPaused = isChatInstantPaused(clientDigits);
       const isGlobalInstantPaused = Boolean(overview?.settings?.instantReplyPaused);
       clientTitle.append(
-        el("span", null, "👤 " + (b.client_name || "Lead Client")),
+        el("span", "lead-avatar", getMonogram(b.client_name || "Lead")),
+        el("span", null, b.client_name || "Lead Client"),
         el("span", `badge badge-${b.status || "booked"}`, STATUS_LABELS[b.status] || b.status),
         el("span", `badge badge-${fType}`, FOLLOWUP_LABELS[fType] || fType),
         el("span", "badge badge-timer", formatNextFollowupTimer(b)),
@@ -2404,12 +2401,9 @@ function renderBookings() {
       if (isClientChatPaused || isGlobalInstantPaused) {
         const pausedBadge = el(
           "span",
-          "badge",
+          "badge badge-booked",
           isClientChatPaused ? "⏸️ Instant Chat Paused (Follow-Ups ON)" : "⏸️ Global Instant Pause (Follow-Ups ON)"
         );
-        pausedBadge.style.background = "#854d0e";
-        pausedBadge.style.color = "#fef08a";
-        pausedBadge.style.border = "1px solid #eab308";
         clientTitle.appendChild(pausedBadge);
       }
       top.appendChild(clientTitle);
@@ -2494,7 +2488,7 @@ function renderBookings() {
           "🕵️ FAKE LEAD (30 Days No Reply): Client did not reply for 30 days across all follow-up stages. Automatically marked as Fake Lead and all follow-ups stopped."
         );
         statusGuidance.style.borderLeftColor = "#e11d48";
-        statusGuidance.style.background = "#2a151b";
+        statusGuidance.style.background = "rgba(225, 29, 72, 0.08)";
       } else if (fType === "rejected" || b.status === "not_interested") {
         statusGuidance = el(
           "div",
@@ -2502,7 +2496,7 @@ function renderBookings() {
           "🛑 Lead marked as REJECTED / NO FOLLOW-UP. All sales follow-ups and automated messages are strictly stopped."
         );
         statusGuidance.style.borderLeftColor = "#ef4444";
-        statusGuidance.style.background = "#2a151b";
+        statusGuidance.style.background = "rgba(239, 68, 68, 0.08)";
       } else if (isCall) {
         statusGuidance = el(
           "div",
@@ -2695,26 +2689,21 @@ function renderBookings() {
       const followupBtn = el("button", "small");
       if (isRejected) {
         followupBtn.textContent = b.status === "fake_lead" ? "🕵️ Fake Lead" : "🛑 Stopped";
-        followupBtn.style.background = "#2a151b";
-        followupBtn.style.color = "#f87171";
-        followupBtn.style.border = "1px solid #ef444455";
+        followupBtn.classList.add("danger");
       } else if (isCall) {
         followupBtn.textContent = "🔔 30m Reminder / Timer";
-        followupBtn.style.background = "#ca8a04";
-        followupBtn.style.color = "#fff";
+        followupBtn.classList.add("btn-tone-amber");
       } else {
         followupBtn.textContent = "⚡ Follow Up & Timer";
-        followupBtn.style.background = fType === "not_attended" || b.status === "not_attended"
-          ? "#ef4444"
-          : fType === "buy_soon" || b.status === "buy_soon"
-          ? "#0284c7"
-          : fType === "on_hold"
-          ? "#d97706"
-          : fType === "nurture"
-          ? "#7c3aed"
-          : "var(--rose-dark)";
-        followupBtn.style.color = "#fff";
-        followupBtn.style.border = "1px solid var(--line)";
+        if (fType === "not_attended" || b.status === "not_attended") {
+          followupBtn.classList.add("danger");
+        } else if (fType === "buy_soon" || b.status === "buy_soon") {
+          followupBtn.classList.add("btn-tone-sky");
+        } else if (fType === "on_hold") {
+          followupBtn.classList.add("btn-tone-amber");
+        } else if (fType === "nurture") {
+          followupBtn.classList.add("btn-tone-violet");
+        }
       }
       followupBtn.addEventListener("click", () => openFollowupModal(b));
 
@@ -2723,13 +2712,10 @@ function renderBookings() {
       if (clientDigits && clientDigits.length >= 6) {
         pauseChatBtn = el(
           "button",
-          "small",
+          `small ${isClientChatPaused ? "btn-tone-emerald" : "btn-tone-amber"}`,
           isClientChatPaused ? "▶️ Resume Instant Chat" : "⏸️ Pause Instant Chat"
         );
         pauseChatBtn.title = "Pause instant AI replies for this client so a human can chat manually, while keeping scheduled follow-ups active";
-        pauseChatBtn.style.background = isClientChatPaused ? "#15803d" : "#854d0e";
-        pauseChatBtn.style.color = "#fff";
-        pauseChatBtn.style.border = isClientChatPaused ? "1px solid #22c55e" : "1px solid #eab308";
         pauseChatBtn.addEventListener("click", async () => {
           await toggleChatInstantPause(clientDigits);
         });
@@ -2867,7 +2853,7 @@ function updateModalAlert(b) {
     alertBox.style.color = "#c084fc";
   } else {
     alertBox.textContent = "📅 Dynamic lead follow-up message based on current status.";
-    alertBox.style.background = "#120c15";
+    alertBox.style.background = "var(--surface-inset)";
     alertBox.style.color = "var(--text)";
   }
 }
