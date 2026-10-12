@@ -785,57 +785,59 @@ function isTomorrowBdtDay(ms, nowMs = Date.now()) {
 }
 
 const PHONE_PREFIX_TZ_CLIENT = [
-  { prefix: "880", code: "BDT", offset: 6, label: "Bangladesh (BDT)" },
-  { prefix: "971", code: "GST", offset: 4, label: "UAE / Dubai (GST)" },
-  { prefix: "966", code: "AST", offset: 3, label: "Saudi Arabia (AST)" },
-  { prefix: "974", code: "AST", offset: 3, label: "Qatar (AST)" },
-  { prefix: "965", code: "AST", offset: 3, label: "Kuwait (AST)" },
-  { prefix: "968", code: "GST", offset: 4, label: "Oman (GST)" },
-  { prefix: "973", code: "AST", offset: 3, label: "Bahrain (AST)" },
-  { prefix: "353", code: "GMT", offset: 0, label: "Ireland (GMT)" },
-  { prefix: "351", code: "WET", offset: 0, label: "Portugal (WET)" },
-  { prefix: "234", code: "WAT", offset: 1, label: "Nigeria (WAT)" },
-  { prefix: "254", code: "EAT", offset: 3, label: "Kenya (EAT)" },
-  { prefix: "91", code: "IST", offset: 5.5, label: "India (IST)" },
-  { prefix: "92", code: "PKT", offset: 5, label: "Pakistan (PKT)" },
-  { prefix: "94", code: "IST", offset: 5.5, label: "Sri Lanka (IST)" },
-  { prefix: "65", code: "SGT", offset: 8, label: "Singapore (SGT)" },
-  { prefix: "60", code: "MYT", offset: 8, label: "Malaysia (MYT)" },
-  { prefix: "61", code: "AEST", offset: 10, label: "Australia (AEST)" },
-  { prefix: "64", code: "NZST", offset: 12, label: "New Zealand (NZST)" },
-  { prefix: "62", code: "WIB", offset: 7, label: "Indonesia (WIB)" },
-  { prefix: "63", code: "PHT", offset: 8, label: "Philippines (PHT)" },
-  { prefix: "66", code: "ICT", offset: 7, label: "Thailand (ICT)" },
-  { prefix: "81", code: "JST", offset: 9, label: "Japan (JST)" },
-  { prefix: "82", code: "KST", offset: 9, label: "South Korea (KST)" },
-  { prefix: "86", code: "CST", offset: 8, label: "China (CST)" },
-  { prefix: "44", code: "GMT", offset: 0, label: "UK (GMT)" },
-  { prefix: "49", code: "CET", offset: 1, label: "Germany (CET)" },
-  { prefix: "33", code: "CET", offset: 1, label: "France (CET)" },
-  { prefix: "39", code: "CET", offset: 1, label: "Italy (CET)" },
-  { prefix: "34", code: "CET", offset: 1, label: "Spain (CET)" },
-  { prefix: "31", code: "CET", offset: 1, label: "Netherlands (CET)" },
-  { prefix: "41", code: "CET", offset: 1, label: "Switzerland (CET)" },
-  { prefix: "46", code: "CET", offset: 1, label: "Sweden (CET)" },
-  { prefix: "47", code: "CET", offset: 1, label: "Norway (CET)" },
-  { prefix: "45", code: "CET", offset: 1, label: "Denmark (CET)" },
-  { prefix: "48", code: "CET", offset: 1, label: "Poland (CET)" },
-  { prefix: "32", code: "CET", offset: 1, label: "Belgium (CET)" },
-  { prefix: "43", code: "CET", offset: 1, label: "Austria (CET)" },
-  { prefix: "90", code: "TRT", offset: 3, label: "Turkey (TRT)" },
-  { prefix: "20", code: "EET", offset: 2, label: "Egypt (EET)" },
-  { prefix: "27", code: "SAST", offset: 2, label: "South Africa (SAST)" },
-  { prefix: "55", code: "BRT", offset: -3, label: "Brazil (BRT)" },
-  { prefix: "52", code: "CST", offset: -6, label: "Mexico (CST)" },
-  { prefix: "54", code: "ART", offset: -3, label: "Argentina (ART)" },
-  { prefix: "57", code: "COT", offset: -5, label: "Colombia (COT)" },
-  { prefix: "1", code: "EST", offset: -5, label: "US/Canada (EST)" },
+  { prefix: "880", code: "BDT", offset: 6, flag: "🇧🇩", country: "Bangladesh", label: "🇧🇩 Bangladesh (+880 · BDT GMT+6)" },
+  { prefix: "971", code: "GST", offset: 4, flag: "🇦🇪", country: "UAE / Dubai", label: "🇦🇪 UAE / Dubai (+971 · GST GMT+4)" },
+  { prefix: "966", code: "AST", offset: 3, flag: "🇸🇦", country: "Saudi Arabia", label: "🇸🇦 Saudi Arabia (+966 · AST GMT+3)" },
+  { prefix: "974", code: "AST", offset: 3, flag: "🇶🇦", country: "Qatar", label: "🇶🇦 Qatar (+974 · AST GMT+3)" },
+  { prefix: "965", code: "AST", offset: 3, flag: "🇰🇼", country: "Kuwait", label: "🇰🇼 Kuwait (+965 · AST GMT+3)" },
+  { prefix: "968", code: "GST", offset: 4, flag: "🇴🇲", country: "Oman", label: "🇴🇲 Oman (+968 · GST GMT+4)" },
+  { prefix: "973", code: "AST", offset: 3, flag: "🇧🇭", country: "Bahrain", label: "🇧🇭 Bahrain (+973 · AST GMT+3)" },
+  { prefix: "353", code: "GMT", offset: 0, flag: "🇮🇪", country: "Ireland", label: "🇮🇪 Ireland (+353 · GMT)" },
+  { prefix: "351", code: "WET", offset: 0, flag: "🇵🇹", country: "Portugal", label: "🇵🇹 Portugal (+351 · WET)" },
+  { prefix: "234", code: "WAT", offset: 1, flag: "🇳🇬", country: "Nigeria", label: "🇳🇬 Nigeria (+234 · WAT GMT+1)" },
+  { prefix: "254", code: "EAT", offset: 3, flag: "🇰🇪", country: "Kenya", label: "🇰🇪 Kenya (+254 · EAT GMT+3)" },
+  { prefix: "852", code: "HKT", offset: 8, flag: "🇭🇰", country: "Hong Kong", label: "🇭🇰 Hong Kong (+852 · HKT GMT+8)" },
+  { prefix: "91", code: "IST", offset: 5.5, flag: "🇮🇳", country: "India", label: "🇮🇳 India (+91 · IST GMT+5:30)" },
+  { prefix: "92", code: "PKT", offset: 5, flag: "🇵🇰", country: "Pakistan", label: "🇵🇰 Pakistan (+92 · PKT GMT+5)" },
+  { prefix: "94", code: "IST", offset: 5.5, flag: "🇱🇰", country: "Sri Lanka", label: "🇱🇰 Sri Lanka (+94 · IST GMT+5:30)" },
+  { prefix: "65", code: "SGT", offset: 8, flag: "🇸🇬", country: "Singapore", label: "🇸🇬 Singapore (+65 · SGT GMT+8)" },
+  { prefix: "60", code: "MYT", offset: 8, flag: "🇲🇾", country: "Malaysia", label: "🇲🇾 Malaysia (+60 · MYT GMT+8)" },
+  { prefix: "61", code: "AEST", offset: 10, flag: "🇦🇺", country: "Australia", label: "🇦🇺 Australia (+61 · AEST GMT+10)" },
+  { prefix: "64", code: "NZST", offset: 12, flag: "🇳🇿", country: "New Zealand", label: "🇳🇿 New Zealand (+64 · NZST GMT+12)" },
+  { prefix: "62", code: "WIB", offset: 7, flag: "🇮🇩", country: "Indonesia", label: "🇮🇩 Indonesia (+62 · WIB GMT+7)" },
+  { prefix: "63", code: "PHT", offset: 8, flag: "🇵🇭", country: "Philippines", label: "🇵🇭 Philippines (+63 · PHT GMT+8)" },
+  { prefix: "66", code: "ICT", offset: 7, flag: "🇹🇭", country: "Thailand", label: "🇹🇭 Thailand (+66 · ICT GMT+7)" },
+  { prefix: "81", code: "JST", offset: 9, flag: "🇯🇵", country: "Japan", label: "🇯🇵 Japan (+81 · JST GMT+9)" },
+  { prefix: "82", code: "KST", offset: 9, flag: "🇰🇷", country: "South Korea", label: "🇰🇷 South Korea (+82 · KST GMT+9)" },
+  { prefix: "86", code: "CST", offset: 8, flag: "🇨🇳", country: "China", label: "🇨🇳 China (+86 · CST GMT+8)" },
+  { prefix: "44", code: "GMT", offset: 0, flag: "🇬🇧", country: "UK", label: "🇬🇧 UK (+44 · GMT+0)" },
+  { prefix: "49", code: "CET", offset: 1, flag: "🇩🇪", country: "Germany", label: "🇩🇪 Germany (+49 · CET GMT+1)" },
+  { prefix: "33", code: "CET", offset: 1, flag: "🇫🇷", country: "France", label: "🇫🇷 France (+33 · CET GMT+1)" },
+  { prefix: "39", code: "CET", offset: 1, flag: "🇮🇹", country: "Italy", label: "🇮🇹 Italy (+39 · CET GMT+1)" },
+  { prefix: "34", code: "CET", offset: 1, flag: "🇪🇸", country: "Spain", label: "🇪🇸 Spain (+34 · CET GMT+1)" },
+  { prefix: "31", code: "CET", offset: 1, flag: "🇳🇱", country: "Netherlands", label: "🇳🇱 Netherlands (+31 · CET GMT+1)" },
+  { prefix: "41", code: "CET", offset: 1, flag: "🇨🇭", country: "Switzerland", label: "🇨🇭 Switzerland (+41 · CET GMT+1)" },
+  { prefix: "46", code: "CET", offset: 1, flag: "🇸🇪", country: "Sweden", label: "🇸🇪 Sweden (+46 · CET GMT+1)" },
+  { prefix: "47", code: "CET", offset: 1, flag: "🇳🇴", country: "Norway", label: "🇳🇴 Norway (+47 · CET GMT+1)" },
+  { prefix: "45", code: "CET", offset: 1, flag: "🇩🇰", country: "Denmark", label: "🇩🇰 Denmark (+45 · CET GMT+1)" },
+  { prefix: "48", code: "CET", offset: 1, flag: "🇵🇱", country: "Poland", label: "🇵🇱 Poland (+48 · CET GMT+1)" },
+  { prefix: "32", code: "CET", offset: 1, flag: "🇧🇪", country: "Belgium", label: "🇧🇪 Belgium (+32 · CET GMT+1)" },
+  { prefix: "43", code: "CET", offset: 1, flag: "🇦🇹", country: "Austria", label: "🇦🇹 Austria (+43 · CET GMT+1)" },
+  { prefix: "90", code: "TRT", offset: 3, flag: "🇹🇷", country: "Turkey", label: "🇹🇷 Turkey (+90 · TRT GMT+3)" },
+  { prefix: "20", code: "EET", offset: 2, flag: "🇪🇬", country: "Egypt", label: "🇪🇬 Egypt (+20 · EET GMT+2)" },
+  { prefix: "27", code: "SAST", offset: 2, flag: "🇿🇦", country: "South Africa", label: "🇿🇦 South Africa (+27 · SAST GMT+2)" },
+  { prefix: "55", code: "BRT", offset: -3, flag: "🇧🇷", country: "Brazil", label: "🇧🇷 Brazil (+55 · BRT GMT-3)" },
+  { prefix: "52", code: "CST", offset: -6, flag: "🇲🇽", country: "Mexico", label: "🇲🇽 Mexico (+52 · CST GMT-6)" },
+  { prefix: "54", code: "ART", offset: -3, flag: "🇦🇷", country: "Argentina", label: "🇦🇷 Argentina (+54 · ART GMT-3)" },
+  { prefix: "57", code: "COT", offset: -5, flag: "🇨🇴", country: "Colombia", label: "🇨🇴 Colombia (+57 · COT GMT-5)" },
+  { prefix: "1", code: "EST", offset: -5, flag: "🇺🇸", country: "US/Canada", label: "🇺🇸 US/Canada (+1 · EST GMT-5)" },
 ];
 
 function detectClientTzFromPhone(phoneOrChatId) {
   if (!phoneOrChatId) return null;
   let digits = String(phoneOrChatId).replace(/@.*$/, "").replace(/[^\d]/g, "");
   if (!digits || digits.length < 7) return null;
+  if (digits.startsWith("00")) digits = digits.slice(2);
   if (digits.startsWith("01") && digits.length === 11) {
     digits = `88${digits}`;
   }
@@ -843,6 +845,66 @@ function detectClientTzFromPhone(phoneOrChatId) {
     if (digits.startsWith(entry.prefix)) {
       return entry;
     }
+  }
+  return null;
+}
+
+function formatGmtOffsetLabel(offsetHours) {
+  if (offsetHours === 0) return "GMT+0";
+  const sign = offsetHours > 0 ? "+" : "-";
+  const abs = Math.abs(offsetHours);
+  const whole = Math.floor(abs);
+  const mins = Math.round((abs - whole) * 60);
+  return mins > 0 ? `GMT${sign}${whole}:${String(mins).padStart(2, "0")}` : `GMT${sign}${whole}`;
+}
+
+function resolveRecordTimezoneInfo(record) {
+  if (!record) return null;
+  const phoneTz = detectClientTzFromPhone(record.phone || record.chat_id);
+  const rawTz = (record.timezone || "").trim().toUpperCase();
+  if (rawTz && rawTz !== "BDT") {
+    const offset = getTzOffsetHours(rawTz);
+    const gmt = formatGmtOffsetLabel(offset);
+    return {
+      code: rawTz,
+      offset,
+      gmtLabel: gmt,
+      country: phoneTz ? phoneTz.country : rawTz,
+      flag: phoneTz ? phoneTz.flag : "🌍",
+      prefix: phoneTz ? `+${phoneTz.prefix}` : "",
+      shortCountry: phoneTz ? `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix})` : `🌍 ${rawTz}`,
+      fullBadge: phoneTz
+        ? `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix}) · ${rawTz} (${gmt})`
+        : `🌍 ${rawTz} (${gmt})`,
+      isForeign: offset !== 6 || rawTz !== "BDT",
+    };
+  }
+  if (phoneTz) {
+    const gmt = formatGmtOffsetLabel(phoneTz.offset);
+    return {
+      code: phoneTz.code,
+      offset: phoneTz.offset,
+      gmtLabel: gmt,
+      country: phoneTz.country,
+      flag: phoneTz.flag,
+      prefix: `+${phoneTz.prefix}`,
+      shortCountry: `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix})`,
+      fullBadge: `${phoneTz.flag} ${phoneTz.country} (+${phoneTz.prefix}) · ${phoneTz.code} (${gmt})`,
+      isForeign: phoneTz.offset !== 6 || phoneTz.code !== "BDT",
+    };
+  }
+  if (rawTz === "BDT") {
+    return {
+      code: "BDT",
+      offset: 6,
+      gmtLabel: "GMT+6",
+      country: "Bangladesh",
+      flag: "🇧🇩",
+      prefix: "+880",
+      shortCountry: "🇧🇩 Bangladesh (BDT)",
+      fullBadge: "🇧🇩 Bangladesh · BDT (GMT+6)",
+      isForeign: false,
+    };
   }
   return null;
 }
@@ -862,32 +924,32 @@ function formatSingleTzClock(ms, offsetHours, tzCode, nowMs = Date.now()) {
   return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${timeStr}`;
 }
 
+// Primary Task Bar clock: ALWAYS displays calculated Local Time (BDT) first!
 function formatBdtClock(ms, fallbackText = "", taskOrTz = null) {
   if (!ms || !Number.isFinite(ms)) return fallbackText || "No fixed time";
   const now = Date.now();
   const bdtStr = formatSingleTzClock(ms, 6, "BDT", now);
 
-  let clientTzCode = null;
-  let clientOffset = 6;
   if (taskOrTz && typeof taskOrTz === "object") {
-    const phoneTz = detectClientTzFromPhone(taskOrTz.phone || taskOrTz.chat_id);
-    if (taskOrTz.timezone && taskOrTz.timezone.toUpperCase() !== "BDT") {
-      clientTzCode = taskOrTz.timezone.toUpperCase();
-      clientOffset = getTzOffsetHours(clientTzCode);
-    } else if (phoneTz && phoneTz.code !== "BDT") {
-      clientTzCode = phoneTz.code;
-      clientOffset = phoneTz.offset;
+    const tzInfo = resolveRecordTimezoneInfo(taskOrTz);
+    if (tzInfo && tzInfo.isForeign) {
+      return `Local: ${bdtStr}`;
     }
-  } else if (typeof taskOrTz === "string" && taskOrTz.toUpperCase() !== "BDT") {
-    clientTzCode = taskOrTz.toUpperCase();
-    clientOffset = getTzOffsetHours(clientTzCode);
-  }
-
-  if (clientTzCode && clientTzCode !== "BDT" && clientOffset !== 6) {
-    const clientStr = formatSingleTzClock(ms, clientOffset, clientTzCode, now);
-    return `${clientStr} · (${bdtStr})`;
   }
   return bdtStr;
+}
+
+// Formats the Client's Original Time in their country-code timezone (when outside Bangladesh)
+function formatClientOriginalClock(ms, record, nowMs = Date.now()) {
+  if (!ms || !Number.isFinite(ms) || !record) return null;
+  const tzInfo = resolveRecordTimezoneInfo(record);
+  if (!tzInfo || !tzInfo.isForeign) return null;
+  const clientClock = formatSingleTzClock(ms, tzInfo.offset, tzInfo.code, nowMs);
+  return {
+    clock: clientClock,
+    tzInfo,
+    badgeText: `🌍 Client Time: ${clientClock} (${tzInfo.shortCountry})`,
+  };
 }
 
 // Convert UTC epoch ms -> "YYYY-MM-DDTHH:mm" in BDT (GMT+6) for <input type="datetime-local">
@@ -919,8 +981,8 @@ function bdtDatetimeLocalToMs(dtVal) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// Client-side natural time parser (mirrors backend parseScheduledTimeToMs in BDT)
-function parseClientNaturalTimeToMs(phrase, nowMs = Date.now()) {
+// Client-side natural time parser (mirrors backend parseScheduledTimeToMs; supports explicit timezones like EST/GMT/AEST or defaults to BDT)
+function parseClientNaturalTimeToMs(phrase, nowMs = Date.now(), fallbackTzOffsetHours = 6) {
   if (!phrase || !phrase.trim()) return null;
   const raw = phrase.trim();
 
@@ -930,7 +992,7 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now()) {
 
   const p = raw
     .toLowerCase()
-    .replace(/^follow-up:\s*/i, "")
+    .replace(/^(?:follow-up:|local:)\s*/i, "")
     .replace(/\blatter\b/g, "later")
     .replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2")
     .trim();
@@ -949,8 +1011,11 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now()) {
     }
   }
 
-  const bdtOffset = 6 * 3600 * 1000;
-  const localNowMs = nowMs + bdtOffset;
+  // Detect explicit timezone mention in phrase (e.g. "today 2 pm est", "tomorrow 4pm gmt")
+  const tzMatch = p.match(/\b((?:gmt|utc)\s*[+-]\d{1,2}(?::\d{2})?|est|edt|pst|pdt|cst|cdt|mst|mdt|gmt|utc|bdt|ist|pkt|gst|ast|sgt|myt|pht|hkt|jst|kst|aest|aedt|nzst|cet|wat|eat|trt|brt)\b/i);
+  const effOffsetHours = tzMatch ? getTzOffsetHours(tzMatch[1]) : fallbackTzOffsetHours;
+  const tzOffsetMs = effOffsetHours * 3600 * 1000;
+  const localNowMs = nowMs + tzOffsetMs;
   const localDate = new Date(localNowMs);
 
   let explicitMonth = null;
@@ -1067,7 +1132,7 @@ function parseClientNaturalTimeToMs(phrase, nowMs = Date.now()) {
   }
   targetLocal.setUTCHours(hour, minute, 0, 0);
 
-  let targetUtcMs = targetLocal.getTime() - bdtOffset;
+  let targetUtcMs = targetLocal.getTime() - tzOffsetMs;
   if (
     explicitMonth === null &&
     (dayOffset === null || dayOffset === 0) &&
@@ -1143,15 +1208,20 @@ function formatTodoCountdown(t) {
   };
 }
 
-function updateLiveTimerBadgeEl(badgeEl, ms) {
+function updateLiveTimerBadgeEl(badgeEl, ms, recordContext = null) {
   if (!badgeEl) return;
   if (!ms || !Number.isFinite(ms)) {
     badgeEl.textContent = "⏱️ Next Follow-Up: No timer set";
     return;
   }
-  const clockStr = formatBdtClock(ms);
+  const localClockStr = formatSingleTzClock(ms, 6, "BDT");
+  const clientOrig = recordContext ? formatClientOriginalClock(ms, recordContext) : null;
   const cd = formatTodoCountdown({ scheduled_at_ms: ms, completed: 0, auto_send: 1, phone: "1" });
-  badgeEl.textContent = `⏱️ Next Follow-Up: ${clockStr} (${cd.label})`;
+  if (clientOrig) {
+    badgeEl.textContent = `⏱️ Local: ${localClockStr} · 🌍 Client: ${clientOrig.clock} (${cd.label})`;
+  } else {
+    badgeEl.textContent = `⏱️ Next Follow-Up (Local): ${localClockStr} (${cd.label})`;
+  }
   badgeEl.style.background = cd.bg;
   badgeEl.style.color = cd.color;
   badgeEl.style.border = `1px solid ${cd.border}`;
@@ -1283,6 +1353,7 @@ function renderHomeTodayTasks() {
       const cd = formatTodoCountdown(t);
       const meta = getTaskTypeMeta(t.task_type);
       const clockText = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date, t) : t.due_date || "Anytime";
+      const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, t) : null;
 
       const row = el("div", "todo-home-row");
       row.style.cssText = `display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:10px; background:rgba(15,17,26,0.65); border:1px solid rgba(255,255,255,0.07); border-left:3px solid ${meta.accent}; flex-wrap:wrap;`;
@@ -1300,7 +1371,13 @@ function renderHomeTodayTasks() {
       cdPill.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:600;`;
 
       const typeBadge = el("span", `badge ${meta.cls}`, meta.badge);
-      topLine.append(timePill, cdPill, typeBadge);
+      topLine.append(timePill);
+      if (clientOrig) {
+        const clientTzPill = el("span", "badge", `🌍 Client: ${clientOrig.clock} (${clientOrig.tzInfo.shortCountry})`);
+        clientTzPill.style.cssText = "background:rgba(56,189,248,0.14); color:#7dd3fc; border:1px solid rgba(56,189,248,0.35); font-weight:600;";
+        topLine.append(clientTzPill);
+      }
+      topLine.append(cdPill, typeBadge);
 
       const titleLine = el("div", null, t.task);
       titleLine.style.cssText = "font-weight:600; font-size:13.5px; color:#f8fafc; margin-bottom:3px;";
@@ -1394,18 +1471,28 @@ function renderTodos() {
     return;
   }
 
+  const allLeads = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+
   container.replaceChildren(
     ...filtered.map((t) => {
+      const linkedBooking = t.booking_id ? allLeads.find((b) => b.id === t.booking_id) : null;
+      const effectiveRecord = {
+        ...t,
+        phone: t.phone || linkedBooking?.phone || t.chat_id || linkedBooking?.chat_id,
+        timezone: t.timezone || linkedBooking?.timezone,
+      };
+      const tzInfo = resolveRecordTimezoneInfo(effectiveRecord);
       const cd = formatTodoCountdown(t);
       const meta = getTaskTypeMeta(t.task_type);
-      const clockStr = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date, t) : t.due_date || "No fixed time";
+      const clockStr = t.scheduled_at_ms ? formatBdtClock(t.scheduled_at_ms, t.due_date, effectiveRecord) : t.due_date || "No fixed time";
+      const clientOrig = t.scheduled_at_ms ? formatClientOriginalClock(t.scheduled_at_ms, effectiveRecord) : null;
 
       const card = el("div", `todo-timeline-card ${t.completed ? "disabled" : ""}`);
       card.style.cssText = `background:rgba(15, 18, 28, 0.78); border:1px solid rgba(255,255,255,0.08); border-left:4px solid ${
         t.completed ? "#10b981" : meta.accent
       }; border-radius:14px; padding:14px 16px; margin-bottom:10px; transition:all 0.2s ease; opacity:${t.completed ? "0.74" : "1"};`;
 
-      // Top metadata row: Clock Pill + Countdown + Task Type + Auto-Send status
+      // Top metadata row: Local Clock Pill + Client Original Clock Pill + Countdown + Task Type + Auto-Send status
       const topRow = el("div");
       topRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;";
 
@@ -1415,12 +1502,20 @@ function renderTodos() {
       const clockBadge = el("span", "badge todo-time-pill", `🕐 ${clockStr}`);
       clockBadge.style.cssText =
         "background:rgba(244, 63, 94, 0.16); color:#fda4af; border:1px solid rgba(244, 63, 94, 0.38); font-weight:700; font-size:12.5px; padding:4px 10px;";
+      badgesLeft.append(clockBadge);
+
+      if (clientOrig) {
+        const clientOrigBadge = el("span", "badge", `🌍 Client Time: ${clientOrig.clock}`);
+        clientOrigBadge.style.cssText =
+          "background:rgba(56, 189, 248, 0.15); color:#7dd3fc; border:1px solid rgba(56, 189, 248, 0.38); font-weight:700; font-size:12px; padding:4px 10px;";
+        badgesLeft.append(clientOrigBadge);
+      }
 
       const cdBadge = el("span", "badge", cd.label);
       cdBadge.style.cssText = `background:${cd.bg}; color:${cd.color}; border:1px solid ${cd.border}; font-weight:700; font-size:12px; padding:4px 10px;`;
 
       const typeBadge = el("span", `badge ${meta.cls}`, meta.badge);
-      badgesLeft.append(clockBadge, cdBadge, typeBadge);
+      badgesLeft.append(cdBadge, typeBadge);
 
       if (t.phone) {
         const autoBadge = el(
@@ -1438,7 +1533,7 @@ function renderTodos() {
       metaRight.textContent = t.booking_id ? "🔗 Synced with CRM Lead" : `Added ${fmtTime(t.created_at)}`;
       topRow.append(badgesLeft, metaRight);
 
-      // Middle row: Task title + Client & Phone chips
+      // Middle row: Task title + Client, Phone & Original Timezone chips
       const titleRow = el("div");
       titleRow.style.cssText = "display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;";
 
@@ -1459,19 +1554,33 @@ function renderTodos() {
         phoneLink.rel = "noopener";
         titleRow.append(phoneLink);
       }
-      const detectedTz = detectClientTzFromPhone(t.phone || t.chat_id);
-      const tzLabel = detectedTz
-        ? `🌐 ${detectedTz.label}`
-        : t.timezone
-          ? `🌐 ${t.timezone.toUpperCase()}`
-          : null;
-      if (tzLabel) {
-        const tzChip = el("span", "badge", tzLabel);
-        tzChip.style.cssText = "background:rgba(56,189,248,0.12); color:#7dd3fc; border:1px solid rgba(56,189,248,0.28); font-size:11.5px;";
+      if (tzInfo) {
+        const tzChip = el("span", "badge", `🌐 Client TZ: ${tzInfo.fullBadge}`);
+        tzChip.style.cssText = tzInfo.isForeign
+          ? "background:rgba(56,189,248,0.12); color:#7dd3fc; border:1px solid rgba(56,189,248,0.3); font-size:11.5px; font-weight:600;"
+          : "background:rgba(16,185,129,0.1); color:#6ee7b7; border:1px solid rgba(16,185,129,0.25); font-size:11.5px;";
         titleRow.append(tzChip);
       }
 
       card.append(topRow, titleRow);
+
+      // If this task is a Call Reminder for a booked meeting with a known call_time_ms, display a dedicated Local vs Client Meeting Time bar
+      if (linkedBooking && linkedBooking.call_time_ms) {
+        const localCallClock = formatSingleTzClock(linkedBooking.call_time_ms, 6, "BDT");
+        const clientCallClock = tzInfo && tzInfo.isForeign
+          ? formatSingleTzClock(linkedBooking.call_time_ms, tzInfo.offset, tzInfo.code)
+          : null;
+        const callBanner = el(
+          "div",
+          "small-text",
+          clientCallClock
+            ? `📅 Booked Meeting Time — 🇧🇩 Local (Calculated): ${localCallClock}   ⇄   🌍 Client Original: ${clientCallClock} (${tzInfo.shortCountry})`
+            : `📅 Booked Meeting Time (Local BDT): ${localCallClock}`,
+        );
+        callBanner.style.cssText =
+          "background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.32); color:#e9d5ff; padding:7px 11px; border-radius:8px; margin-bottom:8px; font-weight:600;";
+        card.append(callBanner);
+      }
 
       // Exact WhatsApp AI Message Box (clickable to edit)
       if (t.ai_message || t.phone || t.booking_id) {
@@ -1695,16 +1804,38 @@ $("#refresh-todos-btn")?.addEventListener("click", () => {
 
 // ─── Full AI Follow-Up & Task Composer (#ai-todo-composer) with 2-Way Sync ──
 
+function getComposerRecordContext() {
+  const bId = $("#todo-client-select")?.value;
+  const list = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+  const found = bId ? list.find((x) => x.id === bId) : null;
+  const phone = $("#todo-phone")?.value?.trim() || found?.phone || found?.chat_id || "";
+  return { phone, timezone: found?.timezone || null };
+}
+
+function getEditModalRecordContext() {
+  const t = todos.find((x) => x.id === currentEditingTodoId) || null;
+  const list = todoBookingsCache.length > 0 ? todoBookingsCache : bookings;
+  const linked = t?.booking_id ? list.find((x) => x.id === t.booking_id) : null;
+  const phone = $("#edit-todo-phone")?.value?.trim() || t?.phone || linked?.phone || t?.chat_id || "";
+  return { phone, timezone: t?.timezone || linked?.timezone || null };
+}
+
 function syncComposerTimeFromMs(ms, updateNatural = true, updateExact = true) {
   composerScheduledMs = ms;
   if (updateNatural && $("#todo-time-phrase")) {
-    $("#todo-time-phrase").value = ms ? formatBdtClock(ms) : "";
+    $("#todo-time-phrase").value = ms ? formatSingleTzClock(ms, 6, "BDT") : "";
   }
   if (updateExact && $("#todo-datetime-picker")) {
     $("#todo-datetime-picker").value = ms ? msToBdtDatetimeLocal(ms) : "";
   }
-  updateLiveTimerBadgeEl($("#composer-todo-live-timer"), ms);
+  updateLiveTimerBadgeEl($("#composer-todo-live-timer"), ms, getComposerRecordContext());
 }
+
+$("#todo-phone")?.addEventListener("input", () => {
+  if (composerScheduledMs) {
+    updateLiveTimerBadgeEl($("#composer-todo-live-timer"), composerScheduledMs, getComposerRecordContext());
+  }
+});
 
 $("#toggle-ai-todo-composer-btn")?.addEventListener("click", () => {
   const comp = $("#ai-todo-composer");
@@ -1733,6 +1864,8 @@ $("#todo-client-select")?.addEventListener("change", (e) => {
   }
   if (found.next_followup_at) {
     syncComposerTimeFromMs(found.next_followup_at, true, true);
+  } else if (composerScheduledMs) {
+    updateLiveTimerBadgeEl($("#composer-todo-live-timer"), composerScheduledMs, getComposerRecordContext());
   }
   if ($("#todo-ai-message") && !$("#todo-ai-message").value.trim()) {
     $("#todo-ai-message").value =
@@ -1815,8 +1948,8 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
       clientName: clientName || undefined,
       phone: phone || undefined,
       taskType,
-      timePhrase: resolvedMs ? formatBdtClock(resolvedMs) : timePhrase || undefined,
-      dueDate: resolvedMs ? formatBdtClock(resolvedMs) : timePhrase || undefined,
+      timePhrase: resolvedMs ? formatSingleTzClock(resolvedMs, 6, "BDT") : timePhrase || undefined,
+      dueDate: resolvedMs ? formatSingleTzClock(resolvedMs, 6, "BDT") : timePhrase || undefined,
       scheduledAtMs: resolvedMs,
       aiMessage: aiMessage || generateSmartAiDraft(clientName, taskType, timePhrase),
       autoSend,
@@ -1836,13 +1969,19 @@ $("#ai-todo-composer")?.addEventListener("submit", async (e) => {
 function syncEditModalTimeFromMs(ms, updateNatural = true, updateExact = true) {
   editModalScheduledMs = ms;
   if (updateNatural && $("#edit-todo-time-phrase")) {
-    $("#edit-todo-time-phrase").value = ms ? formatBdtClock(ms) : "";
+    $("#edit-todo-time-phrase").value = ms ? formatSingleTzClock(ms, 6, "BDT") : "";
   }
   if (updateExact && $("#edit-todo-datetime")) {
     $("#edit-todo-datetime").value = ms ? msToBdtDatetimeLocal(ms) : "";
   }
-  updateLiveTimerBadgeEl($("#edit-todo-live-timer"), ms);
+  updateLiveTimerBadgeEl($("#edit-todo-live-timer"), ms, getEditModalRecordContext());
 }
+
+$("#edit-todo-phone")?.addEventListener("input", () => {
+  if (editModalScheduledMs) {
+    updateLiveTimerBadgeEl($("#edit-todo-live-timer"), editModalScheduledMs, getEditModalRecordContext());
+  }
+});
 
 function openTodoEditModal(t) {
   currentEditingTodoId = t.id;
@@ -2161,14 +2300,19 @@ function formatNextFollowupTimer(b) {
     return "🕵️ Fake Lead (30d No Reply — Stopped)";
   }
   const now = Date.now();
+  const tzInfo = resolveRecordTimezoneInfo(b);
   const isCallReminder = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
   if (isCallReminder && b.call_time_ms && b.call_time_ms <= now && (!b.next_followup_at || b.next_followup_at <= now)) {
-    return `⏰ Call Time Passed (${fmtTimeInBookingTz(b.call_time_ms, b.timezone)})`;
+    const localCall = formatSingleTzClock(b.call_time_ms, 6, "BDT", now);
+    const clientCall = tzInfo && tzInfo.isForeign ? ` · Client: ${formatSingleTzClock(b.call_time_ms, tzInfo.offset, tzInfo.code, now)}` : "";
+    return `⏰ Call Time Passed (Local: ${localCall}${clientCall})`;
   }
   if (!b.next_followup_at) {
     if (isCallReminder) {
       if (b.call_time_ms && b.call_time_ms > now) {
-        return `🔔 Call at ${fmtTimeInBookingTz(b.call_time_ms, b.timezone)}`;
+        const localCall = formatSingleTzClock(b.call_time_ms, 6, "BDT", now);
+        const clientCall = tzInfo && tzInfo.isForeign ? ` · Client: ${formatSingleTzClock(b.call_time_ms, tzInfo.offset, tzInfo.code, now)}` : "";
+        return `🔔 Call — Local: ${localCall}${clientCall}`;
       }
       return "🔔 Call Booked (Sales Follow-Up Stopped)";
     }
@@ -2176,22 +2320,26 @@ function formatNextFollowupTimer(b) {
   }
   const diffMs = b.next_followup_at - now;
   const prefix = isCallReminder ? "🔔 30m Call Reminder" : "⏱️ Next Follow-Up";
-  const tzTimeStr = fmtTimeInBookingTz(b.next_followup_at, b.timezone);
+  const localTimeStr = formatSingleTzClock(b.next_followup_at, 6, "BDT", now);
+  const clientTimeSuffix =
+    tzInfo && tzInfo.isForeign
+      ? ` · 🌍 Client: ${formatSingleTzClock(b.next_followup_at, tzInfo.offset, tzInfo.code, now)}`
+      : "";
   if (diffMs <= 0) {
-    return `${prefix}: Due Now (${tzTimeStr})`;
+    return `${prefix}: Due Now (Local: ${localTimeStr}${clientTimeSuffix})`;
   }
   const mins = Math.round(diffMs / 60000);
   if (mins < 60) {
-    return `${prefix}: ${tzTimeStr} (in ${mins}m)`;
+    return `${prefix}: Local ${localTimeStr}${clientTimeSuffix} (in ${mins}m)`;
   }
   const hours = Math.floor(mins / 60);
   const remMins = mins % 60;
   if (hours < 48) {
-    return `${prefix}: ${tzTimeStr} (in ${hours}h${remMins > 0 ? ` ${remMins}m` : ""})`;
+    return `${prefix}: Local ${localTimeStr}${clientTimeSuffix} (in ${hours}h${remMins > 0 ? ` ${remMins}m` : ""})`;
   }
   const days = Math.floor(hours / 24);
   const remHours = hours % 24;
-  return `${prefix}: ${tzTimeStr} (in ${days}d${remHours > 0 ? ` ${remHours}h` : ""})`;
+  return `${prefix}: Local ${localTimeStr}${clientTimeSuffix} (in ${days}d${remHours > 0 ? ` ${remHours}h` : ""})`;
 }
 
 function renderBookings() {
@@ -2237,6 +2385,7 @@ function renderBookings() {
       const item = el("div", "booking-item");
       const fType = b.followup_type || "auto";
       const isRejected = fType === "rejected" || b.status === "not_interested" || b.status === "fake_lead";
+      const tzInfo = resolveRecordTimezoneInfo(b);
 
       // Top row: Title + badges + live timer badge
       const top = el("div", "booking-top");
@@ -2265,7 +2414,7 @@ function renderBookings() {
       }
       top.appendChild(clientTitle);
 
-      // Contact row (Email, WhatsApp, Timezone, Website)
+      // Contact row (Email, WhatsApp, Client Original Timezone from Country Code, Website)
       const contactRow = el("div", "booking-contact-row");
       if (b.email) {
         const emailLink = document.createElement("a");
@@ -2286,7 +2435,15 @@ function renderBookings() {
           contactRow.appendChild(waLink);
         }
       }
-      if (b.timezone) {
+      if (tzInfo) {
+        const tzPill = el("span", "booking-link-pill", `🌐 Client Original TZ: ${tzInfo.fullBadge}`);
+        if (tzInfo.isForeign) {
+          tzPill.style.background = "rgba(56, 189, 248, 0.14)";
+          tzPill.style.color = "#7dd3fc";
+          tzPill.style.borderColor = "rgba(56, 189, 248, 0.35)";
+        }
+        contactRow.appendChild(tzPill);
+      } else if (b.timezone) {
         contactRow.appendChild(el("span", "booking-link-pill", `🌐 Timezone: ${b.timezone}`));
       }
       if (b.company_or_website) {
@@ -2299,20 +2456,30 @@ function renderBookings() {
         contactRow.appendChild(webLink);
       }
 
-      // Scheduled time banner
+      // Scheduled time banner — shows BOTH Calculated Local Time (BDT) and Client Original Timezone
       let schedBox = null;
       const isCall = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
-      if (b.scheduled_at) {
+      const refMs = isCall ? b.call_time_ms || b.next_followup_at : b.next_followup_at;
+      if (b.scheduled_at || refMs) {
         const isPastCall = isCall && b.call_time_ms && b.call_time_ms <= Date.now();
-        const tzSuffix = b.timezone && !b.scheduled_at.toUpperCase().includes(b.timezone.toUpperCase()) ? ` (${b.timezone})` : "";
+        let timeBreakdown = b.scheduled_at || "";
+        if (refMs) {
+          const localBdtClock = formatSingleTzClock(refMs, 6, "BDT");
+          if (tzInfo && tzInfo.isForeign) {
+            const clientOrigClock = formatSingleTzClock(refMs, tzInfo.offset, tzInfo.code);
+            timeBreakdown = `🇧🇩 Local Time (Calculated): ${localBdtClock}   ⇄   🌍 Client Original: ${clientOrigClock} (${tzInfo.shortCountry})`;
+          } else {
+            timeBreakdown = `🇧🇩 Local Time (BDT): ${localBdtClock}${b.scheduled_at ? ` · (${b.scheduled_at})` : ""}`;
+          }
+        }
         schedBox = el(
           "div",
           "booking-scheduled-box",
-          `${isCall ? "📅 Booked Call Time" : "📅 Client Follow-Up Date"}: ${b.scheduled_at}${tzSuffix}${
+          `${isCall ? "📅 Booked Call Time" : "📅 Client Follow-Up Schedule"} — ${timeBreakdown}${
             isPastCall
               ? " · ⏰ Call Time Passed (Update status or reschedule if needed)"
               : isCall
-              ? " · 🔔 Auto 30m Pre-Call Reminder Active (Sales Follow-Ups Paused)"
+              ? " · 🔔 Auto 30m Pre-Call Reminder Active"
               : ""
           }`
         );

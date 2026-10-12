@@ -420,7 +420,19 @@ export async function upsertBookingTodo(
       taskTitle = `📅 Client Requested Follow-Up: ${clientLabel}`;
       taskType = "client_date";
     } else if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
-      taskTitle = `🔔 30m Call Reminder: ${clientLabel}${b.scheduled_at ? ` (Call: ${b.scheduled_at})` : ""}`;
+      let callLabel = b.scheduled_at || "";
+      if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BDT") {
+        const bdtDate = new Date(b.call_time_ms + 6 * 3600000);
+        let h = bdtDate.getUTCHours();
+        const m = String(bdtDate.getUTCMinutes()).padStart(2, "0");
+        const ampm = h >= 12 ? "PM" : "AM";
+        h = h % 12 || 12;
+        const localCallStr = `${h}:${m} ${ampm} BDT`;
+        callLabel = b.scheduled_at
+          ? `Local: ${localCallStr} · Client: ${b.scheduled_at}`
+          : localCallStr;
+      }
+      taskTitle = `🔔 30m Call Reminder: ${clientLabel}${callLabel ? ` (Call — ${callLabel})` : ""}`;
       taskType = "call_reminder";
     } else if (b.followup_type === "custom_timer") {
       taskTitle = `⏱️ Custom Timer Follow-Up: ${clientLabel}`;

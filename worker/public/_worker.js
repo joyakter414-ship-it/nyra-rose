@@ -260,7 +260,17 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
       taskTitle = `\u{1F4C5} Client Requested Follow-Up: ${clientLabel}`;
       taskType = "client_date";
     } else if (b.followup_type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
-      taskTitle = `\u{1F514} 30m Call Reminder: ${clientLabel}${b.scheduled_at ? ` (Call: ${b.scheduled_at})` : ""}`;
+      let callLabel = b.scheduled_at || "";
+      if (b.call_time_ms && b.timezone && b.timezone.toUpperCase() !== "BDT") {
+        const bdtDate = new Date(b.call_time_ms + 6 * 36e5);
+        let h = bdtDate.getUTCHours();
+        const m = String(bdtDate.getUTCMinutes()).padStart(2, "0");
+        const ampm = h >= 12 ? "PM" : "AM";
+        h = h % 12 || 12;
+        const localCallStr = `${h}:${m} ${ampm} BDT`;
+        callLabel = b.scheduled_at ? `Local: ${localCallStr} \xB7 Client: ${b.scheduled_at}` : localCallStr;
+      }
+      taskTitle = `\u{1F514} 30m Call Reminder: ${clientLabel}${callLabel ? ` (Call \u2014 ${callLabel})` : ""}`;
       taskType = "call_reminder";
     } else if (b.followup_type === "custom_timer") {
       taskTitle = `\u23F1\uFE0F Custom Timer Follow-Up: ${clientLabel}`;
@@ -1835,7 +1845,17 @@ function generateFollowupText(b) {
 }
 async function syncBookingToTodo(env, b, nowMs = Date.now()) {
   if (!b) return;
-  const formattedDue = b.next_followup_at ? formatTimeInTimezone(b.next_followup_at, b.timezone, b.phone || b.chat_id, nowMs) : b.scheduled_at || null;
+  const effTz = (b.timezone || detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT").toUpperCase();
+  let formattedDue = b.scheduled_at || null;
+  if (b.next_followup_at) {
+    const localBdtStr = formatTimeInTimezone(b.next_followup_at, "BDT", null, nowMs);
+    if (effTz !== "BDT") {
+      const clientTzStr = formatTimeInTimezone(b.next_followup_at, effTz, b.phone || b.chat_id, nowMs);
+      formattedDue = `${localBdtStr} (Client: ${clientTzStr})`;
+    } else {
+      formattedDue = localBdtStr;
+    }
+  }
   const defaultMsg = generateFollowupText(b);
   await upsertBookingTodo(env, b, formattedDue, defaultMsg);
 }
@@ -2095,16 +2115,19 @@ async function generateReply(env, s, rules, c) {
           }
         }
       } else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
-        const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
+        const isHourlyRelative = /(?:in|after|\+)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?\b/i.test(bookingInfo.time) && !/\b(?:am|pm)\b/i.test(bookingInfo.time);
+        const effTz = bookingInfo.timezone || phoneTz?.code || existing?.timezone || "BDT";
         const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 2 * 3600 * 1e3;
-        const formattedFollowupTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
+        const formattedClientTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
+        const formattedLocalBdtTime = formatTimeInTimezone(targetFollowupMs, "BDT", null, nowMs);
+        const scheduledAtLabel = isHourlyRelative ? `Follow-up: ${bookingInfo.time.trim()} (${formattedLocalBdtTime})` : effTz.toUpperCase() !== "BDT" ? `Follow-up: ${formattedClientTime} (Local: ${formattedLocalBdtTime})` : `Follow-up: ${formattedLocalBdtTime}`;
         const nextStatus = bookingInfo.inferredStatus || (existing?.status && existing.status !== "fake_lead" && existing.status !== "booked" && existing.status !== "confirmed" ? existing.status : "lead");
         if (existing) {
           const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || existing.client_name,
             phone: computedPhone || existing.phone,
             email: bookingInfo.email || existing.email,
-            scheduled_at: `Follow-up: ${formattedFollowupTime}`,
+            scheduled_at: scheduledAtLabel,
             call_time_ms: null,
             timezone: effTz,
             status: nextStatus,
@@ -2120,7 +2143,7 @@ async function generateReply(env, s, rules, c) {
             client_name: computedName,
             phone: computedPhone,
             email: bookingInfo.email,
-            scheduled_at: `Follow-up: ${formattedFollowupTime}`,
+            scheduled_at: scheduledAtLabel,
             call_time_ms: null,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite,
@@ -2134,7 +2157,7 @@ async function generateReply(env, s, rules, c) {
           });
           await syncBookingToTodo(env, saved, nowMs);
         }
-        bookingContext = `The client mentioned they will be free or asked you to knock/message them around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
+        bookingContext = isHourlyRelative ? `The client asked you to message/knock them "${bookingInfo.time.trim()}". Respect their schedule warmly, confirm naturally that you'll reach back out in ${bookingInfo.time.trim()}, and don't push for an immediate call right now.` : `The client mentioned they will be free or asked you to knock/message them around "${formattedClientTime}"${phoneTz ? ` (${phoneTz.label})` : ""}. Respect their schedule warmly, confirm that you'll check back in with them at ${formattedClientTime}, and don't push for an immediate call right now.`;
       } else {
         const isConfirmingBookedCall = existing?.status === "booked" && /\b(yes|yeah|yep|ok|okay|sure|sounds good|works for me|confirmed|confirm|perfect|great|see you|book this time)\b/i.test(lowerContent);
         if (existing) {

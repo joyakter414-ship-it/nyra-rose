@@ -1190,9 +1190,17 @@ export async function syncBookingToTodo(
   nowMs: number = Date.now(),
 ): Promise<void> {
   if (!b) return;
-  const formattedDue = b.next_followup_at
-    ? formatTimeInTimezone(b.next_followup_at, b.timezone, b.phone || b.chat_id, nowMs)
-    : b.scheduled_at || null;
+  const effTz = (b.timezone || detectTimezoneFromPhone(b.phone || b.chat_id)?.code || "BDT").toUpperCase();
+  let formattedDue: string | null = b.scheduled_at || null;
+  if (b.next_followup_at) {
+    const localBdtStr = formatTimeInTimezone(b.next_followup_at, "BDT", null, nowMs);
+    if (effTz !== "BDT") {
+      const clientTzStr = formatTimeInTimezone(b.next_followup_at, effTz, b.phone || b.chat_id, nowMs);
+      formattedDue = `${localBdtStr} (Client: ${clientTzStr})`;
+    } else {
+      formattedDue = localBdtStr;
+    }
+  }
   const defaultMsg = generateFollowupText(b);
   await upsertBookingTodo(env, b, formattedDue, defaultMsg);
 }
@@ -1574,9 +1582,18 @@ async function generateReply(
       }
       // CASE 2: Client says when they are free / will message later ("no 5 min latter knock me", "i msg you 2 hour later", "i am free at 2 pm", "follow up tomorrow", "21 date")
       else if (bookingInfo.isClientChoiceFollowup && bookingInfo.time) {
-        const effTz = bookingInfo.timezone || existing?.timezone || phoneTz?.code || "BDT";
+        const isHourlyRelative =
+          /(?:in|after|\+)?\s*\d+(?:\.\d+)?\s*(?:hour|hr|minute|min|day|week)s?(?:\s+later)?\b/i.test(bookingInfo.time) &&
+          !/\b(?:am|pm)\b/i.test(bookingInfo.time);
+        const effTz = bookingInfo.timezone || phoneTz?.code || existing?.timezone || "BDT";
         const targetFollowupMs = parseScheduledTimeToMs(bookingInfo.time, effTz, nowMs, computedPhone || c.chatId) || nowMs + 2 * 3600 * 1000;
-        const formattedFollowupTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
+        const formattedClientTime = formatTimeInTimezone(targetFollowupMs, effTz, computedPhone || c.chatId, nowMs);
+        const formattedLocalBdtTime = formatTimeInTimezone(targetFollowupMs, "BDT", null, nowMs);
+        const scheduledAtLabel = isHourlyRelative
+          ? `Follow-up: ${bookingInfo.time.trim()} (${formattedLocalBdtTime})`
+          : effTz.toUpperCase() !== "BDT"
+          ? `Follow-up: ${formattedClientTime} (Local: ${formattedLocalBdtTime})`
+          : `Follow-up: ${formattedLocalBdtTime}`;
         const nextStatus: BookingStatus =
           bookingInfo.inferredStatus ||
           (existing?.status && existing.status !== "fake_lead" && existing.status !== "booked" && existing.status !== "confirmed"
@@ -1588,7 +1605,7 @@ async function generateReply(
             client_name: bookingInfo.clientName || existing.client_name,
             phone: computedPhone || existing.phone,
             email: bookingInfo.email || existing.email,
-            scheduled_at: `Follow-up: ${formattedFollowupTime}`,
+            scheduled_at: scheduledAtLabel,
             call_time_ms: null,
             timezone: effTz,
             status: nextStatus,
@@ -1604,7 +1621,7 @@ async function generateReply(
             client_name: computedName,
             phone: computedPhone,
             email: bookingInfo.email,
-            scheduled_at: `Follow-up: ${formattedFollowupTime}`,
+            scheduled_at: scheduledAtLabel,
             call_time_ms: null,
             timezone: effTz,
             company_or_website: bookingInfo.companyOrWebsite,
@@ -1619,7 +1636,9 @@ async function generateReply(
           await syncBookingToTodo(env, saved, nowMs);
         }
 
-        bookingContext = `The client mentioned they will be free or asked you to knock/message them around "${formattedFollowupTime}". Respect their schedule warmly, confirm that you'll check back in with them at ${formattedFollowupTime}, and don't push for an immediate call right now.`;
+        bookingContext = isHourlyRelative
+          ? `The client asked you to message/knock them "${bookingInfo.time.trim()}". Respect their schedule warmly, confirm naturally that you'll reach back out in ${bookingInfo.time.trim()}, and don't push for an immediate call right now.`
+          : `The client mentioned they will be free or asked you to knock/message them around "${formattedClientTime}"${phoneTz ? ` (${phoneTz.label})` : ""}. Respect their schedule warmly, confirm that you'll check back in with them at ${formattedClientTime}, and don't push for an immediate call right now.`;
       }
       // CASE 3: General lead message + automatic status detection ("not interested", "buy in few days", "confirmed", etc.)
       else {
