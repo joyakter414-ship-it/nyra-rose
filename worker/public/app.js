@@ -283,6 +283,16 @@ async function refreshOverview() {
 
   renderInstantReplyControls();
   if (typeof updateStudioPulse === "function") updateStudioPulse();
+
+  // Show Export CSV button only for master admin — hidden from management (client)
+  const exportBtn = $("#export-leads-csv-btn");
+  if (exportBtn) {
+    if (isClient) {
+      exportBtn.classList.add("hidden");
+    } else {
+      exportBtn.classList.remove("hidden");
+    }
+  }
 }
 
 function cleanPhoneDigits(raw) {
@@ -3409,6 +3419,43 @@ $("#cancel-booking-btn")?.addEventListener("click", () => {
 
 $("#refresh-bookings-btn")?.addEventListener("click", () => {
   loadBookings();
+});
+
+// ── Master Admin: Export all leads as CSV (management can't see this button) ──
+$("#export-leads-csv-btn")?.addEventListener("click", async () => {
+  const btn = $("#export-leads-csv-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Downloading…";
+  }
+  try {
+    const token = localStorage.getItem("nr_password") || localStorage.getItem("lj_password") || "";
+    const res = await fetch("/api/bookings/export-csv", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: res.statusText }));
+      alert("Export failed: " + (errData.error || res.statusText));
+      return;
+    }
+    const blob = await res.blob();
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = dlUrl;
+    a.download = `nyra-rose-leads-${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(dlUrl);
+  } catch (e) {
+    alert("Export error: " + e.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "⬇ Export CSV";
+    }
+  }
 });
 
 $("#bookings-search")?.addEventListener("input", (e) => {

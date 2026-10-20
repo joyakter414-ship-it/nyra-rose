@@ -419,6 +419,7 @@
           <div style="display: flex; gap: 8px; align-items: center;">
             <button id="toggle-add-booking-btn" class="small">+ Log Lead / Call</button>
             <button id="refresh-bookings-btn" class="ghost small">↻ Refresh</button>
+            <button id="export-leads-csv-btn" class="ghost small hidden" title="Master Admin Only — Downloads all client leads with phone numbers as CSV">⬇ Export CSV</button>
           </div>
         </div>
 
@@ -713,6 +714,9 @@
           <div class="muted small-text" style="font-size: 11px;">Delivered &amp; finished tasks</div>
         </div>
       </div>
+
+      <!-- Live Running Next Follow-Up Timer Bar Banner -->
+      <div id="todo-next-running-banner" class="next-running-timer-banner hidden"></div>
 
       <!-- Smart AI Task Bar & Composer -->
       <div class="card" style="margin-bottom: 16px;">

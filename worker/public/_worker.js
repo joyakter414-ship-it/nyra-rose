@@ -3131,6 +3131,80 @@ async function dashboardRoutes(request, env, url) {
       await deleteBooking(env, id);
       return json({ ok: true });
     }
+    // ── Admin-only: Export all leads/bookings as CSV ────────────────────────
+    case "GET /api/bookings/export-csv": {
+      let csvCell2 = function(v) {
+        if (v === null || v === void 0) return "";
+        const s = String(v);
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+          return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+      };
+      var csvCell = csvCell2;
+      if (role !== "admin") {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      const { results } = await env.DB.prepare(
+        `SELECT id, client_name, phone, email, status, followup_type,
+                scheduled_at, timezone, company_or_website, requirements,
+                source, notes, followup_count, next_followup_at,
+                last_followup_at, created_at
+         FROM bookings
+         ORDER BY created_at DESC`
+      ).all();
+      const COLS = [
+        "id",
+        "client_name",
+        "phone",
+        "email",
+        "status",
+        "followup_type",
+        "scheduled_at",
+        "timezone",
+        "company_or_website",
+        "requirements",
+        "source",
+        "notes",
+        "followup_count",
+        "next_followup_at_ms",
+        "last_followup_at_ms",
+        "created_at_ms"
+      ];
+      const rows = [COLS.join(",")];
+      for (const row of results) {
+        rows.push([
+          csvCell2(row.id),
+          csvCell2(row.client_name),
+          csvCell2(row.phone),
+          csvCell2(row.email),
+          csvCell2(row.status),
+          csvCell2(row.followup_type),
+          csvCell2(row.scheduled_at),
+          csvCell2(row.timezone),
+          csvCell2(row.company_or_website),
+          csvCell2(row.requirements),
+          csvCell2(row.source),
+          csvCell2(row.notes),
+          csvCell2(row.followup_count),
+          csvCell2(row.next_followup_at),
+          csvCell2(row.last_followup_at),
+          csvCell2(row.created_at)
+        ].join(","));
+      }
+      const csv = rows.join("\r\n");
+      const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      return new Response(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="nyra-rose-leads-${now}.csv"`,
+          "Cache-Control": "no-store"
+        }
+      });
+    }
   }
   return json({ error: "Not found" }, 404);
 }
