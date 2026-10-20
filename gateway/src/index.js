@@ -264,6 +264,18 @@ async function onMessage(msg) {
   const sent = await sock.sendMessage(chatJid, { text: decision.reply }, isGroup ? { quoted: msg } : undefined);
   rememberSent(sent?.key?.id);
   replyLog.get(chatJid).push(Date.now());
+
+  if (Array.isArray(decision.extra_replies) && decision.extra_replies.length > 0) {
+    for (const extra of decision.extra_replies) {
+      if (!extra) continue;
+      await sock.sendPresenceUpdate("composing", chatJid).catch(() => {});
+      await new Promise((r) => setTimeout(r, 1200));
+      const sentExtra = await sock.sendMessage(chatJid, { text: extra });
+      rememberSent(sentExtra?.key?.id);
+      replyLog.get(chatJid).push(Date.now());
+    }
+  }
+
   await sock.sendPresenceUpdate("paused", chatJid).catch(() => {});
   log.info(`💬 Replied in ${isSelfChat ? "your self-chat" : payload.chatName || payload.chatId}${decision.neurons ? ` (${decision.neurons.toFixed(1)} neurons)` : ""}`);
 }

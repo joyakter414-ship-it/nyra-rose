@@ -597,8 +597,17 @@ function buildSystemPrompt(s, ctx) {
     `   - If they already shared their email, name, website, or volume, remember it and build on it.`,
     `   - If you already sent the portfolio link (https://vidmox.pages.dev/portfolio) or pricing earlier in the chat, DO NOT paste the same block again unless they specifically ask to see it again.`,
     `2. KNOW WHAT TO TALK ABOUT RIGHT NOW (STAGE-BY-STAGE PROGRESSION):`,
-    `   - Stage A (New Inquiry / Greeting) -> Warm human greeting + answer their immediate question + ask 1 easy discovery question (what kind of videos they create or monthly volume).`,
-    `   - Stage B (Discovery / Needs Shared) -> Acknowledge their specific niche/volume, recommend the exact matching Vidmox plan, and invite them to a quick 15-minute call with our sales manager.`,
+    `   - Stage A (New Inquiry / First Contact / Greeting): On the very first contact, the system automatically sends two messages:`,
+    `     MESSAGE 1: "Hey mate! Thanks for reaching out to VIDMOX!
+
+You can book a quick call with our CSO directly using the link below to discuss your video editing /website needs \u263A\uFE0F:
+https://calendly.com/armaan-gineus/30min"`,
+    `     MESSAGE 2: "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?"`,
+    `   - Stage B (Discovery / Client Replies to Niche Question): When the client replies with their niche or asks a question:`,
+    `     1. Warmly acknowledge and praise their specific niche (e.g. real estate, fitness, YouTube long-form, Reels/Shorts, podcasts, coaching)!`,
+    `     2. Answer any questions they asked (pricing, packages, turnaround, trial, portfolio) directly and accurately.`,
+    `     3. Recommend the matching Vidmox plan (Growth Plan $490/mo for 25-30 short-form reels/shorts, Scale Plan $890/mo for 55-60 shorts or 6-8 long-form videos), and reassure them that budget is negotiable.`,
+    `     4. Invite them to book a quick 15-minute call with our CSO using the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right here.`,
     `   - Stage C (Interested / Asking Questions) -> Answer their question directly (pricing, turnaround, portfolio, trial) and bridge smoothly to booking a time ("Would today or tomorrow work for a quick 15-min call to map this out?").`,
     `   - Stage D (Booking in Progress) -> If they gave a time, confirm it in their phone-number timezone and ask for their best email. If they gave an email, ask what day and time works best.`,
     `   - Stage E (Call Booked / Confirmed) -> Confirm warmly, let them know a 30-minute reminder is set before the meeting, and do NOT keep pitching or pushing once the call is booked.`,
@@ -968,6 +977,8 @@ ${list}` };
 }
 
 // src/brain.ts
+var FIRST_CONTACT_MSG_1 = "Hey mate! Thanks for reaching out to VIDMOX!\n\nYou can book a quick call with our CSO directly using the link below to discuss your video editing /website needs \u263A\uFE0F:\nhttps://calendly.com/armaan-gineus/30min";
+var FIRST_CONTACT_MSG_2 = "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?";
 function matchesTriggers(text, triggers) {
   const words = triggers.split(/[,;\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean);
   const lower = text.toLowerCase();
@@ -1022,6 +1033,78 @@ async function handleIncoming(env, m) {
     created_at: m.timestamp ?? Date.now()
   });
   if (!isNew) return { action: "ignore", reason: "duplicate delivery" };
+  if (!m.isGroup && !instantPaused) {
+    const priorAssistant = await env.DB.prepare(
+      "SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = ? AND role = 'assistant'"
+    ).bind(m.chatId).first();
+    const isFirstContact = !priorAssistant || priorAssistant.cnt === 0;
+    if (isFirstContact) {
+      const existingBooking = await findLatestBookingForChat(env, m.chatId).catch(() => null);
+      const isAlreadyBooked = existingBooking && (existingBooking.status === "booked" || existingBooking.status === "confirmed");
+      if (!isAlreadyBooked) {
+        const nowMs = Date.now();
+        await insertMessage(env, {
+          id: `welcome:1:${crypto.randomUUID()}`,
+          chat_id: m.chatId,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: FIRST_CONTACT_MSG_1,
+          source: "whatsapp",
+          model: "system:welcome",
+          neurons: 0,
+          created_at: nowMs
+        });
+        await insertMessage(env, {
+          id: `welcome:2:${crypto.randomUUID()}`,
+          chat_id: m.chatId,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: FIRST_CONTACT_MSG_2,
+          source: "whatsapp",
+          model: "system:welcome",
+          neurons: 0,
+          created_at: nowMs + 1e3
+        });
+        const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
+        const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
+        const clientName = m.chatName || m.senderName || "New Lead";
+        if (!existingBooking) {
+          const newBooking = await createBooking(env, {
+            chatId: m.chatId,
+            clientName,
+            phone: cleanPhone || null,
+            timezone: detectedTz?.code || "BD",
+            status: "lead",
+            followupType: "auto_day1",
+            nextFollowupAt: nowMs + 3.5 * 3600 * 1e3,
+            followupIntervalHours: 3.5,
+            lastClientReplyAt: nowMs,
+            source: "whatsapp",
+            notes: "New lead reached out. Sent CSO Calendly link & niche discovery question."
+          });
+          await syncBookingToTodo(env, newBooking, nowMs);
+        } else {
+          const updated = await updateBooking(env, existingBooking.id, {
+            status: "lead",
+            followup_type: "auto_day1",
+            next_followup_at: nowMs + 3.5 * 3600 * 1e3,
+            followup_interval_hours: 3.5,
+            last_client_reply_at: nowMs
+          });
+          await syncBookingToTodo(env, updated, nowMs);
+        }
+        return {
+          action: "reply",
+          reply: FIRST_CONTACT_MSG_1,
+          extra_replies: [FIRST_CONTACT_MSG_2],
+          model: "system:welcome",
+          neurons: 0
+        };
+      }
+    }
+  }
   const rules = await getEnabledRules(env);
   if (!instantPaused) {
     const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(m.text, r.triggers));
@@ -1071,6 +1154,43 @@ async function handleDashboardChat(env, text) {
     source: "dashboard",
     created_at: Date.now()
   });
+  const priorAssistant = await env.DB.prepare(
+    "SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = ? AND role = 'assistant'"
+  ).bind(chatId).first();
+  if (!priorAssistant || priorAssistant.cnt === 0) {
+    const nowMs = Date.now();
+    await insertMessage(env, {
+      id: `welcome:dash:1:${crypto.randomUUID()}`,
+      chat_id: chatId,
+      role: "assistant",
+      sender: null,
+      sender_name: "Nyra Rose",
+      content: FIRST_CONTACT_MSG_1,
+      source: "dashboard",
+      model: "system:welcome",
+      neurons: 0,
+      created_at: nowMs
+    });
+    await insertMessage(env, {
+      id: `welcome:dash:2:${crypto.randomUUID()}`,
+      chat_id: chatId,
+      role: "assistant",
+      sender: null,
+      sender_name: "Nyra Rose",
+      content: FIRST_CONTACT_MSG_2,
+      source: "dashboard",
+      model: "system:welcome",
+      neurons: 0,
+      created_at: nowMs + 1e3
+    });
+    return {
+      action: "reply",
+      reply: FIRST_CONTACT_MSG_1,
+      extra_replies: [FIRST_CONTACT_MSG_2],
+      model: "system:welcome",
+      neurons: 0
+    };
+  }
   const rules = await getEnabledRules(env);
   const instantMatch = rules.find((r) => r.type === "instant" && matchesTriggers(text, r.triggers));
   if (instantMatch) {
@@ -1998,6 +2118,19 @@ async function generateReply(env, s, rules, c) {
   const existing = await findLatestBookingForChat(env, c.chatId).catch(() => null);
   const phoneTz = detectTimezoneFromPhone(c.senderPhone || c.chatId);
   let bookingContext = "";
+  const assistantMsgCount = history.filter((m) => m.role === "assistant").length;
+  const isFirstContact = assistantMsgCount === 0;
+  const isSecondContact = assistantMsgCount === 1;
+  const lastAssistantContent = [...history].reverse().find((m) => m.role === "assistant")?.content || "";
+  const alreadySentCalendlyMsg = lastAssistantContent.includes("calendly.com/armaan-gineus");
+  const alreadySentNicheQuestion = lastAssistantContent.toLowerCase().includes("which niche") || lastAssistantContent.toLowerCase().includes("create content");
+  if (isFirstContact && !alreadySentCalendlyMsg) {
+    bookingContext += `[FIRST CONTACT \u2014 OPENING SEQUENCE]: This is the first time this client has contacted us. Your reply MUST be: "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?" Do NOT add anything else to this message. Do NOT send the Calendly link again if it was already sent.`;
+  } else if ((isFirstContact || isSecondContact) && alreadySentCalendlyMsg && !alreadySentNicheQuestion) {
+    bookingContext += `[OPENING SEQUENCE \u2014 SEND NICHE QUESTION]: You already sent the Calendly booking link as the first message. Your reply MUST be: "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?" Do NOT send the Calendly link again. Just send this short niche question.`;
+  } else if (alreadySentNicheQuestion && assistantMsgCount <= 4) {
+    bookingContext += `[CLIENT IS REPLYING TO YOUR NICHE QUESTION / ASKING QUESTIONS]: The client has received your welcome message (CSO Calendly link) and niche intro question. They are now telling you about their videos or asking a question. 1. If they told you their niche or video type (e.g. fitness, real estate, YouTube long-form, Reels/Shorts, podcasts, coaching), praise and acknowledge their niche warmly! Explain how Vidmox helps creators/brands in that exact space with dedicated editor + PM + 24h turnaround. 2. Recommend the matching plan (Growth Plan $490/mo for 25-30 short-form reels/shorts, Scale Plan $890/mo for 55-60 shorts or 6-8 long-form videos), and mention that our budget and packages are flexible/negotiable. 3. If they asked any specific questions (pricing, portfolio, trial, workflow, turnaround), answer them directly and clearly! 4. Invite them to schedule a quick 15-minute call with our CSO via the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right in chat.`;
+  }
   if (phoneTz) {
     bookingContext += `[CLIENT PHONE TIMEZONE DETECTED: ${phoneTz.label} (${phoneTz.country})]. `;
   }

@@ -546,6 +546,11 @@ $("#chat-form").addEventListener("submit", async (e) => {
     if (res.reply) {
       log.append(renderBubble({ role: "assistant", content: res.reply, created_at: Date.now(), sender_name: "Nyra Rose", neurons: res.neurons }));
     }
+    if (Array.isArray(res.extra_replies)) {
+      for (const extra of res.extra_replies) {
+        log.append(renderBubble({ role: "assistant", content: extra, created_at: Date.now() + 500, sender_name: "Nyra Rose" }));
+      }
+    }
   } catch (err) {
     thinking.textContent = `Error: ${err.message}`;
   }
