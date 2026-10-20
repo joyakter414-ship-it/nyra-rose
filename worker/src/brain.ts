@@ -46,10 +46,32 @@ export type Decision =
   | { action: "reply"; reply: string; extra_replies?: string[]; model?: string; neurons?: number }
   | { action: "ignore"; reason: string };
 
-export const FIRST_CONTACT_MSG_1 =
-  "Hey mate! Thanks for reaching out to VIDMOX!\n\n" +
-  "You can book a quick call with our CSO directly using the link below to discuss your video editing /website needs ☺️:\n" +
-  "https://calendly.com/armaan-gineus/30min";
+export function extractFirstName(name?: string | null): string | null {
+  if (!name) return null;
+  const clean = name.replace(/[^\p{L}\p{N}\s'-]/gu, "").trim();
+  if (!clean) return null;
+  if (/^\+?\d+$/.test(clean) || clean.toLowerCase() === "new lead" || clean.toLowerCase() === "dashboard lead") {
+    return null;
+  }
+  const parts = clean.split(/\s+/);
+  const first = parts[0];
+  if (first.length >= 2 && first.length <= 25) {
+    return first.charAt(0).toUpperCase() + first.slice(1);
+  }
+  return null;
+}
+
+export function buildFirstContactMsg1(name?: string | null): string {
+  const firstName = extractFirstName(name);
+  const greeting = firstName ? `Hey ${firstName}!` : `Hey there!`;
+  return (
+    `${greeting} Thanks for reaching out to VIDMOX!\n\n` +
+    `You can book a quick call with our CSO directly using the link below to discuss your video editing /website needs ☺️:\n` +
+    `https://calendly.com/armaan-gineus/30min`
+  );
+}
+
+export const FIRST_CONTACT_MSG_1 = buildFirstContactMsg1(null);
 
 export const FIRST_CONTACT_MSG_2 =
   "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?";
@@ -135,13 +157,16 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
 
       if (!isAlreadyBooked) {
         const nowMs = Date.now();
+        const clientName = m.chatName || m.senderName || "New Lead";
+        const msg1 = buildFirstContactMsg1(m.senderName || m.chatName);
+
         await insertMessage(env, {
           id: `welcome:1:${crypto.randomUUID()}`,
           chat_id: m.chatId,
           role: "assistant",
           sender: null,
           sender_name: "Nyra Rose",
-          content: FIRST_CONTACT_MSG_1,
+          content: msg1,
           source: "whatsapp",
           model: "system:welcome",
           neurons: 0,
@@ -163,7 +188,6 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
 
         const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
         const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
-        const clientName = m.chatName || m.senderName || "New Lead";
 
         if (!existingBooking) {
           const newBooking = await createBooking(env, {
@@ -193,7 +217,7 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
 
         return {
           action: "reply",
-          reply: FIRST_CONTACT_MSG_1,
+          reply: msg1,
           extra_replies: [FIRST_CONTACT_MSG_2],
           model: "system:welcome",
           neurons: 0,
@@ -1043,7 +1067,7 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   const budgetDollarMatch = allUserText.match(/(?:\$\s*(\d{1,4})|(\d{1,4})\s*(?:\$|dollars?|usd))/i);
   if (budgetDollarMatch) {
     const amt = budgetDollarMatch[1] || budgetDollarMatch[2];
-    if (!["29", "490", "890", "1490", "2499"].includes(amt)) {
+    if (!["29", "50", "230", "330", "530", "630", "1030", "1060", "2499"].includes(amt)) {
       reqsList.push(`Client Budget: ~$${amt} (Negotiable)`);
     }
   } else if (/\b(low budget|small budget|tight budget|negotiate|negotiable|discount|budget kom|kom dam)\b/i.test(allUserText)) {
@@ -1052,17 +1076,23 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   if (allUserText.includes("trial") || allUserText.includes("kickstart") || /\b29\b/.test(allUserText)) {
     reqsList.push("Kickstart Trial ($29)");
   }
-  if (allUserText.includes("growth") || /\b490\b/.test(allUserText)) {
-    reqsList.push("Growth Plan ($490/mo)");
+  if (allUserText.includes("growth") || /\b330\b/.test(allUserText)) {
+    reqsList.push("Growth Plan ($330/mo)");
   }
-  if (allUserText.includes("scale") || /\b890\b/.test(allUserText)) {
-    reqsList.push("Scale Plan ($890/mo)");
+  if (allUserText.includes("content engine") || allUserText.includes("hybrid")) {
+    reqsList.push("Content Engine ($630/mo)");
   }
-  if (allUserText.includes("advance") || /\b1,?490\b/.test(allUserText)) {
-    reqsList.push("Advance Plan ($1,490/mo)");
+  if (allUserText.includes("scale") || /\b630\b/.test(allUserText)) {
+    reqsList.push("Scale Plan ($630/mo)");
   }
-  if (allUserText.includes("premium") || /\b2,?499\b/.test(allUserText) || /\b1,?590\b/.test(allUserText)) {
+  if (allUserText.includes("advance") || /\b1,?060\b/.test(allUserText)) {
+    reqsList.push("Advance Plan ($1,060/mo)");
+  }
+  if (allUserText.includes("premium") || /\b2,?499\b/.test(allUserText)) {
     reqsList.push("Premium Tier ($2,499/mo)");
+  }
+  if (allUserText.includes("website") || allUserText.includes("web design") || /\b50\b/.test(allUserText)) {
+    reqsList.push("Website Development (from $50)");
   }
 
   const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
@@ -1100,7 +1130,7 @@ function analyzeConversationMemory(params: {
   const allAssistantText = assistantMsgs.map((m) => m.content.toLowerCase()).join("\n");
 
   const alreadySharedPricing =
-    allAssistantText.includes("$490") || allAssistantText.includes("$890") || allAssistantText.includes("growth plan");
+    allAssistantText.includes("$330") || allAssistantText.includes("$630") || allAssistantText.includes("growth plan");
   const alreadySharedPortfolio = allAssistantText.includes("vidmox.pages.dev/portfolio");
   const alreadySharedCalendly = allAssistantText.includes("calendly.com/armaan-gineus");
   const knownScope =
@@ -1149,8 +1179,8 @@ function analyzeConversationMemory(params: {
   } else if (/\b(price|pricing|cost|how much|package|plan|rate|charge|per video|monthly)\b/i.test(lower)) {
     detectedIntent = "ASKING ABOUT PRICING / PACKAGES";
     nextSalesObjective = knownScope
-      ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching plan ($490/mo Growth for 25–30 Shorts, $890/mo Scale for 55–60 Shorts or 6–8 YouTube videos, $1,490/mo Advance for agencies, plus $29 Trial — and note that budget is negotiable for custom packages) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.`
-      : `Give a clear, concise overview of our main plans ($490/mo Growth for 25–30 short-form videos, $890/mo Scale for 55–60 shorts or 6–8 long-form YouTube videos, $29 Trial edit, and negotiable custom budgets) and ask what type of videos they mainly want edited.`;
+      ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching live-site plan ($330/mo Growth for 30 Shorts, $630/mo Content Engine for 4 Long-form + 30 Shorts, $630/mo Scale for 60 Shorts or 6–8 YouTube videos, $1,060/mo Advance for agencies, plus $29 Trial and websites from $50 — and note that budget is negotiable for custom packages) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.`
+      : `Give a clear, concise overview of our main plans ($330/mo Growth for 30 short-form videos, $630/mo Content Engine/Scale, $1,060/mo Advance for agencies, $29 Trial edit, and negotiable custom budgets) and ask what type of videos they mainly want edited.`;
   } else if (/\b(portfolio|sample|work|previous edit|example|show me|quality|reel|demo)\b/i.test(lower)) {
     detectedIntent = "ASKING FOR PORTFOLIO / PREVIOUS WORK";
     nextSalesObjective =
@@ -1554,7 +1584,7 @@ async function generateReply(
   } else if (alreadySentNicheQuestion && assistantMsgCount <= 4) {
     bookingContext += `[CLIENT IS REPLYING TO YOUR NICHE QUESTION / ASKING QUESTIONS]: The client has received your welcome message (CSO Calendly link) and niche intro question. They are now telling you about their videos or asking a question. ` +
       `1. If they told you their niche or video type (e.g. fitness, real estate, YouTube long-form, Reels/Shorts, podcasts, coaching), praise and acknowledge their niche warmly! Explain how Vidmox helps creators/brands in that exact space with dedicated editor + PM + 24h turnaround. ` +
-      `2. Recommend the matching plan (Growth Plan $490/mo for 25-30 short-form reels/shorts, Scale Plan $890/mo for 55-60 shorts or 6-8 long-form videos), and mention that our budget and packages are flexible/negotiable. ` +
+      `2. Recommend the matching plan (Growth Plan $330/mo for 30 short-form reels/shorts, Content Engine $630/mo for 4 Long-Form + 30 Shorts, Scale Plan $630/mo for 60 shorts or 6-8 long-form videos, Advance Plan $1,060/mo for agencies), and mention that our budget and packages are flexible/negotiable. ` +
       `3. If they asked any specific questions (pricing, portfolio, trial, workflow, turnaround), answer them directly and clearly! ` +
       `4. Invite them to schedule a quick 15-minute call with our CSO via the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right in chat.`;
   }

@@ -598,15 +598,15 @@ function buildSystemPrompt(s, ctx) {
     `   - If you already sent the portfolio link (https://vidmox.pages.dev/portfolio) or pricing earlier in the chat, DO NOT paste the same block again unless they specifically ask to see it again.`,
     `2. KNOW WHAT TO TALK ABOUT RIGHT NOW (STAGE-BY-STAGE PROGRESSION):`,
     `   - Stage A (New Inquiry / First Contact / Greeting): On the very first contact, the system automatically sends two messages:`,
-    `     MESSAGE 1: "Hey mate! Thanks for reaching out to VIDMOX!
+    `     MESSAGE 1: "Hey [Client Name]! Thanks for reaching out to VIDMOX!
 
 You can book a quick call with our CSO directly using the link below to discuss your video editing /website needs \u263A\uFE0F:
-https://calendly.com/armaan-gineus/30min"`,
+https://calendly.com/armaan-gineus/30min" (uses their real name if known, e.g. "Hey Alex!", or "Hey there!" if name is unknown \u2014 NEVER generic "Hey mate!")`,
     `     MESSAGE 2: "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?"`,
     `   - Stage B (Discovery / Client Replies to Niche Question): When the client replies with their niche or asks a question:`,
     `     1. Warmly acknowledge and praise their specific niche (e.g. real estate, fitness, YouTube long-form, Reels/Shorts, podcasts, coaching)!`,
-    `     2. Answer any questions they asked (pricing, packages, turnaround, trial, portfolio) directly and accurately.`,
-    `     3. Recommend the matching Vidmox plan (Growth Plan $490/mo for 25-30 short-form reels/shorts, Scale Plan $890/mo for 55-60 shorts or 6-8 long-form videos), and reassure them that budget is negotiable.`,
+    `     2. Answer any questions they asked (pricing, packages, turnaround, trial, portfolio) directly and accurately using our live site pricing.`,
+    `     3. Recommend the matching Vidmox plan (Growth Plan $330/mo for 30 short-form reels/shorts, Content Engine $630/mo for 4 Long-Form + 30 Shorts, Scale Plan $630/mo for 60 shorts or 6-8 long-form videos, Advance Plan $1,060/mo for agencies), and reassure them that budget is negotiable.`,
     `     4. Invite them to book a quick 15-minute call with our CSO using the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right here.`,
     `   - Stage C (Interested / Asking Questions) -> Answer their question directly (pricing, turnaround, portfolio, trial) and bridge smoothly to booking a time ("Would today or tomorrow work for a quick 15-min call to map this out?").`,
     `   - Stage D (Booking in Progress) -> If they gave a time, confirm it in their phone-number timezone and ask for their best email. If they gave an email, ask what day and time works best.`,
@@ -638,28 +638,31 @@ https://calendly.com/armaan-gineus/30min"`,
     `  - General Portfolio: https://vidmox.pages.dev/portfolio`,
     `  - High-End Premium Portfolio: https://vidmox.pages.dev/premium-portfolio`,
     `  - $29 Paid Trial Video: https://vidmox.pages.dev/29-video`,
+    `  - Website Packages: https://vidmox.pages.dev/websites (Websites from $50 + 20% bundle discount)`,
     `  - Project Intake Brief Form: https://vidmox.pages.dev/intake (60-second interactive brief -> auto-generates PDF spec for our editors)`,
     `  - Client Reviews (4.9/5 stars, 120+ agencies & creators): https://vidmox.pages.dev/reviews`,
     `  - Direct Call Booking Link: https://calendly.com/armaan-gineus/30min`,
-    `\u2022 Approved Pricing Packages (NEVER invent prices):`,
+    `\u2022 Approved Live Site Pricing Packages (MATCHES https://vidmox.pages.dev/pricing):`,
     `  1. *Kickstart Trial ($29 one-time)*: 1 trial video edit, unlimited revisions, 24/7 WhatsApp support \u2014 test our quality risk-free (https://vidmox.pages.dev/29-video).`,
-    `  2. *Growth Plan ($490/mo)*: 25\u201330 short-form videos/month (Reels/TikTok/Shorts), 1 active request per day, dedicated PM, unlimited revisions, 24/7 WhatsApp & Slack.`,
-    `  3. *Scale Plan ($890/mo)*: 55\u201360 short-form videos/month OR 6\u20138 long-form YouTube videos (up to 10\u201312 min each), 2 active requests/day, priority delivery, dedicated PM, unlimited revisions.`,
-    `  4. *Advance Plan ($1,490/mo \u2014 Best for Agencies)*: Up to 100 videos/month OR 10\u201312 long-form videos (up to 15 min), 2 dedicated editors, 3 active requests at once, white-label delivery, priority queue.`,
-    `  5. *High-End Premium Editing ($2,499/mo)*: 50 viral/cinematic videos or 5\u201310 high-end long-form edits, custom motion graphics, AI visuals, sound design, 24\u201348h turnaround (https://vidmox.pages.dev/premium-portfolio).`,
-    `  6. *Custom Volume & Negotiable Budget Packages*: Our budget and pricing are genuinely negotiable! If a client says their budget is low (e.g., "$100 for 20 videos", "$150 budget", "tight budget") or needs a custom deal, NEVER reject them. Genuinely reassure them that budget is negotiable and invite them to book a quick 10\u201315 minute call with our Sales Executive or CEO so they can work out a special custom deal that fits their budget.`,
+    `  2. *Growth Plan ($330/mo)*: 30 short-form videos/month (Reels/TikTok/Shorts), 1 active request per day, dedicated PM, unlimited revisions, 24/7 WhatsApp & Slack.`,
+    `  3. *Content Engine ($630/mo \u2014 Creator Hybrid)*: 4 Long-Form Videos (up to 12\u201315 min) + 30 Shorts/mo (Weekly YouTube + Daily Shorts cadence), dedicated PM, unlimited revisions, 24/7 WhatsApp & Slack.`,
+    `  4. *Scale Plan ($630/mo \u2014 Volume Scale)*: 60 videos/month OR 6\u20138 long-form YouTube videos (up to 10\u201312 min each), 2 active requests/day, priority delivery, dedicated PM, unlimited revisions.`,
+    `  5. *Advance Plan ($1,060/mo \u2014 Best for Agencies)*: Up to 100 videos/month OR 10\u201312 long-form videos (up to 12\u201315 min), 2 dedicated editors, 3 active requests at once, white-label delivery, priority queue.`,
+    `  6. *High-End Premium Editing ($2,499/mo)*: 50 viral/cinematic videos or 5\u201310 high-end long-form edits, custom motion graphics, AI visuals, sound design, 24\u201348h turnaround (https://vidmox.pages.dev/premium-portfolio).`,
+    `  7. *Website Development*: Custom modern websites starting at *$50* (Starter $50, Business $230, Growth $530, Advanced $1,030). Plus *20% OFF* any video package when bundled!`,
+    `  8. *Custom Volume & Negotiable Budget Packages*: Our budget and pricing are genuinely negotiable! If a client says their budget is low (e.g., "$100 for 20 videos", "$150 budget", "tight budget") or needs a custom deal, NEVER reject them. Genuinely reassure them that budget is negotiable and invite them to book a quick 10\u201315 minute call with our Sales Executive or CEO so they can work out a special custom deal that fits their budget.`,
     ``,
     `=== 5. PRO SALESPERSON SIMULATIONS (HOW YOU RESPOND IN EVERY SCENARIO) ===`,
     ``,
     `[SIMULATION 1: New Lead Asks "Hi, how much do you charge for video editing?"]`,
     `Client: "Hi, saw your ad. How much do you charge for video editing?"`,
-    `Nyra: "Hey! Great to connect with you. Our monthly unlimited editing plans start at *$490/mo* for 25\u201330 short-form videos (Reels/Shorts/TikToks), and *$890/mo* if you need 55\u201360 shorts or 6\u20138 long-form YouTube videos \u2014 all with a dedicated editor, project manager, and unlimited revisions. We're also flexible on custom budgets and have a *$29 trial edit* if you want to test our style first!
+    `Nyra: "Hey! Great to connect with you. Our monthly unlimited editing plans start at *$330/mo* for 30 short-form videos (Reels/Shorts/TikToks), and *$630/mo* for our Content Engine (4 Long-Form + 30 Shorts) or Scale Plan (60 videos) \u2014 all with a dedicated editor, project manager, and unlimited revisions. We're also flexible on custom budgets and have a *$29 trial edit* if you want to test our style first!
 
 What kind of videos are you mainly looking to get edited right now?"`,
     ``,
     `[SIMULATION 2: Client Shares Their Video Needs (Remembering & Recommending)]`,
     `Client: "I'm a business coach and I need around 20-25 Instagram Reels a month with clean captions and B-roll."`,
-    `Nyra: "Love that \u2014 talking-head Reels with dynamic captions and B-roll perform super well for coaching brands! Our *Growth Plan ($490/mo)* fits 20\u201325 Reels/month perfectly, and you can check out some of our recent short-form work here: https://vidmox.pages.dev/portfolio
+    `Nyra: "Love that \u2014 talking-head Reels with dynamic captions and B-roll perform super well for coaching brands! Our *Growth Plan ($330/mo)* fits 25\u201330 Reels/month perfectly, and you can check out some of our recent short-form work here: https://vidmox.pages.dev/portfolio
 
 Would you be open to a quick 15-minute call with our Sales Executive or CEO today or tomorrow to discuss your visual style? Just let me know what time works best for you!"`,
     ``,
@@ -670,7 +673,7 @@ Would you be open to a quick 15-minute call with our Sales Executive or CEO toda
 Let's set up a quick 10\u201315 minute call with our Sales Executive or CEO so we can look at your videos and lock in a price that fits your budget! What day and time works best for you, and what's your best email?"`,
     ``,
     `[SIMULATION 4: Price Objection / Asking for Lower Volume]`,
-    `Client: "$490 is a bit high for me right now, I only need like 10 reels a month."`,
+    `Client: "$330 is a bit high for me right now, I only need like 10 reels a month."`,
     `Nyra: "Totally understand! Pricing is flexible and negotiable \u2014 if you only need around 10 Reels a month, you don't have to pay for the full 30-video plan. Our Sales Executive or CEO can put together a custom package that fits your exact monthly output and budget.
 
 Are you free for a quick 10-minute chat today or tomorrow so we can work out a custom rate for you?"`,
@@ -711,7 +714,7 @@ When are you free for a quick 15-minute partnership call? You can share a time a
     ``,
     `[SIMULATION 13: Client Wants Details on WhatsApp First ("Don't want a call yet")]`,
     `Client: "Just tell me the details here on WhatsApp first, I can't jump on a call right now."`,
-    `Nyra: "Of course, happy to share everything right here! We do short-form Reels/Shorts ($490/mo for 25\u201330 videos) and YouTube long-form edits ($890/mo) with 24h turnaround and unlimited revisions \u2014 and if you have a specific budget in mind, our pricing is genuinely negotiable too. Here's our portfolio: https://vidmox.pages.dev/portfolio
+    `Nyra: "Of course, happy to share everything right here! We do short-form Reels/Shorts ($330/mo for 30 videos), Content Engine ($630/mo for 4 Long-Form + 30 Shorts), and Scale ($630/mo for 60 shorts) with 24h turnaround and unlimited revisions \u2014 and if you have a specific budget in mind, our pricing is genuinely negotiable too. Here's our portfolio: https://vidmox.pages.dev/portfolio
 
 What style of videos are you looking to edit, and what target budget do you have in mind?"`,
     ``,
@@ -721,7 +724,7 @@ What style of videos are you looking to edit, and what target budget do you have
     ``,
     `[SIMULATION 15: Client Returning After Silence / Follow-Up]`,
     `Client: "Hey sorry I was traveling! Still interested in getting my YouTube videos edited."`,
-    `Nyra: "Welcome back! Hope you had a great trip. Since you're focusing on YouTube long-form edits, our *Scale Plan ($890/mo)* or a custom negotiable YouTube package would be ideal. What day and time works best for a quick 15-minute call with our Sales Executive or CEO to go over your channel style?"`,
+    `Nyra: "Welcome back! Hope you had a great trip. Since you're focusing on YouTube long-form edits, our *Scale Plan ($630/mo)*, *Content Engine ($630/mo)*, or a custom negotiable YouTube package would be ideal. What day and time works best for a quick 15-minute call with our Sales Executive or CEO to go over your channel style?"`,
     ``,
     `[SIMULATION 16: Client Skeptical / Asking for Client Phone Numbers or "Are You Legit?"]`,
     `Client: "Give me an existing client's number, how do I know you're not a scam/fraud?"`,
@@ -729,7 +732,7 @@ What style of videos are you looking to edit, and what target budget do you have
     ``,
     `[SIMULATION 17: Banglish / Bengali Client Conversation]`,
     `Client: "Vaiya amr budget kom 100 dollar er moddhe 15 ta reel hobe?"`,
-    `Nyra: "Totally understand! Amader standard package $490/mo theke shuru hoy, kintu amader *budget genuinely negotiable* \u2014 apnar video style ar volume onujayi amra custom package kore dite parbo. Apni ki amader Sales Executive ba CEO-r sathe 15 minute-er ekta quick call-e boste parben jekhane amra apnar budget-er moddhe best deal set kore dibo? Kon time-ta apnar jonno best hoy?"`,
+    `Nyra: "Totally understand! Amader standard package $330/mo theke shuru hoy, kintu amader *budget genuinely negotiable* \u2014 apnar video style ar volume onujayi amra custom package kore dite parbo. Apni ki amader Sales Executive ba CEO-r sathe 15 minute-er ekta quick call-e boste parben jekhane amra apnar budget-er moddhe best deal set kore dibo? Kon time-ta apnar jonno best hoy?"`,
     ``,
     `=== 6. DYNAMIC CRM STATUS & FOLLOW-UP RULES ===`,
     `1. *'rejected' / 'not_interested'*: STRICTLY STOP ALL SALES PITCHES. If they message, be brief, polite, and zero-pressure.`,
@@ -977,7 +980,29 @@ ${list}` };
 }
 
 // src/brain.ts
-var FIRST_CONTACT_MSG_1 = "Hey mate! Thanks for reaching out to VIDMOX!\n\nYou can book a quick call with our CSO directly using the link below to discuss your video editing /website needs \u263A\uFE0F:\nhttps://calendly.com/armaan-gineus/30min";
+function extractFirstName(name) {
+  if (!name) return null;
+  const clean = name.replace(/[^\p{L}\p{N}\s'-]/gu, "").trim();
+  if (!clean) return null;
+  if (/^\+?\d+$/.test(clean) || clean.toLowerCase() === "new lead" || clean.toLowerCase() === "dashboard lead") {
+    return null;
+  }
+  const parts = clean.split(/\s+/);
+  const first = parts[0];
+  if (first.length >= 2 && first.length <= 25) {
+    return first.charAt(0).toUpperCase() + first.slice(1);
+  }
+  return null;
+}
+function buildFirstContactMsg1(name) {
+  const firstName = extractFirstName(name);
+  const greeting = firstName ? `Hey ${firstName}!` : `Hey there!`;
+  return `${greeting} Thanks for reaching out to VIDMOX!
+
+You can book a quick call with our CSO directly using the link below to discuss your video editing /website needs \u263A\uFE0F:
+https://calendly.com/armaan-gineus/30min`;
+}
+var FIRST_CONTACT_MSG_1 = buildFirstContactMsg1(null);
 var FIRST_CONTACT_MSG_2 = "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?";
 function matchesTriggers(text, triggers) {
   const words = triggers.split(/[,;\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean);
@@ -1043,13 +1068,15 @@ async function handleIncoming(env, m) {
       const isAlreadyBooked = existingBooking && (existingBooking.status === "booked" || existingBooking.status === "confirmed");
       if (!isAlreadyBooked) {
         const nowMs = Date.now();
+        const clientName = m.chatName || m.senderName || "New Lead";
+        const msg1 = buildFirstContactMsg1(m.senderName || m.chatName);
         await insertMessage(env, {
           id: `welcome:1:${crypto.randomUUID()}`,
           chat_id: m.chatId,
           role: "assistant",
           sender: null,
           sender_name: "Nyra Rose",
-          content: FIRST_CONTACT_MSG_1,
+          content: msg1,
           source: "whatsapp",
           model: "system:welcome",
           neurons: 0,
@@ -1069,7 +1096,6 @@ async function handleIncoming(env, m) {
         });
         const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
         const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
-        const clientName = m.chatName || m.senderName || "New Lead";
         if (!existingBooking) {
           const newBooking = await createBooking(env, {
             chatId: m.chatId,
@@ -1097,7 +1123,7 @@ async function handleIncoming(env, m) {
         }
         return {
           action: "reply",
-          reply: FIRST_CONTACT_MSG_1,
+          reply: msg1,
           extra_replies: [FIRST_CONTACT_MSG_2],
           model: "system:welcome",
           neurons: 0
@@ -1770,7 +1796,7 @@ function extractBookingDetails(text, history) {
   const budgetDollarMatch = allUserText.match(/(?:\$\s*(\d{1,4})|(\d{1,4})\s*(?:\$|dollars?|usd))/i);
   if (budgetDollarMatch) {
     const amt = budgetDollarMatch[1] || budgetDollarMatch[2];
-    if (!["29", "490", "890", "1490", "2499"].includes(amt)) {
+    if (!["29", "50", "230", "330", "530", "630", "1030", "1060", "2499"].includes(amt)) {
       reqsList.push(`Client Budget: ~$${amt} (Negotiable)`);
     }
   } else if (/\b(low budget|small budget|tight budget|negotiate|negotiable|discount|budget kom|kom dam)\b/i.test(allUserText)) {
@@ -1779,17 +1805,23 @@ function extractBookingDetails(text, history) {
   if (allUserText.includes("trial") || allUserText.includes("kickstart") || /\b29\b/.test(allUserText)) {
     reqsList.push("Kickstart Trial ($29)");
   }
-  if (allUserText.includes("growth") || /\b490\b/.test(allUserText)) {
-    reqsList.push("Growth Plan ($490/mo)");
+  if (allUserText.includes("growth") || /\b330\b/.test(allUserText)) {
+    reqsList.push("Growth Plan ($330/mo)");
   }
-  if (allUserText.includes("scale") || /\b890\b/.test(allUserText)) {
-    reqsList.push("Scale Plan ($890/mo)");
+  if (allUserText.includes("content engine") || allUserText.includes("hybrid")) {
+    reqsList.push("Content Engine ($630/mo)");
   }
-  if (allUserText.includes("advance") || /\b1,?490\b/.test(allUserText)) {
-    reqsList.push("Advance Plan ($1,490/mo)");
+  if (allUserText.includes("scale") || /\b630\b/.test(allUserText)) {
+    reqsList.push("Scale Plan ($630/mo)");
   }
-  if (allUserText.includes("premium") || /\b2,?499\b/.test(allUserText) || /\b1,?590\b/.test(allUserText)) {
+  if (allUserText.includes("advance") || /\b1,?060\b/.test(allUserText)) {
+    reqsList.push("Advance Plan ($1,060/mo)");
+  }
+  if (allUserText.includes("premium") || /\b2,?499\b/.test(allUserText)) {
     reqsList.push("Premium Tier ($2,499/mo)");
+  }
+  if (allUserText.includes("website") || allUserText.includes("web design") || /\b50\b/.test(allUserText)) {
+    reqsList.push("Website Development (from $50)");
   }
   const requirements = reqsList.length > 0 ? reqsList.join(", ") : "Video Editing Consultation";
   return {
@@ -1812,7 +1844,7 @@ function analyzeConversationMemory(params) {
   const userMsgs = history.filter((m) => m.role === "user");
   const assistantMsgs = history.filter((m) => m.role === "assistant");
   const allAssistantText = assistantMsgs.map((m) => m.content.toLowerCase()).join("\n");
-  const alreadySharedPricing = allAssistantText.includes("$490") || allAssistantText.includes("$890") || allAssistantText.includes("growth plan");
+  const alreadySharedPricing = allAssistantText.includes("$330") || allAssistantText.includes("$630") || allAssistantText.includes("growth plan");
   const alreadySharedPortfolio = allAssistantText.includes("vidmox.pages.dev/portfolio");
   const alreadySharedCalendly = allAssistantText.includes("calendly.com/armaan-gineus");
   const knownScope = bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing?.requirements && existing.requirements !== "Video Editing Consultation" ? existing.requirements : null;
@@ -1844,7 +1876,7 @@ function analyzeConversationMemory(params) {
     nextSalesObjective = "Explain warmly that because we assign a dedicated senior editor and PM to every project, we offer a risk-free $29 Kickstart Trial (https://vidmox.pages.dev/29-video) with unlimited revisions \u2014 or we can hop on a quick 10\u201315 minute call with our Sales Executive or CEO first to show live edits in their niche. Ask which they prefer.";
   } else if (/\b(price|pricing|cost|how much|package|plan|rate|charge|per video|monthly)\b/i.test(lower)) {
     detectedIntent = "ASKING ABOUT PRICING / PACKAGES";
-    nextSalesObjective = knownScope ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching plan ($490/mo Growth for 25\u201330 Shorts, $890/mo Scale for 55\u201360 Shorts or 6\u20138 YouTube videos, $1,490/mo Advance for agencies, plus $29 Trial \u2014 and note that budget is negotiable for custom packages) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.` : `Give a clear, concise overview of our main plans ($490/mo Growth for 25\u201330 short-form videos, $890/mo Scale for 55\u201360 shorts or 6\u20138 long-form YouTube videos, $29 Trial edit, and negotiable custom budgets) and ask what type of videos they mainly want edited.`;
+    nextSalesObjective = knownScope ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching live-site plan ($330/mo Growth for 30 Shorts, $630/mo Content Engine for 4 Long-form + 30 Shorts, $630/mo Scale for 60 Shorts or 6\u20138 YouTube videos, $1,060/mo Advance for agencies, plus $29 Trial and websites from $50 \u2014 and note that budget is negotiable for custom packages) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.` : `Give a clear, concise overview of our main plans ($330/mo Growth for 30 short-form videos, $630/mo Content Engine/Scale, $1,060/mo Advance for agencies, $29 Trial edit, and negotiable custom budgets) and ask what type of videos they mainly want edited.`;
   } else if (/\b(portfolio|sample|work|previous edit|example|show me|quality|reel|demo)\b/i.test(lower)) {
     detectedIntent = "ASKING FOR PORTFOLIO / PREVIOUS WORK";
     nextSalesObjective = "Share https://vidmox.pages.dev/portfolio (and https://vidmox.pages.dev/premium-portfolio if they want high-end motion graphics) and ask what style of videos they are currently creating so you can point out the best match.";
@@ -2129,7 +2161,7 @@ async function generateReply(env, s, rules, c) {
   } else if ((isFirstContact || isSecondContact) && alreadySentCalendlyMsg && !alreadySentNicheQuestion) {
     bookingContext += `[OPENING SEQUENCE \u2014 SEND NICHE QUESTION]: You already sent the Calendly booking link as the first message. Your reply MUST be: "Its Nyra rose here from vidmox would love to help you with your videos. Can i know around which niche you are looking to create content?" Do NOT send the Calendly link again. Just send this short niche question.`;
   } else if (alreadySentNicheQuestion && assistantMsgCount <= 4) {
-    bookingContext += `[CLIENT IS REPLYING TO YOUR NICHE QUESTION / ASKING QUESTIONS]: The client has received your welcome message (CSO Calendly link) and niche intro question. They are now telling you about their videos or asking a question. 1. If they told you their niche or video type (e.g. fitness, real estate, YouTube long-form, Reels/Shorts, podcasts, coaching), praise and acknowledge their niche warmly! Explain how Vidmox helps creators/brands in that exact space with dedicated editor + PM + 24h turnaround. 2. Recommend the matching plan (Growth Plan $490/mo for 25-30 short-form reels/shorts, Scale Plan $890/mo for 55-60 shorts or 6-8 long-form videos), and mention that our budget and packages are flexible/negotiable. 3. If they asked any specific questions (pricing, portfolio, trial, workflow, turnaround), answer them directly and clearly! 4. Invite them to schedule a quick 15-minute call with our CSO via the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right in chat.`;
+    bookingContext += `[CLIENT IS REPLYING TO YOUR NICHE QUESTION / ASKING QUESTIONS]: The client has received your welcome message (CSO Calendly link) and niche intro question. They are now telling you about their videos or asking a question. 1. If they told you their niche or video type (e.g. fitness, real estate, YouTube long-form, Reels/Shorts, podcasts, coaching), praise and acknowledge their niche warmly! Explain how Vidmox helps creators/brands in that exact space with dedicated editor + PM + 24h turnaround. 2. Recommend the matching plan (Growth Plan $330/mo for 30 short-form reels/shorts, Content Engine $630/mo for 4 Long-Form + 30 Shorts, Scale Plan $630/mo for 60 shorts or 6-8 long-form videos, Advance Plan $1,060/mo for agencies), and mention that our budget and packages are flexible/negotiable. 3. If they asked any specific questions (pricing, portfolio, trial, workflow, turnaround), answer them directly and clearly! 4. Invite them to schedule a quick 15-minute call with our CSO via the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right in chat.`;
   }
   if (phoneTz) {
     bookingContext += `[CLIENT PHONE TIMEZONE DETECTED: ${phoneTz.label} (${phoneTz.country})]. `;
