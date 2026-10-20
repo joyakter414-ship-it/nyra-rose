@@ -2896,9 +2896,118 @@ function renderBookings() {
         statusGuidance.style.borderLeftColor = "#c084fc";
       }
 
-      // Requirements
+      // ── Deal Snapshot Panel (Name · Phone · What they need · Budget) ─────────
+      // Parse deal value and package from requirements using prefix convention
+      // Format saved: "💰 $320 | 📦 Growth Plan | 🎬 30 Shorts" OR plain text
+      function parseDealFields(raw) {
+        if (!raw) return { dealValue: "", pkg: "", scope: raw || "" };
+        const dealMatch = raw.match(/💰\s*([^|📦🎬\n]+)/);
+        const pkgMatch  = raw.match(/📦\s*([^|💰🎬\n]+)/);
+        const scopeMatch = raw.match(/🎬\s*([^|💰📦\n]+)/);
+        if (dealMatch || pkgMatch || scopeMatch) {
+          return {
+            dealValue: dealMatch ? dealMatch[1].trim() : "",
+            pkg: pkgMatch ? pkgMatch[1].trim() : "",
+            scope: scopeMatch ? scopeMatch[1].trim() : "",
+          };
+        }
+        // Legacy plain text — treat whole thing as scope
+        return { dealValue: "", pkg: "", scope: raw };
+      }
+
+      function buildDealReqsString(dealValue, pkg, scope) {
+        const parts = [];
+        if (dealValue) parts.push(`💰 ${dealValue}`);
+        if (pkg)       parts.push(`📦 ${pkg}`);
+        if (scope)     parts.push(`🎬 ${scope}`);
+        return parts.join(" | ");
+      }
+
+      const { dealValue: initDeal, pkg: initPkg, scope: initScope } = parseDealFields(b.requirements);
+
+      const dealPanel = el("div", "lead-deal-snapshot");
+
+      // Helper: make an inline-editable chip
+      function makeEditChip(icon, label, value, placeholder, onSave) {
+        const wrap = el("div", "deal-chip-wrap");
+        const chip = el("div", "deal-chip");
+        chip.title = `Click to edit ${label}`;
+
+        const iconSpan = el("span", "deal-chip-icon", icon);
+        const labelSpan = el("span", "deal-chip-label", label + ": ");
+        const valueSpan = el("span", "deal-chip-value", value || `+ Add ${label}`);
+        if (!value) valueSpan.classList.add("deal-chip-empty");
+
+        chip.append(iconSpan, labelSpan, valueSpan);
+        chip.style.cursor = "pointer";
+
+        chip.addEventListener("click", () => {
+          const input = document.createElement("input");
+          input.className = "deal-chip-input";
+          input.value = value || "";
+          input.placeholder = placeholder;
+          chip.replaceChildren(iconSpan, labelSpan, input);
+          input.focus();
+
+          const commit = async () => {
+            const newVal = input.value.trim();
+            value = newVal;
+            await onSave(newVal);
+            valueSpan.textContent = newVal || `+ Add ${label}`;
+            if (newVal) valueSpan.classList.remove("deal-chip-empty");
+            else valueSpan.classList.add("deal-chip-empty");
+            chip.replaceChildren(iconSpan, labelSpan, valueSpan);
+          };
+
+          input.addEventListener("blur", commit);
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            if (e.key === "Escape") {
+              chip.replaceChildren(iconSpan, labelSpan, valueSpan);
+            }
+          });
+        });
+
+        wrap.appendChild(chip);
+        return { wrap, getValue: () => value };
+      }
+
+      // Mutable refs so chips can see each other's current values
+      let curDeal = initDeal, curPkg = initPkg, curScope = initScope;
+
+      async function saveDealFields() {
+        const newReqs = buildDealReqsString(curDeal, curPkg, curScope) || null;
+        const res = await api("PATCH", "/api/bookings", { id: b.id, requirements: newReqs });
+        if (res.booking) { Object.assign(b, res.booking); }
+      }
+
+      const dealChip  = makeEditChip("💰", "Budget", curDeal, "e.g. $320 / $490/mo", async (v) => { curDeal  = v; await saveDealFields(); });
+      const pkgChip   = makeEditChip("📦", "Package", curPkg, "e.g. Growth Plan · 30 Shorts", async (v) => { curPkg   = v; await saveDealFields(); });
+      const scopeChip = makeEditChip("🎬", "Scope", curScope, "e.g. 30 videos / Long-form + Shorts", async (v) => { curScope = v; await saveDealFields(); });
+
+      // Phone inline edit
+      let curPhone = b.phone || "";
+      const phoneChip = makeEditChip("📱", "Phone", curPhone ? `+${curPhone.replace(/^\+/, "")}` : "", "e.g. +1 555 123 4567", async (v) => {
+        curPhone = v;
+        const res = await api("PATCH", "/api/bookings", { id: b.id, phone: v || null });
+        if (res.booking) { Object.assign(b, res.booking); }
+        renderBookings();
+      });
+
+      // Name inline edit
+      let curName = b.client_name || "";
+      const nameChip = makeEditChip("👤", "Name", curName, "e.g. Marcus / Alex Agency", async (v) => {
+        curName = v;
+        const res = await api("PATCH", "/api/bookings", { id: b.id, clientName: v || null });
+        if (res.booking) { Object.assign(b, res.booking); }
+      });
+
+      dealPanel.append(nameChip.wrap, phoneChip.wrap, dealChip.wrap, pkgChip.wrap, scopeChip.wrap);
+
+      // Notes inline edit
       let reqsBox = null;
-      if (b.requirements) {
+      if (b.requirements && !initDeal && !initPkg) {
+        // Legacy plain text that isn't yet in chip format — show in old style until edited
         reqsBox = el("div", "rule-content");
         reqsBox.append(
           el("span", "rule-triggers", "🎬 Video Scope / Goals: "),
@@ -3081,6 +3190,7 @@ function renderBookings() {
       actions.append(loggedInfo, rightControls);
 
       item.append(top, contactRow);
+      item.appendChild(dealPanel);
       if (schedBox) item.appendChild(schedBox);
       if (statusGuidance) item.appendChild(statusGuidance);
       if (reqsBox) item.appendChild(reqsBox);
@@ -3481,12 +3591,21 @@ $("#new-booking-form")?.addEventListener("submit", async (e) => {
   const scheduledAt = $("#booking-scheduled").value.trim();
   const timezone = $("#booking-timezone").value.trim();
   const companyOrWebsite = $("#booking-website").value.trim();
-  const requirements = $("#booking-reqs").value.trim();
+  const scopeRaw = $("#booking-reqs").value.trim();
+  const dealValueRaw = $("#booking-deal-value")?.value.trim() || "";
+  const packageRaw = $("#booking-package")?.value.trim() || "";
   const status = $("#booking-status").value;
   const followupType = $("#booking-followup-type")?.value || "auto_day1";
   const delayVal = $("#booking-delay-hours")?.value;
   const delayHours = delayVal ? Number(delayVal) : undefined;
   const notes = $("#booking-notes").value.trim();
+
+  // Build structured requirements string using chip format
+  const reqParts = [];
+  if (dealValueRaw) reqParts.push(`💰 ${dealValueRaw}`);
+  if (packageRaw)   reqParts.push(`📦 ${packageRaw}`);
+  if (scopeRaw)     reqParts.push(`🎬 ${scopeRaw}`);
+  const requirements = reqParts.length ? reqParts.join(" | ") : "";
 
   if (!email && !phone && !clientName) {
     $("#booking-error").textContent = "Please provide at least a name, email, or phone.";

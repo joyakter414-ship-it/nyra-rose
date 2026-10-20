@@ -2054,3 +2054,276 @@ html[data-theme="light"] .task-call-pill {
   }
 }
 
+/* ─── Live Running Follow-Up Time Bar Timer (Management Decision & Progress Bar) ─── */
+
+@keyframes runningBarShimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes runningDotBlink {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.84);
+  }
+}
+
+.next-running-timer-banner {
+  position: relative;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(14, 165, 233, 0.08), rgba(244, 63, 94, 0.08));
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  box-shadow: 0 10px 28px -12px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.next-running-timer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.next-running-timer-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.next-running-pulse-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 10px #10b981;
+  animation: runningDotBlink 1.3s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.next-running-timer-clock {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #34d399;
+  font-variant-numeric: tabular-nums;
+}
+
+.next-running-timer-client {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.next-running-timer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.next-running-timer-advice {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  color: #6ee7b7;
+}
+
+.task-running-timer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+[data-theme="light"] .task-running-timer-box {
+  background: rgba(241, 245, 249, 0.85);
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+.task-running-timer-box.urgency-imminent {
+  background: rgba(244, 63, 94, 0.09);
+  border-color: rgba(244, 63, 94, 0.34);
+}
+
+.task-running-timer-box.urgency-soon {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.task-running-timer-box.urgency-due {
+  background: rgba(244, 63, 94, 0.14);
+  border-color: rgba(244, 63, 94, 0.5);
+}
+
+.task-running-timer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-running-timer-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-running-timer-advice {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.task-running-timer-advice:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.task-running-bar-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+  position: relative;
+}
+
+.task-running-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  width: 0%;
+  transition: width 0.8s linear, background 0.3s ease;
+  background: linear-gradient(90deg, #10b981, #38bdf8, #10b981);
+  background-size: 200% 100%;
+  animation: runningBarShimmer 3.2s linear infinite;
+}
+
+.task-running-bar-fill.tone-amber {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b);
+  background-size: 200% 100%;
+}
+
+.task-running-bar-fill.tone-rose {
+  background: linear-gradient(90deg, #f43f5e, #fb7185, #f43f5e);
+  background-size: 200% 100%;
+  animation-duration: 1.4s;
+}
+
+.task-running-bar-fill.tone-emerald {
+  background: linear-gradient(90deg, #10b981, #34d399);
+  animation: none;
+}
+
+
+
+/* ── Lead Deal Snapshot Panel ────────────────────────────────────────────── */
+.lead-deal-snapshot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  margin: 8px 0 4px;
+  background: rgba(244, 63, 94, 0.06);
+  border: 1px solid rgba(244, 63, 94, 0.18);
+  border-radius: 10px;
+}
+
+.deal-chip-wrap {
+  flex: 1 1 auto;
+  min-width: 130px;
+  max-width: 260px;
+}
+
+.deal-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 12.5px;
+  transition: background 0.15s, border-color 0.15s;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.deal-chip:hover {
+  background: rgba(244, 63, 94, 0.1);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+.deal-chip-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.deal-chip-label {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.deal-chip-value {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deal-chip-value.deal-chip-empty {
+  font-weight: 400;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.deal-chip-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 0;
+  outline: none;
+  min-width: 80px;
+  width: 100%;
+}
