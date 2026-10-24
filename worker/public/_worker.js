@@ -279,14 +279,17 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
     } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
       taskTitle = `\u23F3 Closing Follow-Up (Buying Soon): ${clientLabel}`;
       taskType = "client_followup";
-    } else if (b.followup_type === "no_reply_3d") {
-      taskTitle = `\u23F3 Stage 2 (8h) Follow-Up: ${clientLabel}`;
+    } else if (b.followup_type === "day2_12h") {
+      taskTitle = `\u23F3 Day 2 (12h) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
-    } else if (b.followup_type === "long_term_30d") {
-      taskTitle = `\u{1F4C6} Stage 3 (Daily) Follow-Up: ${clientLabel}`;
+    } else if (b.followup_type === "days3_7_daily" || b.followup_type === "no_reply_3d") {
+      taskTitle = `\u{1F4C6} Days 3\u20137 (Daily) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "days7_21_daily" || b.followup_type === "long_term_30d") {
+      taskTitle = `\u{1F3AF} Days 7\u201321 (Daily) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     } else {
-      taskTitle = `\u26A1 Stage 1 (Day 1 Auto) Follow-Up: ${clientLabel}`;
+      taskTitle = `\u26A1 Day 1 (4h/6h) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     }
     const effectiveMsg = b.custom_followup_msg?.trim() || defaultAiMessage || null;
@@ -982,13 +985,16 @@ ${list}` };
 // src/brain.ts
 function extractFirstName(name) {
   if (!name) return null;
-  const clean = name.replace(/[^\p{L}\p{N}\s'-]/gu, "").trim();
+  const clean = name.replace(/[^\p{L}\p{N}\s'-]/gu, " ").trim();
   if (!clean) return null;
-  if (/^\+?\d+$/.test(clean) || clean.toLowerCase() === "new lead" || clean.toLowerCase() === "dashboard lead") {
+  const lower = clean.toLowerCase();
+  if (lower === "new lead" || lower === "dashboard lead" || lower === "unknown" || lower === "null" || lower === "undefined" || lower === "there" || lower === "mate" || lower === "mates") {
     return null;
   }
-  const parts = clean.split(/\s+/);
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
   const first = parts[0];
+  if (/^[\d+_-]+$/.test(first)) return null;
   if (first.length >= 2 && first.length <= 25) {
     return first.charAt(0).toUpperCase() + first.slice(1);
   }
@@ -996,7 +1002,7 @@ function extractFirstName(name) {
 }
 function buildFirstContactMsg1(name) {
   const firstName = extractFirstName(name);
-  const greeting = firstName ? `Hey ${firstName}!` : `Hey there!`;
+  const greeting = firstName ? `Hey ${firstName}!` : `Hey!`;
   return `${greeting} Thanks for reaching out to VIDMOX!
 
 You can book a quick call with our CSO directly using the link below to discuss your video editing /website needs \u263A\uFE0F:
@@ -1104,8 +1110,8 @@ async function handleIncoming(env, m) {
             timezone: detectedTz?.code || "BD",
             status: "lead",
             followupType: "auto_day1",
-            nextFollowupAt: nowMs + 3.5 * 3600 * 1e3,
-            followupIntervalHours: 3.5,
+            nextFollowupAt: nowMs + 4 * 3600 * 1e3,
+            followupIntervalHours: 4,
             lastClientReplyAt: nowMs,
             source: "whatsapp",
             notes: "New lead reached out. Sent CSO Calendly link & niche discovery question."
@@ -1115,8 +1121,9 @@ async function handleIncoming(env, m) {
           const updated = await updateBooking(env, existingBooking.id, {
             status: "lead",
             followup_type: "auto_day1",
-            next_followup_at: nowMs + 3.5 * 3600 * 1e3,
-            followup_interval_hours: 3.5,
+            next_followup_at: nowMs + 4 * 3600 * 1e3,
+            followup_interval_hours: 4,
+            followup_count: 0,
             last_client_reply_at: nowMs
           });
           await syncBookingToTodo(env, updated, nowMs);
@@ -1541,7 +1548,7 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
   }
   const lastReplyMs = b.last_client_reply_at || b.created_at || nowMs;
   const elapsedHours = (nowMs - lastReplyMs) / (3600 * 1e3);
-  if (elapsedHours >= 24 * 30) {
+  if (elapsedHours >= 24 * 21) {
     return {
       status: "fake_lead",
       followup_type: "rejected",
@@ -1568,10 +1575,18 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
       followup_interval_hours: hrs
     };
   }
-  if (elapsedHours >= 24 * 4) {
+  if (elapsedHours >= 24 * 7) {
     return {
       status: curStatus,
-      followup_type: "long_term_30d",
+      followup_type: "days7_21_daily",
+      next_followup_at: nowMs + 24 * 3600 * 1e3,
+      followup_interval_hours: 24
+    };
+  }
+  if (elapsedHours >= 24 * 2) {
+    return {
+      status: curStatus,
+      followup_type: "days3_7_daily",
       next_followup_at: nowMs + 24 * 3600 * 1e3,
       followup_interval_hours: 24
     };
@@ -1579,16 +1594,18 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
   if (elapsedHours >= 24) {
     return {
       status: curStatus,
-      followup_type: "no_reply_3d",
-      next_followup_at: nowMs + 8 * 3600 * 1e3,
-      followup_interval_hours: 8
+      followup_type: "day2_12h",
+      next_followup_at: nowMs + 12 * 3600 * 1e3,
+      followup_interval_hours: 12
     };
   }
+  const isFirstFollowup = !b.followup_count || b.followup_count === 0;
+  const day1Interval = isFirstFollowup ? 4 : 6;
   return {
     status: curStatus,
     followup_type: "auto_day1",
-    next_followup_at: nowMs + 3.5 * 3600 * 1e3,
-    followup_interval_hours: 3.5
+    next_followup_at: nowMs + day1Interval * 3600 * 1e3,
+    followup_interval_hours: day1Interval
   };
 }
 function normalizeTimezoneMention(rawTz) {
@@ -1921,38 +1938,62 @@ function analyzeConversationMemory(params) {
   ].filter(Boolean).join("\n");
 }
 function generateFollowupText(b) {
-  const name = b.client_name && b.client_name !== "New Lead" && b.client_name !== "Dashboard Lead" ? b.client_name.trim() : "there";
   const type = b.followup_type || "auto_day1";
   const count = b.followup_count || 0;
-  const hasSpecificReq = Boolean(b.requirements && b.requirements !== "Video Editing Consultation");
-  const reqTopic = hasSpecificReq ? b.requirements : "your video content";
   if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
   }
   if (b.custom_followup_msg && b.custom_followup_msg.trim()) {
     return b.custom_followup_msg.trim();
   }
+  const firstName = extractFirstName(b.client_name);
+  const useName = Boolean(firstName && count % 2 === 0);
+  const hasSpecificReq = Boolean(b.requirements && b.requirements !== "Video Editing Consultation");
+  const reqTopic = hasSpecificReq ? b.requirements : "your video content";
+  const greetHi = useName ? `Hi ${firstName}!` : `Hi!`;
+  const greetHey = useName ? `Hey ${firstName}!` : `Hey!`;
   if (type === "client_date") {
     const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
-    return `Hi ${name}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
+    if (useName) {
+      return `Hi ${firstName}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
+    }
+    return `Hope you're doing well! Following up as you mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
   }
   if (type === "custom_timer" || type === "custom") {
     if (b.notes?.trim()) {
-      return `Hey ${name}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
+      if (useName) {
+        return `Hey ${firstName}! Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you?`;
+      }
+      return `Following up regarding ${b.notes.trim()}. Would you like to arrange a quick call or have any questions I can answer for you? Happy to help!`;
     }
-    return `Hey ${name}! Following up as promised to see if you had any questions about ${reqTopic} or if you're ready to schedule a quick strategy call? Happy to help!`;
+    if (useName) {
+      return `Hey ${firstName}! Following up as promised to see if you had any questions about ${reqTopic} or if you're ready to schedule a quick strategy call? Happy to help!`;
+    }
+    return `Following up as promised to see if you had any questions about ${reqTopic} or if you're ready to schedule a quick strategy call? Happy to help!`;
   }
   if (type === "on_hold") {
-    return `Hey ${name}! Hope you're doing well. Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how our dedicated team works? Happy to help whenever you're ready!`;
+    if (useName) {
+      return `Hey ${firstName}! Hope you're doing well. Just checking in to see if you're ready to unpause video editing with us or if you have any questions on how our dedicated team works? Happy to help whenever you're ready!`;
+    }
+    return `Hope you're doing well! Just checking in to see if you're ready to unpause video editing with us or if you have any questions on our editing team? Happy to help whenever you're ready!`;
   }
   if (type === "not_attended" || b.status === "not_attended") {
-    return `Hey ${name}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+    if (useName) {
+      return `Hey ${firstName}! Hope everything is okay. Sorry we missed each other on our scheduled call earlier! Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
+    }
+    return `Hope everything is okay! Sorry we missed each other on our scheduled call earlier. Would you like to reschedule for tomorrow or later this week? Let me know what day and time works best for you!`;
   }
   if (type === "buy_soon" || b.status === "buy_soon") {
-    return `Hey ${name}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
+    if (useName) {
+      return `Hey ${firstName}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
+    }
+    return `Hope your week is going great! Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
   }
   if (type === "nurture") {
-    return `Hey ${name}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+    if (useName) {
+      return `Hey ${firstName}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+    }
+    return `Wanted to share a few recent video edits we produced for creators in your niche: https://vidmox.pages.dev/portfolio. Let me know if you'd like to test a sample edit or jump on a quick 15-minute call!`;
   }
   if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
     let minsText = "30 minutes";
@@ -1960,37 +2001,94 @@ function generateFollowupText(b) {
       const diffMins = Math.max(1, Math.round((b.call_time_ms - Date.now()) / 6e4));
       if (diffMins <= 35) minsText = `${diffMins} minute${diffMins === 1 ? "" : "s"}`;
     }
-    return `Hi ${name}! Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
+    const opener = firstName ? `Hi ${firstName}!` : `Hi!`;
+    return `${opener} Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
   }
   if (type === "auto_day1" || type === "auto") {
     const day1Templates = [
-      `Hi ${name}! Just checking in to see if you had a chance to look at my previous message regarding ${reqTopic}. Happy to help if you have any questions!`,
-      `Hey ${name}! Are you still exploring editing support for ${reqTopic}? Let me know what you're looking for and I'll help you figure out the best next step.`,
-      `Hi ${name}! Would you be available for a quick 15-minute call with our Sales Executive or CEO to discuss ${reqTopic}? You can share a convenient time right here or book directly at https://calendly.com/armaan-gineus/30min`,
-      `Hey ${name}! Just wanted to make sure my message didn't get buried. Whenever you're ready to chat about scaling ${reqTopic}, let me know!`
+      // 0 (4h) - uses name if available
+      `${greetHey} Just following up on my earlier message \u2014 curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
+      // 1 (10h) - odd: NO name!
+      `Quick question \u2014 how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
+      // 2 (16h) - even: uses name if available
+      `${greetHi} In case you'd prefer to talk through your video editing or website needs directly, our CSO Armaan has a few slots open: https://calendly.com/armaan-gineus/30min`,
+      // 3 (22h) - odd: NO name!
+      `No rush at all! Just wanted to make sure my message didn't get buried. Whenever you have a minute, happy to look at your content and share relevant editing samples.`
     ];
     return day1Templates[count % day1Templates.length];
   }
-  if (type === "no_reply_3d") {
-    const day3Templates = [
-      `Hey ${name}! Hope your week is going well. Just wanted to check if you're still looking for a dedicated editing team for ${reqTopic}? Happy to answer any questions or set up a quick call!`,
-      `Hi ${name}! Whenever you're ready to take editing off your plate, we can start with a $29 trial edit or jump on a quick 15-minute call (https://calendly.com/armaan-gineus/30min). Let me know what works best for you!`,
-      `Hey ${name}! Just checking in \u2014 are you still deciding which editing package would fit your workflow and budget best? Our pricing is flexible, and I'd be happy to walk you through our options whenever you're free.`
+  if (type === "day2_12h") {
+    const day2Templates = [
+      // 0 (Day 2 morning / 12h) - even: uses name
+      `${greetHey} Wanted to share a quick peek at some recent video edits we produced (talking-head, Alex Hormozi captions, motion graphics, and clean B-roll pacing): https://vidmox.pages.dev/portfolio. We can replicate any style your brand needs!`,
+      // 1 (Day 2 evening / 12h) - odd: NO name!
+      `If you want to test our editing quality completely risk-free, we offer a $29 Kickstart Trial \u2014 we'll edit 1 full Reel/Short with custom hooks, animated captions, sound design & 24h turnaround. Would you like to try that for your next video?`
     ];
-    return day3Templates[count % day3Templates.length];
+    return day2Templates[count % day2Templates.length];
   }
-  if (type === "long_term_30d") {
-    const longTermTemplates = [
-      `Hey ${name}! Wanted to share a few recent video edits we produced for creators and agencies in your space: https://vidmox.pages.dev/portfolio. Let me know if you'd like to try a sample edit!`,
-      `Hi ${name}! Just checking in to see how your content pipeline is going this month. If you need extra editing capacity for ${reqTopic}, feel free to reach out anytime!`,
-      `Hey ${name}! Hope business is booming. If you're still looking to outsource your video editing with a 24-hour turnaround, I'd love to help get you set up!`
+  if (type === "days3_7_daily" || type === "no_reply_3d") {
+    const days3to7Templates = [
+      // Day 3 (even count): live pricing
+      `${greetHey} In case you're weighing monthly budgets, here is our transparent pricing from the site:
+\u2022 Growth: $330/mo (steady editing & fast turnaround)
+\u2022 Content Engine (Scale): $630/mo (high-volume short-form + long-form)
+\u2022 Advance: $1,060/mo (full-scale dedicated production)
+\u2022 Websites: starting from $50
+We can also customize any tier to fit your exact video volume. Does one of these match what you had in mind?`,
+      // Day 4 (odd count): workflow & speed
+      `Quick note on workflow \u2014 with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24\u201348 hours with unlimited revisions.`,
+      // Day 5 (even count): negotiation & budget flexibility
+      `${greetHi} Just checking in \u2014 are you still deciding which editing package would fit your workflow best? If you have a specific target budget or video count in mind, let me know. We're very flexible and happy to build a custom plan!`,
+      // Day 6 (odd count): CSO call
+      `Would 10\u201315 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
+      // Day 7 (even count): 1-week check-in
+      `${greetHey} It's been a week since you reached out. Just wanted to see if video editing is still on your radar for this month, or if you've already got another solution in place?`
     ];
-    return longTermTemplates[count % longTermTemplates.length];
+    return days3to7Templates[count % days3to7Templates.length];
+  }
+  if (type === "days7_21_daily" || type === "long_term_30d") {
+    const days7to21Templates = [
+      // Day 8 (odd count)
+      `One thing our clients love is our unlimited revisions policy \u2014 we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
+      // Day 9 (even count)
+      `${greetHi} Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website ($50), our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
+      // Day 10 (odd count)
+      `If you have a raw video clip ready, feel free to drop a link right here \u2014 we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
+      // Day 11 (even count)
+      `${greetHey} Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
+      // Day 12 (odd count)
+      `Still here to help whenever you're ready to ramp up your content engine! You can also check out our pricing tiers anytime at https://vidmox.pages.dev/pricing`,
+      // Day 13 (even count)
+      `${greetHi} Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
+      // Day 14 (odd count)
+      `2-week check-in \u2014 if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
+      // Day 15 (even count)
+      `${greetHey} I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
+      // Day 16 (odd count)
+      `If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
+      // Day 17 (even count)
+      `${greetHi} Leaving our $29 Kickstart Trial link handy in case you want to test our editing quality on an upcoming shoot: https://vidmox.pages.dev`,
+      // Day 18 (odd count)
+      `Quick question \u2014 if our current packages weren't a fit, was it due to pricing, turnaround time, or editing style? Would love your honest feedback so we can do better!`,
+      // Day 19 (even count)
+      `${greetHey} CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
+      // Day 20 (odd count)
+      `I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
+      // Day 21 (even count - final breakup)
+      `${greetHi} Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`
+    ];
+    return days7to21Templates[count % days7to21Templates.length];
   }
   if (b.status === "completed") {
-    return `Hi ${name}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+    if (useName) {
+      return `Hi ${firstName}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+    }
+    return `Great speaking with you on the call! Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
   }
-  return `Hey ${name}! Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
+  if (useName) {
+    return `Hey ${firstName}! Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
+  }
+  return `Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
 }
 async function syncBookingToTodo(env, b, nowMs = Date.now()) {
   if (!b) return;
@@ -2019,7 +2117,7 @@ async function processDueFollowups(env) {
   for (const b of dueList) {
     const lastReplyMs = b.last_client_reply_at || b.created_at || now;
     const elapsedHours = (now - lastReplyMs) / (3600 * 1e3);
-    if (b.status !== "booked" && b.status !== "confirmed" && b.followup_type !== "call_reminder" && elapsedHours >= 24 * 30) {
+    if (b.status !== "booked" && b.status !== "confirmed" && b.followup_type !== "call_reminder" && elapsedHours >= 24 * 21) {
       const stopped = await updateBooking(env, b.id, {
         status: "fake_lead",
         followup_type: "rejected",
@@ -2045,7 +2143,7 @@ async function processDueFollowups(env) {
       nextFollowupAt = null;
       nextType = "call_reminder";
       nextInterval = 0;
-    } else if (elapsedHours >= 24 * 30) {
+    } else if (elapsedHours >= 24 * 21) {
       nextStatus = "fake_lead";
       nextType = "rejected";
       nextFollowupAt = null;
@@ -2062,18 +2160,22 @@ async function processDueFollowups(env) {
       nextType = "buy_soon";
       nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 24;
       nextFollowupAt = now + nextInterval * 3600 * 1e3;
-    } else if (elapsedHours >= 24 * 4) {
-      nextType = "long_term_30d";
+    } else if (elapsedHours >= 24 * 7) {
+      nextType = "days7_21_daily";
+      nextInterval = 24;
+      nextFollowupAt = now + 24 * 3600 * 1e3;
+    } else if (elapsedHours >= 24 * 2) {
+      nextType = "days3_7_daily";
       nextInterval = 24;
       nextFollowupAt = now + 24 * 3600 * 1e3;
     } else if (elapsedHours >= 24) {
-      nextType = "no_reply_3d";
-      nextInterval = 8;
-      nextFollowupAt = now + 8 * 3600 * 1e3;
+      nextType = "day2_12h";
+      nextInterval = 12;
+      nextFollowupAt = now + 12 * 3600 * 1e3;
     } else {
       nextType = "auto_day1";
-      nextInterval = 3.5;
-      nextFollowupAt = now + 3.5 * 3600 * 1e3;
+      nextInterval = 6;
+      nextFollowupAt = now + 6 * 3600 * 1e3;
     }
     const updatedBooking = await updateBooking(env, b.id, {
       status: nextStatus,
@@ -2262,7 +2364,7 @@ async function generateReply(env, s, rules, c) {
             status: hasBooked ? "booked" : "lead",
             followup_type: hasBooked ? "call_reminder" : "auto_day1",
             next_followup_at: hasBooked ? reminderAt : nowMs + 3.5 * 3600 * 1e3,
-            followup_interval_hours: hasBooked ? 0 : 3.5,
+            followup_interval_hours: hasBooked ? 0 : 4,
             last_client_reply_at: nowMs,
             source: c.source
           });
@@ -2352,8 +2454,8 @@ async function generateReply(env, s, rules, c) {
             nextFollowupAt = nowMs + nextInterval * 3600 * 1e3;
           } else {
             nextFollowupType = "auto_day1";
-            nextFollowupAt = nowMs + 3.5 * 3600 * 1e3;
-            nextInterval = 3.5;
+            nextFollowupAt = nowMs + 4 * 3600 * 1e3;
+            nextInterval = 4;
           }
           const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
@@ -2363,6 +2465,7 @@ async function generateReply(env, s, rules, c) {
             requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
             status: nextStatus,
             last_client_reply_at: nowMs,
+            followup_count: 0,
             followup_type: nextFollowupType,
             next_followup_at: nextFollowupAt,
             followup_interval_hours: nextInterval
@@ -2372,7 +2475,7 @@ async function generateReply(env, s, rules, c) {
           const nextStatus = bookingInfo.inferredStatus || "lead";
           const isStopped = bookingInfo.inferredFollowupType === "rejected" || nextStatus === "not_interested";
           const nextFollowupType = isStopped ? "rejected" : bookingInfo.inferredFollowupType || "auto_day1";
-          const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 3.5;
+          const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 4;
           const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
@@ -2988,7 +3091,7 @@ async function dashboardRoutes(request, env, url) {
       if (t.booking_id) {
         const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first();
         if (b) {
-          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 3.5;
+          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 6;
           const nextFollowupAt = b.followup_type === "call_reminder" ? null : Math.round(now + nextInterval * 3600 * 1e3);
           const updatedB = await updateBooking(env, b.id, {
             last_followup_at: now,
@@ -3034,7 +3137,7 @@ async function dashboardRoutes(request, env, url) {
       const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
       let nextFollowupAt = null;
-      let intervalHours = 3.5;
+      let intervalHours = 4;
       if (body.customFollowupAt) {
         const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
         if (!Number.isNaN(parsed)) nextFollowupAt = parsed;
@@ -3162,12 +3265,16 @@ async function dashboardRoutes(request, env, url) {
           }
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1" || nextType === "auto") {
-          patch.followup_interval_hours = 3.5;
-          patch.next_followup_at = Math.round(now + 3.5 * 3600 * 1e3);
-        } else if (nextType === "no_reply_3d") {
-          patch.followup_interval_hours = 8;
-          patch.next_followup_at = Math.round(now + 8 * 3600 * 1e3);
-        } else if (nextType === "long_term_30d") {
+          const isFirst = !existing.followup_count || existing.followup_count === 0;
+          patch.followup_interval_hours = isFirst ? 4 : 6;
+          patch.next_followup_at = Math.round(now + (isFirst ? 4 : 6) * 3600 * 1e3);
+        } else if (nextType === "day2_12h") {
+          patch.followup_interval_hours = 12;
+          patch.next_followup_at = Math.round(now + 12 * 3600 * 1e3);
+        } else if (nextType === "days3_7_daily" || nextType === "no_reply_3d") {
+          patch.followup_interval_hours = 24;
+          patch.next_followup_at = Math.round(now + 24 * 3600 * 1e3);
+        } else if (nextType === "days7_21_daily" || nextType === "long_term_30d") {
           patch.followup_interval_hours = 24;
           patch.next_followup_at = Math.round(now + 24 * 3600 * 1e3);
         } else if (nextType === "on_hold" || nextType === "nurture") {
@@ -3266,7 +3373,7 @@ async function dashboardRoutes(request, env, url) {
       }
       if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 3.5;
+        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 6;
         const nextFollowupAt = b.followup_type === "call_reminder" ? null : nextInterval > 0 ? Math.round(now + nextInterval * 3600 * 1e3) : null;
         const patched = await updateBooking(env, b.id, {
           last_followup_at: now,

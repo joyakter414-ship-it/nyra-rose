@@ -441,14 +441,17 @@ export async function upsertBookingTodo(
     } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
       taskTitle = `⏳ Closing Follow-Up (Buying Soon): ${clientLabel}`;
       taskType = "client_followup";
-    } else if (b.followup_type === "no_reply_3d") {
-      taskTitle = `⏳ Stage 2 (8h) Follow-Up: ${clientLabel}`;
+    } else if (b.followup_type === "day2_12h") {
+      taskTitle = `⏳ Day 2 (12h) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
-    } else if (b.followup_type === "long_term_30d") {
-      taskTitle = `📆 Stage 3 (Daily) Follow-Up: ${clientLabel}`;
+    } else if (b.followup_type === "days3_7_daily" || b.followup_type === "no_reply_3d") {
+      taskTitle = `📆 Days 3–7 (Daily) Follow-Up: ${clientLabel}`;
+      taskType = "client_followup";
+    } else if (b.followup_type === "days7_21_daily" || b.followup_type === "long_term_30d") {
+      taskTitle = `🎯 Days 7–21 (Daily) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     } else {
-      taskTitle = `⚡ Stage 1 (Day 1 Auto) Follow-Up: ${clientLabel}`;
+      taskTitle = `⚡ Day 1 (4h/6h) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     }
 
@@ -505,6 +508,9 @@ export type BookingStatus =
 export type FollowupType =
   | "auto"
   | "auto_day1"
+  | "day2_12h"
+  | "days3_7_daily"
+  | "days7_21_daily"
   | "no_reply_3d"
   | "long_term_30d"
   | "client_date"

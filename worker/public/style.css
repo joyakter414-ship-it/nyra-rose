@@ -1267,8 +1267,9 @@ code {
 /* Follow-Up Stage Badges */
 .badge-auto { background: rgba(59, 130, 246, 0.13); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
 .badge-auto_day1 { background: rgba(139, 92, 246, 0.14); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.38); }
-.badge-no_reply_3d { background: rgba(245, 158, 11, 0.14); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.38); }
-.badge-long_term_30d { background: rgba(236, 72, 153, 0.14); color: #ec4899; border: 1px solid rgba(236, 72, 153, 0.38); }
+.badge-day2_12h { background: rgba(245, 158, 11, 0.14); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.38); }
+.badge-days3_7_daily, .badge-no_reply_3d { background: rgba(6, 182, 212, 0.14); color: #06b6d4; border: 1px solid rgba(6, 182, 212, 0.38); }
+.badge-days7_21_daily, .badge-long_term_30d { background: rgba(236, 72, 153, 0.14); color: #ec4899; border: 1px solid rgba(236, 72, 153, 0.38); }
 .badge-client_date { background: rgba(6, 182, 212, 0.14); color: #06b6d4; border: 1px solid rgba(6, 182, 212, 0.38); }
 .badge-custom_timer { background: rgba(16, 185, 129, 0.14); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.38); }
 .badge-call_reminder { background: rgba(234, 179, 8, 0.15); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4); }

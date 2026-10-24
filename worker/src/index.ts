@@ -722,7 +722,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       if (t.booking_id) {
         const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first<Booking>();
         if (b) {
-          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 3.5;
+          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 6;
           const nextFollowupAt = b.followup_type === "call_reminder" ? null : Math.round(now + nextInterval * 3600 * 1000);
           const updatedB = await updateBooking(env, b.id, {
             last_followup_at: now,
@@ -794,7 +794,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
 
       let nextFollowupAt: number | null = null;
-      let intervalHours = 3.5;
+      let intervalHours = 4;
 
       if (body.customFollowupAt) {
         const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
@@ -963,12 +963,16 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           }
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1" || nextType === "auto") {
-          patch.followup_interval_hours = 3.5;
-          patch.next_followup_at = Math.round(now + 3.5 * 3600 * 1000);
-        } else if (nextType === "no_reply_3d") {
-          patch.followup_interval_hours = 8;
-          patch.next_followup_at = Math.round(now + 8 * 3600 * 1000);
-        } else if (nextType === "long_term_30d") {
+          const isFirst = !existing.followup_count || existing.followup_count === 0;
+          patch.followup_interval_hours = isFirst ? 4 : 6;
+          patch.next_followup_at = Math.round(now + (isFirst ? 4 : 6) * 3600 * 1000);
+        } else if (nextType === "day2_12h") {
+          patch.followup_interval_hours = 12;
+          patch.next_followup_at = Math.round(now + 12 * 3600 * 1000);
+        } else if (nextType === "days3_7_daily" || nextType === "no_reply_3d") {
+          patch.followup_interval_hours = 24;
+          patch.next_followup_at = Math.round(now + 24 * 3600 * 1000);
+        } else if (nextType === "days7_21_daily" || nextType === "long_term_30d") {
           patch.followup_interval_hours = 24;
           patch.next_followup_at = Math.round(now + 24 * 3600 * 1000);
         } else if (nextType === "on_hold" || nextType === "nurture") {
@@ -1087,7 +1091,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
       if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 3.5;
+        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 6;
         const nextFollowupAt =
           b.followup_type === "call_reminder"
             ? null
