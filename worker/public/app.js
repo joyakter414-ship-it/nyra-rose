@@ -2996,7 +2996,7 @@ function renderBookings() {
         if (res.booking) { Object.assign(b, res.booking); }
       }
 
-      const dealChip  = makeEditChip("💰", "Budget", curDeal, "e.g. $330 / $630/mo", async (v) => { curDeal  = v; await saveDealFields(); });
+      const dealChip  = makeEditChip("💰", "Budget", curDeal, "e.g. $330 / $630 / 30 Shorts", async (v) => { curDeal  = v; await saveDealFields(); });
       const pkgChip   = makeEditChip("📦", "Package", curPkg, "e.g. Growth Plan · 30 Shorts", async (v) => { curPkg   = v; await saveDealFields(); });
       const scopeChip = makeEditChip("🎬", "Scope", curScope, "e.g. 30 videos / Long-form + Shorts", async (v) => { curScope = v; await saveDealFields(); });
 

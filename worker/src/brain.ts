@@ -1106,19 +1106,19 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
     reqsList.push("Kickstart Trial ($29)");
   }
   if (allUserText.includes("growth") || /\b330\b/.test(allUserText)) {
-    reqsList.push("Growth Plan ($330/mo)");
+    reqsList.push("Growth Package ($330)");
   }
   if (allUserText.includes("content engine") || allUserText.includes("hybrid")) {
-    reqsList.push("Content Engine ($630/mo)");
+    reqsList.push("Content Engine ($630)");
   }
   if (allUserText.includes("scale") || /\b630\b/.test(allUserText)) {
-    reqsList.push("Scale Plan ($630/mo)");
+    reqsList.push("Scale Package ($630)");
   }
   if (allUserText.includes("advance") || /\b1,?060\b/.test(allUserText)) {
-    reqsList.push("Advance Plan ($1,060/mo)");
+    reqsList.push("Advance Package ($1,060)");
   }
   if (allUserText.includes("premium") || /\b2,?499\b/.test(allUserText)) {
-    reqsList.push("Premium Tier ($2,499/mo)");
+    reqsList.push("Premium Package ($2,499)");
   }
   if (allUserText.includes("website") || allUserText.includes("web design") || /\b50\b/.test(allUserText)) {
     reqsList.push("Website Development (from $50)");
@@ -1208,8 +1208,8 @@ function analyzeConversationMemory(params: {
   } else if (/\b(price|pricing|cost|how much|package|plan|rate|charge|per video|monthly)\b/i.test(lower)) {
     detectedIntent = "ASKING ABOUT PRICING / PACKAGES";
     nextSalesObjective = knownScope
-      ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching live-site plan ($330/mo Growth for 30 Shorts, $630/mo Content Engine for 4 Long-form + 30 Shorts, $630/mo Scale for 60 Shorts or 6–8 YouTube videos, $1,060/mo Advance for agencies, plus $29 Trial and websites from $50 — and note that budget is negotiable for custom packages) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.`
-      : `Give a clear, concise overview of our main plans ($330/mo Growth for 30 short-form videos, $630/mo Content Engine/Scale, $1,060/mo Advance for agencies, $29 Trial edit, and negotiable custom budgets) and ask what type of videos they mainly want edited.`;
+      ? `The client is asking about pricing and you already know their interest (${knownScope}). Recommend the matching live-site package ($330 Growth for 30 Shorts, $630 Content Engine for 4 Long-form + 30 Shorts, $630 Scale for 60 Shorts or 6–8 YouTube videos, $1,060 Advance for agencies, plus $29 Trial and websites from $50 — remember our pricing is flat packages, NOT monthly / NOT /mo, and budget is genuinely negotiable) and ask what day/time works for a quick 15-minute call with our Sales Executive or CEO.`
+      : `Give a clear, concise overview of our main packages ($330 Growth for 30 short-form videos, $630 Content Engine/Scale, $1,060 Advance for agencies, $29 Trial edit, and negotiable custom budgets — remember our pricing is flat packages, NOT monthly / NOT /mo) and ask what type of videos they mainly want edited.`;
   } else if (/\b(portfolio|sample|work|previous edit|example|show me|quality|reel|demo)\b/i.test(lower)) {
     detectedIntent = "ASKING FOR PORTFOLIO / PREVIOUS WORK";
     nextSalesObjective =
@@ -1393,16 +1393,16 @@ export function generateFollowupText(b: {
   // Stage 3: Days 3–7 Follow-Up (every 1 day / 24 hours) — Live Site Pricing & Custom Budget Flexibility
   if (type === "days3_7_daily" || type === "no_reply_3d") {
     const days3to7Templates = [
-      // Day 3 (even count): live pricing
-      `${greetHey} In case you're weighing monthly budgets, here is our transparent pricing from the site:\n• Growth: $330/mo (steady editing & fast turnaround)\n• Content Engine (Scale): $630/mo (high-volume short-form + long-form)\n• Advance: $1,060/mo (full-scale dedicated production)\n• Websites: starting from $50\nWe can also customize any tier to fit your exact video volume. Does one of these match what you had in mind?`,
+      // Day 3 (even count): live package pricing (flat packages, NOT monthly)
+      `${greetHey} In case you're exploring editing packages, here is our transparent package pricing from the site:\n• Growth Package: $330 (30 short-form videos & fast turnaround)\n• Content Engine (Scale): $630 (high-volume short-form + long-form)\n• Advance Package: $1,060 (full-scale dedicated production)\n• Websites: starting from $50\nWe can also customize any package to fit your exact video count and budget. Does one of these match what you had in mind?`,
       // Day 4 (odd count): workflow & speed
       `Quick note on workflow — with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24–48 hours with unlimited revisions.`,
       // Day 5 (even count): negotiation & budget flexibility
-      `${greetHi} Just checking in — are you still deciding which editing package would fit your workflow best? If you have a specific target budget or video count in mind, let me know. We're very flexible and happy to build a custom plan!`,
+      `${greetHi} Just checking in — are you still deciding which editing package would fit your workflow best? If you have a specific target budget or video count in mind, let me know. We're very flexible and happy to build a custom package!`,
       // Day 6 (odd count): CSO call
       `Would 10–15 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
       // Day 7 (even count): 1-week check-in
-      `${greetHey} It's been a week since you reached out. Just wanted to see if video editing is still on your radar for this month, or if you've already got another solution in place?`,
+      `${greetHey} It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
     ];
     return days3to7Templates[count % days3to7Templates.length];
   }
@@ -1709,7 +1709,7 @@ async function generateReply(
   } else if (alreadySentNicheQuestion && assistantMsgCount <= 4) {
     bookingContext += `[CLIENT IS REPLYING TO YOUR NICHE QUESTION / ASKING QUESTIONS]: The client has received your welcome message (CSO Calendly link) and niche intro question. They are now telling you about their videos or asking a question. ` +
       `1. If they told you their niche or video type (e.g. fitness, real estate, YouTube long-form, Reels/Shorts, podcasts, coaching), praise and acknowledge their niche warmly! Explain how Vidmox helps creators/brands in that exact space with dedicated editor + PM + 24h turnaround. ` +
-      `2. Recommend the matching plan (Growth Plan $330/mo for 30 short-form reels/shorts, Content Engine $630/mo for 4 Long-Form + 30 Shorts, Scale Plan $630/mo for 60 shorts or 6-8 long-form videos, Advance Plan $1,060/mo for agencies), and mention that our budget and packages are flexible/negotiable. ` +
+      `2. Recommend the matching package (Growth Package $330 for 30 short-form reels/shorts, Content Engine $630 for 4 Long-Form + 30 Shorts, Scale Package $630 for 60 shorts or 6-8 long-form videos, Advance Package $1,060 for agencies — note that our packages are flat packages, NOT monthly, and budget is negotiable). ` +
       `3. If they asked any specific questions (pricing, portfolio, trial, workflow, turnaround), answer them directly and clearly! ` +
       `4. Invite them to schedule a quick 15-minute call with our CSO via the Calendly link (https://calendly.com/armaan-gineus/30min) or by sharing their preferred day/time and email right in chat.`;
   }
