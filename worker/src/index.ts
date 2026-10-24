@@ -13,6 +13,7 @@ import {
   type IncomingMessage,
 } from "./brain";
 import {
+  addUsage,
   createBooking,
   createNote,
   createRule,
@@ -705,18 +706,22 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       existingQueue.push({ jid, text: message, bookingId: t.booking_id || t.id });
       await kvSet(env, "gateway_outbound_queue", existingQueue);
 
-      await insertMessage(env, {
-        id: `task:${crypto.randomUUID()}`,
-        chat_id: jid,
-        role: "assistant",
-        sender: null,
-        sender_name: "Nyra Rose",
-        content: message,
-        source: "whatsapp",
-        model: "task:manual_send",
-        neurons: 0,
-        created_at: now,
-      }).catch(() => {});
+      const estimatedNeurons = Math.max(15, Math.round((message.length / 4) * 0.85));
+      await Promise.all([
+        insertMessage(env, {
+          id: `task:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "task:manual_send",
+          neurons: estimatedNeurons,
+          created_at: now,
+        }).catch(() => {}),
+        addUsage(env, estimatedNeurons).catch(() => {}),
+      ]);
 
       let updatedTodo: Todo | null = null;
       if (t.booking_id) {
@@ -1074,18 +1079,22 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         const existingQueue = (await kvGet<Array<{ jid: string; text: string; bookingId?: string }>>(env, "gateway_outbound_queue")) || [];
         existingQueue.push({ jid, text: message, bookingId: b.id });
         await kvSet(env, "gateway_outbound_queue", existingQueue);
-        await insertMessage(env, {
-          id: `followup:${crypto.randomUUID()}`,
-          chat_id: jid,
-          role: "assistant",
-          sender: null,
-          sender_name: "Nyra Rose",
-          content: message,
-          source: "whatsapp",
-          model: "crm:followup",
-          neurons: 0,
-          created_at: now,
-        }).catch(() => {});
+        const estimatedNeurons = Math.max(15, Math.round((message.length / 4) * 0.85));
+        await Promise.all([
+          insertMessage(env, {
+            id: `followup:${crypto.randomUUID()}`,
+            chat_id: jid,
+            role: "assistant",
+            sender: null,
+            sender_name: "Nyra Rose",
+            content: message,
+            source: "whatsapp",
+            model: "crm:followup",
+            neurons: estimatedNeurons,
+            created_at: now,
+          }).catch(() => {}),
+          addUsage(env, estimatedNeurons).catch(() => {}),
+        ]);
         queuedToGateway = true;
       }
 
@@ -1130,71 +1139,187 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       return json({ ok: true });
     }
 
-    // ── Admin-only: Export all leads/bookings as CSV ────────────────────────
+    // ── Master Admin Only: Export Leads as CSV with Date Filter & Deep Details ──
     case "GET /api/bookings/export-csv": {
-      // 🔒 Master admin only — management (client role) is blocked
+      // 🔒 Strictly Master Admin only — Management Admin (role: "client") is blocked
       if (role !== "admin") {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
+        return new Response(JSON.stringify({ error: "Forbidden: Master Admin Access Required" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      const { results } = await env.DB.prepare(
-        `SELECT id, client_name, phone, email, status, followup_type,
-                scheduled_at, timezone, company_or_website, requirements,
-                source, notes, followup_count, next_followup_at,
-                last_followup_at, created_at
-         FROM bookings
-         ORDER BY created_at DESC`,
-      ).all<Record<string, unknown>>();
+      const fromParam = url.searchParams.get("from")?.trim() || url.searchParams.get("startDate")?.trim() || "";
+      const toParam = url.searchParams.get("to")?.trim() || url.searchParams.get("endDate")?.trim() || "";
 
-      // CSV header
-      const COLS = [
-        "id", "client_name", "phone", "email", "status", "followup_type",
-        "scheduled_at", "timezone", "company_or_website", "requirements",
-        "source", "notes", "followup_count", "next_followup_at_ms",
-        "last_followup_at_ms", "created_at_ms",
-      ];
+      let fromMs: number | null = null;
+      if (fromParam) {
+        const parsed = Date.parse(fromParam.includes("T") ? fromParam : `${fromParam}T00:00:00+06:00`);
+        if (!Number.isNaN(parsed)) fromMs = parsed;
+      }
+
+      let toMs: number | null = null;
+      if (toParam) {
+        const parsed = Date.parse(toParam.includes("T") ? toParam : `${toParam}T23:59:59.999+06:00`);
+        if (!Number.isNaN(parsed)) toMs = parsed;
+      }
+
+      let sql = `
+        SELECT b.id, b.client_name, b.phone, b.chat_id, b.email, b.status, b.followup_type,
+               b.scheduled_at, b.timezone, b.company_or_website, b.requirements,
+               b.source, b.notes, b.followup_count, b.next_followup_at,
+               b.last_followup_at, b.created_at,
+               c.name AS chat_pushname
+        FROM bookings b
+        LEFT JOIN chats c ON b.chat_id = c.id
+      `;
+
+      const conditions: string[] = [];
+      const bindings: unknown[] = [];
+
+      if (fromMs !== null) {
+        conditions.push("b.created_at >= ?");
+        bindings.push(fromMs);
+      }
+      if (toMs !== null) {
+        conditions.push("b.created_at <= ?");
+        bindings.push(toMs);
+      }
+
+      if (conditions.length > 0) {
+        sql += " WHERE " + conditions.join(" AND ");
+      }
+      sql += " ORDER BY b.created_at DESC";
+
+      const stmt = env.DB.prepare(sql);
+      const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all<Record<string, unknown>>();
+
+      function parseLeadDeal(rawReqs?: unknown, rawNotes?: unknown) {
+        const raw = typeof rawReqs === "string" ? rawReqs : "";
+        const dealMatch = raw.match(/💰\s*([^|📦🎬\n]+)/);
+        const pkgMatch = raw.match(/📦\s*([^|💰🎬\n]+)/);
+        const scopeMatch = raw.match(/🎬\s*([^|💰📦\n]+)/);
+
+        let dealValue = dealMatch ? dealMatch[1].trim() : "";
+        let pkg = pkgMatch ? pkgMatch[1].trim() : "";
+        let scope = scopeMatch ? scopeMatch[1].trim() : "";
+
+        if (!dealValue && !pkg && !scope && raw && raw !== "Video Editing Consultation") {
+          scope = raw;
+        }
+
+        const notesStr = typeof rawNotes === "string" ? rawNotes : "";
+        if (notesStr) {
+          const moneyMatch = notesStr.match(/(?:\$|usd|bdt|tk|\b)\s*(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:\$|usd|bdt|tk|\b)/i) ||
+                             notesStr.match(/(?:\$)\s*(\d+(?:,\d+)?)/i);
+          const videoCountMatch = notesStr.match(/(\d+)\s*(?:videos?|shorts?|reels?|vids?)/i);
+          if (!dealValue && moneyMatch) dealValue = `$${moneyMatch[1]}`;
+          if (!dealValue && videoCountMatch) dealValue = `${videoCountMatch[1]} videos`;
+        }
+
+        const parts: string[] = [];
+        if (dealValue) parts.push(`Budget: ${dealValue}`);
+        if (pkg) parts.push(`Package: ${pkg}`);
+        if (scope) parts.push(`Scope: ${scope}`);
+        const combinedDeal = parts.length > 0 ? parts.join(" | ") : (dealValue || pkg || scope || "Standard Inquiry");
+
+        return { dealValue, pkg, scope, combinedDeal };
+      }
+
+      function extractCompanyLink(companyOrWebsite?: unknown, notes?: unknown, requirements?: unknown): string {
+        if (typeof companyOrWebsite === "string" && companyOrWebsite.trim()) return companyOrWebsite.trim();
+        const textToScan = `${typeof notes === "string" ? notes : ""} ${typeof requirements === "string" ? requirements : ""}`;
+        const urlMatch = textToScan.match(/https?:\/\/[^\s,;"')]+/i) || textToScan.match(/(?:www\.)[^\s,;"')]+/i);
+        return urlMatch ? urlMatch[0] : "";
+      }
 
       function csvCell(v: unknown): string {
         if (v === null || v === undefined) return "";
-        const s = String(v);
-        // Escape double-quotes and wrap in quotes if needed
+        const s = String(v).replace(/\r\n/g, " ").replace(/\n/g, " ").trim();
         if (s.includes(",") || s.includes("\"") || s.includes("\n")) {
           return `"${s.replace(/"/g, '""')}"`;
         }
         return s;
       }
 
-      const rows = [COLS.join(",")];
-      for (const row of results) {
+      // Column Headers organized cleanly for Excel / Google Sheets
+      const COLS = [
+        "Name",
+        "WhatsApp Number",
+        "WhatsApp Username",
+        "Date of Lead",
+        "Company / Website Link",
+        "Video Style / Requirements",
+        "Package & Deal Value",
+        "Budget / Deal Value",
+        "Package Tier",
+        "Video Count / Scope",
+        "Lead Status",
+        "Follow-Up Stage",
+        "Follow-Up Count",
+        "Scheduled Meeting",
+        "Internal Notes",
+        "Lead Source",
+        "Raw Created Timestamp (ms)",
+      ];
+
+      const rows: string[] = [COLS.map(csvCell).join(",")];
+
+      for (const row of results || []) {
+        const deal = parseLeadDeal(row.requirements, row.notes);
+        const websiteLink = extractCompanyLink(row.company_or_website, row.notes, row.requirements);
+        const cleanPhone = String(row.phone || (typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") ? row.chat_id.replace(/@.*$/, "") : "")).replace(/[^\d+]/g, "");
+        const username = typeof row.chat_pushname === "string" && row.chat_pushname.trim()
+          ? row.chat_pushname.trim()
+          : typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") && !row.chat_id.startsWith("dashboard")
+          ? row.chat_id.replace(/@.*$/, "")
+          : String(row.client_name || "");
+
+        const leadDateFormatted = row.created_at
+          ? formatTimeInTimezone(Number(row.created_at), "BD", cleanPhone)
+          : "";
+
         rows.push([
-          csvCell(row.id),
-          csvCell(row.client_name),
-          csvCell(row.phone),
-          csvCell(row.email),
+          csvCell(row.client_name || row.chat_pushname || "New Lead"),
+          csvCell(cleanPhone),
+          csvCell(username),
+          csvCell(leadDateFormatted),
+          csvCell(websiteLink),
+          csvCell(deal.scope),
+          csvCell(deal.combinedDeal),
+          csvCell(deal.dealValue),
+          csvCell(deal.pkg),
+          csvCell(deal.scope),
           csvCell(row.status),
           csvCell(row.followup_type),
-          csvCell(row.scheduled_at),
-          csvCell(row.timezone),
-          csvCell(row.company_or_website),
-          csvCell(row.requirements),
-          csvCell(row.source),
-          csvCell(row.notes),
-          csvCell(row.followup_count),
-          csvCell(row.next_followup_at),
-          csvCell(row.last_followup_at),
+          csvCell(row.followup_count ?? 0),
+          csvCell(row.scheduled_at || ""),
+          csvCell(row.notes || ""),
+          csvCell(row.source || "whatsapp"),
           csvCell(row.created_at),
         ].join(","));
       }
 
-      const csv = rows.join("\r\n");
-      const now = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      // UTF-8 BOM for automatic character encoding & clean column separation in Excel
+      const BOM = "\uFEFF";
+      const csv = BOM + rows.join("\r\n");
+
+      let filename = "nyra-rose-leads";
+      if (fromParam && toParam) {
+        filename += `_${fromParam}_to_${toParam}`;
+      } else if (fromParam) {
+        filename += `_from_${fromParam}`;
+      } else if (toParam) {
+        filename += `_until_${toParam}`;
+      } else {
+        filename += `_all_${new Date().toISOString().slice(0, 10)}`;
+      }
+      filename += ".csv";
+
       return new Response(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="nyra-rose-leads-${now}.csv"`,
+          "Content-Disposition": `attachment; filename="${filename}"`,
           "Cache-Control": "no-store",
         },
       });

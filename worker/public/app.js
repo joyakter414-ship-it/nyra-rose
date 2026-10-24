@@ -3552,39 +3552,149 @@ $("#refresh-bookings-btn")?.addEventListener("click", () => {
   loadBookings();
 });
 
-// ── Master Admin: Export all leads as CSV (management can't see this button) ──
-$("#export-leads-csv-btn")?.addEventListener("click", async () => {
-  const btn = $("#export-leads-csv-btn");
+// ── Master Admin: Export Leads as CSV with Date Filter Modal ────────────────
+const exportCsvModal = $("#export-csv-modal");
+const exportFromDate = $("#export-from-date");
+const exportToDate = $("#export-to-date");
+const exportFeedback = $("#export-csv-feedback");
+
+function closeExportCsvModal() {
+  if (exportCsvModal) exportCsvModal.classList.add("hidden");
+  if (exportFeedback) exportFeedback.textContent = "";
+}
+
+$("#export-leads-csv-btn")?.addEventListener("click", () => {
+  if (isClient) {
+    alert("Access Denied: Only Master Admin can export leads.");
+    return;
+  }
+  if (exportCsvModal) {
+    // Default to All Time
+    if (exportFromDate) exportFromDate.value = "";
+    if (exportToDate) exportToDate.value = "";
+    document.querySelectorAll(".export-preset-btn").forEach((b) => b.classList.remove("active"));
+    const allBtn = document.querySelector('.export-preset-btn[data-preset="all"]');
+    if (allBtn) allBtn.classList.add("active");
+    if (exportFeedback) exportFeedback.textContent = "";
+    exportCsvModal.classList.remove("hidden");
+  }
+});
+
+$("#close-export-csv-modal")?.addEventListener("click", closeExportCsvModal);
+$("#cancel-export-csv-btn")?.addEventListener("click", closeExportCsvModal);
+exportCsvModal?.addEventListener("click", (e) => {
+  if (e.target === exportCsvModal) closeExportCsvModal();
+});
+
+// Quick Presets inside Modal
+document.querySelectorAll(".export-preset-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".export-preset-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const preset = btn.dataset.preset;
+    const now = new Date();
+    const toYmd = (d) => d.toISOString().slice(0, 10);
+    const todayStr = toYmd(now);
+
+    if (preset === "all") {
+      if (exportFromDate) exportFromDate.value = "";
+      if (exportToDate) exportToDate.value = "";
+    } else if (preset === "today") {
+      if (exportFromDate) exportFromDate.value = todayStr;
+      if (exportToDate) exportToDate.value = todayStr;
+    } else if (preset === "last7") {
+      const past7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+      if (exportFromDate) exportFromDate.value = toYmd(past7);
+      if (exportToDate) exportToDate.value = todayStr;
+    } else if (preset === "last30") {
+      const past30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+      if (exportFromDate) exportFromDate.value = toYmd(past30);
+      if (exportToDate) exportToDate.value = todayStr;
+    } else if (preset === "thisMonth") {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      if (exportFromDate) exportFromDate.value = toYmd(firstDay);
+      if (exportToDate) exportToDate.value = todayStr;
+    }
+  });
+});
+
+// Clear preset active state if manual date inputs are modified
+[exportFromDate, exportToDate].forEach((inp) => {
+  inp?.addEventListener("input", () => {
+    document.querySelectorAll(".export-preset-btn").forEach((b) => b.classList.remove("active"));
+  });
+});
+
+// Trigger Download CSV
+$("#confirm-export-csv-btn")?.addEventListener("click", async () => {
+  const btn = $("#confirm-export-csv-btn");
+  const from = exportFromDate?.value.trim() || "";
+  const to = exportToDate?.value.trim() || "";
+
+  if (from && to && from > to) {
+    if (exportFeedback) {
+      exportFeedback.textContent = "⚠️ 'From Date' cannot be later than 'To Date'.";
+      exportFeedback.style.color = "#f87171";
+    }
+    return;
+  }
+
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "⏳ Downloading…";
+    btn.textContent = "⏳ Generating CSV…";
   }
+  if (exportFeedback) {
+    exportFeedback.textContent = "Generating structured lead sheet…";
+    exportFeedback.style.color = "var(--muted)";
+  }
+
   try {
     const token = localStorage.getItem("nr_password") || localStorage.getItem("lj_password") || "";
-    const res = await fetch("/api/bookings/export-csv", {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const fetchUrl = "/api/bookings/export-csv" + (params.toString() ? "?" + params.toString() : "");
+
+    const res = await fetch(fetchUrl, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
-      alert("Export failed: " + (errData.error || res.statusText));
-      return;
+      throw new Error(errData.error || res.statusText);
     }
+
     const blob = await res.blob();
     const dlUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const today = new Date().toISOString().slice(0, 10);
+
+    let filename = "nyra-rose-leads";
+    if (from && to) filename += `_${from}_to_${to}`;
+    else if (from) filename += `_from_${from}`;
+    else if (to) filename += `_until_${to}`;
+    else filename += `_all_${new Date().toISOString().slice(0, 10)}`;
+    filename += ".csv";
+
     a.href = dlUrl;
-    a.download = `nyra-rose-leads-${today}.csv`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(dlUrl);
-  } catch (e) {
-    alert("Export error: " + e.message);
+
+    if (exportFeedback) {
+      exportFeedback.textContent = "✅ Download complete! File saved as " + filename;
+      exportFeedback.style.color = "#34d399";
+    }
+    setTimeout(closeExportCsvModal, 1200);
+  } catch (err) {
+    if (exportFeedback) {
+      exportFeedback.textContent = "❌ Export error: " + err.message;
+      exportFeedback.style.color = "#f87171";
+    }
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "⬇ Export CSV";
+      btn.textContent = "⬇ Download Leads CSV";
     }
   }
 });

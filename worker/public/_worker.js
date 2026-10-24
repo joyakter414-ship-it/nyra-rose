@@ -2190,19 +2190,24 @@ async function processDueFollowups(env) {
     await syncBookingToTodo(env, updatedBooking, now);
     if (jid) {
       outbound.push({ jid, text: message, bookingId: b.id });
-      await insertMessage(env, {
-        id: `followup:${crypto.randomUUID()}`,
-        chat_id: jid,
-        role: "assistant",
-        sender: null,
-        sender_name: "Nyra Rose",
-        content: message,
-        source: "whatsapp",
-        model: "auto:followup",
-        neurons: 0,
-        created_at: now
-      }).catch(() => {
-      });
+      const estimatedNeurons = Math.max(15, Math.round(message.length / 4 * 0.85));
+      await Promise.all([
+        insertMessage(env, {
+          id: `followup:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "auto:followup",
+          neurons: estimatedNeurons,
+          created_at: now
+        }).catch(() => {
+        }),
+        addUsage(env, estimatedNeurons).catch(() => {
+        })
+      ]);
     }
   }
   for (const t of dueAiTodos) {
@@ -2214,6 +2219,7 @@ async function processDueFollowups(env) {
     }
     const jid = `${cleanPhone}@s.whatsapp.net`;
     outbound.push({ jid, text: msg, bookingId: t.id });
+    const estimatedTaskNeurons = Math.max(15, Math.round(msg.length / 4 * 0.85));
     await Promise.all([
       updateTodo(env, t.id, { completed: 1, sent_at: now }),
       insertMessage(env, {
@@ -2225,9 +2231,11 @@ async function processDueFollowups(env) {
         content: msg,
         source: "whatsapp",
         model: "auto:task",
-        neurons: 0,
+        neurons: estimatedTaskNeurons,
         created_at: now
       }).catch(() => {
+      }),
+      addUsage(env, estimatedTaskNeurons).catch(() => {
       })
     ]);
   }
@@ -3074,19 +3082,24 @@ async function dashboardRoutes(request, env, url) {
       const existingQueue = await kvGet(env, "gateway_outbound_queue") || [];
       existingQueue.push({ jid, text: message, bookingId: t.booking_id || t.id });
       await kvSet(env, "gateway_outbound_queue", existingQueue);
-      await insertMessage(env, {
-        id: `task:${crypto.randomUUID()}`,
-        chat_id: jid,
-        role: "assistant",
-        sender: null,
-        sender_name: "Nyra Rose",
-        content: message,
-        source: "whatsapp",
-        model: "task:manual_send",
-        neurons: 0,
-        created_at: now
-      }).catch(() => {
-      });
+      const estimatedNeurons = Math.max(15, Math.round(message.length / 4 * 0.85));
+      await Promise.all([
+        insertMessage(env, {
+          id: `task:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "task:manual_send",
+          neurons: estimatedNeurons,
+          created_at: now
+        }).catch(() => {
+        }),
+        addUsage(env, estimatedNeurons).catch(() => {
+        })
+      ]);
       let updatedTodo = null;
       if (t.booking_id) {
         const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first();
@@ -3356,19 +3369,24 @@ async function dashboardRoutes(request, env, url) {
         const existingQueue = await kvGet(env, "gateway_outbound_queue") || [];
         existingQueue.push({ jid, text: message, bookingId: b.id });
         await kvSet(env, "gateway_outbound_queue", existingQueue);
-        await insertMessage(env, {
-          id: `followup:${crypto.randomUUID()}`,
-          chat_id: jid,
-          role: "assistant",
-          sender: null,
-          sender_name: "Nyra Rose",
-          content: message,
-          source: "whatsapp",
-          model: "crm:followup",
-          neurons: 0,
-          created_at: now
-        }).catch(() => {
-        });
+        const estimatedNeurons = Math.max(15, Math.round(message.length / 4 * 0.85));
+        await Promise.all([
+          insertMessage(env, {
+            id: `followup:${crypto.randomUUID()}`,
+            chat_id: jid,
+            role: "assistant",
+            sender: null,
+            sender_name: "Nyra Rose",
+            content: message,
+            source: "whatsapp",
+            model: "crm:followup",
+            neurons: estimatedNeurons,
+            created_at: now
+          }).catch(() => {
+          }),
+          addUsage(env, estimatedNeurons).catch(() => {
+          })
+        ]);
         queuedToGateway = true;
       }
       if (body.markSent || body.sendViaGateway) {
@@ -3403,76 +3421,152 @@ async function dashboardRoutes(request, env, url) {
       await deleteBooking(env, id);
       return json({ ok: true });
     }
-    // ── Admin-only: Export all leads/bookings as CSV ────────────────────────
+    // ── Master Admin Only: Export Leads as CSV with Date Filter & Deep Details ──
     case "GET /api/bookings/export-csv": {
-      let csvCell2 = function(v) {
+      let parseLeadDeal2 = function(rawReqs, rawNotes) {
+        const raw = typeof rawReqs === "string" ? rawReqs : "";
+        const dealMatch = raw.match(/💰\s*([^|📦🎬\n]+)/);
+        const pkgMatch = raw.match(/📦\s*([^|💰🎬\n]+)/);
+        const scopeMatch = raw.match(/🎬\s*([^|💰📦\n]+)/);
+        let dealValue = dealMatch ? dealMatch[1].trim() : "";
+        let pkg = pkgMatch ? pkgMatch[1].trim() : "";
+        let scope = scopeMatch ? scopeMatch[1].trim() : "";
+        if (!dealValue && !pkg && !scope && raw && raw !== "Video Editing Consultation") {
+          scope = raw;
+        }
+        const notesStr = typeof rawNotes === "string" ? rawNotes : "";
+        if (notesStr) {
+          const moneyMatch = notesStr.match(/(?:\$|usd|bdt|tk|\b)\s*(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:\$|usd|bdt|tk|\b)/i) || notesStr.match(/(?:\$)\s*(\d+(?:,\d+)?)/i);
+          const videoCountMatch = notesStr.match(/(\d+)\s*(?:videos?|shorts?|reels?|vids?)/i);
+          if (!dealValue && moneyMatch) dealValue = `$${moneyMatch[1]}`;
+          if (!dealValue && videoCountMatch) dealValue = `${videoCountMatch[1]} videos`;
+        }
+        const parts = [];
+        if (dealValue) parts.push(`Budget: ${dealValue}`);
+        if (pkg) parts.push(`Package: ${pkg}`);
+        if (scope) parts.push(`Scope: ${scope}`);
+        const combinedDeal = parts.length > 0 ? parts.join(" | ") : dealValue || pkg || scope || "Standard Inquiry";
+        return { dealValue, pkg, scope, combinedDeal };
+      }, extractCompanyLink2 = function(companyOrWebsite, notes, requirements) {
+        if (typeof companyOrWebsite === "string" && companyOrWebsite.trim()) return companyOrWebsite.trim();
+        const textToScan = `${typeof notes === "string" ? notes : ""} ${typeof requirements === "string" ? requirements : ""}`;
+        const urlMatch = textToScan.match(/https?:\/\/[^\s,;"')]+/i) || textToScan.match(/(?:www\.)[^\s,;"')]+/i);
+        return urlMatch ? urlMatch[0] : "";
+      }, csvCell2 = function(v) {
         if (v === null || v === void 0) return "";
-        const s = String(v);
+        const s = String(v).replace(/\r\n/g, " ").replace(/\n/g, " ").trim();
         if (s.includes(",") || s.includes('"') || s.includes("\n")) {
           return `"${s.replace(/"/g, '""')}"`;
         }
         return s;
       };
-      var csvCell = csvCell2;
+      var parseLeadDeal = parseLeadDeal2, extractCompanyLink = extractCompanyLink2, csvCell = csvCell2;
       if (role !== "admin") {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
+        return new Response(JSON.stringify({ error: "Forbidden: Master Admin Access Required" }), {
           status: 403,
           headers: { "Content-Type": "application/json" }
         });
       }
-      const { results } = await env.DB.prepare(
-        `SELECT id, client_name, phone, email, status, followup_type,
-                scheduled_at, timezone, company_or_website, requirements,
-                source, notes, followup_count, next_followup_at,
-                last_followup_at, created_at
-         FROM bookings
-         ORDER BY created_at DESC`
-      ).all();
+      const fromParam = url.searchParams.get("from")?.trim() || url.searchParams.get("startDate")?.trim() || "";
+      const toParam = url.searchParams.get("to")?.trim() || url.searchParams.get("endDate")?.trim() || "";
+      let fromMs = null;
+      if (fromParam) {
+        const parsed = Date.parse(fromParam.includes("T") ? fromParam : `${fromParam}T00:00:00+06:00`);
+        if (!Number.isNaN(parsed)) fromMs = parsed;
+      }
+      let toMs = null;
+      if (toParam) {
+        const parsed = Date.parse(toParam.includes("T") ? toParam : `${toParam}T23:59:59.999+06:00`);
+        if (!Number.isNaN(parsed)) toMs = parsed;
+      }
+      let sql = `
+        SELECT b.id, b.client_name, b.phone, b.chat_id, b.email, b.status, b.followup_type,
+               b.scheduled_at, b.timezone, b.company_or_website, b.requirements,
+               b.source, b.notes, b.followup_count, b.next_followup_at,
+               b.last_followup_at, b.created_at,
+               c.name AS chat_pushname
+        FROM bookings b
+        LEFT JOIN chats c ON b.chat_id = c.id
+      `;
+      const conditions = [];
+      const bindings = [];
+      if (fromMs !== null) {
+        conditions.push("b.created_at >= ?");
+        bindings.push(fromMs);
+      }
+      if (toMs !== null) {
+        conditions.push("b.created_at <= ?");
+        bindings.push(toMs);
+      }
+      if (conditions.length > 0) {
+        sql += " WHERE " + conditions.join(" AND ");
+      }
+      sql += " ORDER BY b.created_at DESC";
+      const stmt = env.DB.prepare(sql);
+      const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all();
       const COLS = [
-        "id",
-        "client_name",
-        "phone",
-        "email",
-        "status",
-        "followup_type",
-        "scheduled_at",
-        "timezone",
-        "company_or_website",
-        "requirements",
-        "source",
-        "notes",
-        "followup_count",
-        "next_followup_at_ms",
-        "last_followup_at_ms",
-        "created_at_ms"
+        "Name",
+        "WhatsApp Number",
+        "WhatsApp Username",
+        "Date of Lead",
+        "Company / Website Link",
+        "Video Style / Requirements",
+        "Package & Deal Value",
+        "Budget / Deal Value",
+        "Package Tier",
+        "Video Count / Scope",
+        "Lead Status",
+        "Follow-Up Stage",
+        "Follow-Up Count",
+        "Scheduled Meeting",
+        "Internal Notes",
+        "Lead Source",
+        "Raw Created Timestamp (ms)"
       ];
-      const rows = [COLS.join(",")];
-      for (const row of results) {
+      const rows = [COLS.map(csvCell2).join(",")];
+      for (const row of results || []) {
+        const deal = parseLeadDeal2(row.requirements, row.notes);
+        const websiteLink = extractCompanyLink2(row.company_or_website, row.notes, row.requirements);
+        const cleanPhone = String(row.phone || (typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") ? row.chat_id.replace(/@.*$/, "") : "")).replace(/[^\d+]/g, "");
+        const username = typeof row.chat_pushname === "string" && row.chat_pushname.trim() ? row.chat_pushname.trim() : typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") && !row.chat_id.startsWith("dashboard") ? row.chat_id.replace(/@.*$/, "") : String(row.client_name || "");
+        const leadDateFormatted = row.created_at ? formatTimeInTimezone(Number(row.created_at), "BD", cleanPhone) : "";
         rows.push([
-          csvCell2(row.id),
-          csvCell2(row.client_name),
-          csvCell2(row.phone),
-          csvCell2(row.email),
+          csvCell2(row.client_name || row.chat_pushname || "New Lead"),
+          csvCell2(cleanPhone),
+          csvCell2(username),
+          csvCell2(leadDateFormatted),
+          csvCell2(websiteLink),
+          csvCell2(deal.scope),
+          csvCell2(deal.combinedDeal),
+          csvCell2(deal.dealValue),
+          csvCell2(deal.pkg),
+          csvCell2(deal.scope),
           csvCell2(row.status),
           csvCell2(row.followup_type),
-          csvCell2(row.scheduled_at),
-          csvCell2(row.timezone),
-          csvCell2(row.company_or_website),
-          csvCell2(row.requirements),
-          csvCell2(row.source),
-          csvCell2(row.notes),
-          csvCell2(row.followup_count),
-          csvCell2(row.next_followup_at),
-          csvCell2(row.last_followup_at),
+          csvCell2(row.followup_count ?? 0),
+          csvCell2(row.scheduled_at || ""),
+          csvCell2(row.notes || ""),
+          csvCell2(row.source || "whatsapp"),
           csvCell2(row.created_at)
         ].join(","));
       }
-      const csv = rows.join("\r\n");
-      const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const BOM = "\uFEFF";
+      const csv = BOM + rows.join("\r\n");
+      let filename = "nyra-rose-leads";
+      if (fromParam && toParam) {
+        filename += `_${fromParam}_to_${toParam}`;
+      } else if (fromParam) {
+        filename += `_from_${fromParam}`;
+      } else if (toParam) {
+        filename += `_until_${toParam}`;
+      } else {
+        filename += `_all_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}`;
+      }
+      filename += ".csv";
       return new Response(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="nyra-rose-leads-${now}.csv"`,
+          "Content-Disposition": `attachment; filename="${filename}"`,
           "Cache-Control": "no-store"
         }
       });

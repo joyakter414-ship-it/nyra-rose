@@ -1473,11 +1473,19 @@ code {
 }
 
 .timer-preset-btn:hover,
+.export-preset-btn:hover,
 .todo-quick-slot:hover,
 .edit-todo-slot:hover {
   border-color: var(--rose) !important;
   background: rgba(244, 63, 94, 0.13) !important;
   transform: translateY(-1px);
+}
+
+.export-preset-btn.active {
+  border-color: var(--rose) !important;
+  background: rgba(244, 63, 94, 0.22) !important;
+  color: var(--rose-light) !important;
+  font-weight: 600;
 }
 
 /* ── AI Follow-Up & Daily Task Studio Timeline System ────────────────────── */

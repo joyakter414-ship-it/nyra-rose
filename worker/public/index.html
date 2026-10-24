@@ -632,6 +632,66 @@
           <div id="followup-feedback" class="muted small-text" style="margin-top: 10px;"></div>
         </div>
       </div>
+
+      <!-- Master Admin Export Leads CSV Modal with Date Range Selector -->
+      <div id="export-csv-modal" class="studio-modal-backdrop hidden">
+        <div class="card studio-modal-card" style="max-width: 540px;">
+          <div class="chat-head">
+            <h2 style="margin: 0; font-size: 16px;">📥 Master Admin: Download Client Leads CSV</h2>
+            <button id="close-export-csv-modal" class="ghost small">✕</button>
+          </div>
+          <p class="muted small-text" style="margin: 6px 0 12px;">
+            🔒 <b>Master Admin Only</b> (Hidden from Management). Export client leads with phone numbers, usernames, lead dates, company links, requested video styles, and package/budget deals.
+          </p>
+
+          <!-- Quick Date Range Presets -->
+          <div class="studio-subpanel" style="margin-bottom: 12px;">
+            <div style="font-size: 12px; font-weight: 600; color: var(--rose-light); margin-bottom: 8px;">
+              📅 Filter by Date of Lead:
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button type="button" class="ghost small export-preset-btn active" data-preset="all">All Time</button>
+              <button type="button" class="ghost small export-preset-btn" data-preset="today">Today</button>
+              <button type="button" class="ghost small export-preset-btn" data-preset="last7">Last 7 Days</button>
+              <button type="button" class="ghost small export-preset-btn" data-preset="last30">Last 30 Days</button>
+              <button type="button" class="ghost small export-preset-btn" data-preset="thisMonth">This Month</button>
+            </div>
+          </div>
+
+          <!-- Date Inputs (From Date to Which Date) -->
+          <div class="row" style="gap: 12px;">
+            <label style="font-size: 12px; font-weight: 600;">From Date:
+              <input type="date" id="export-from-date" style="margin-top: 4px;" />
+            </label>
+            <label style="font-size: 12px; font-weight: 600;">To Date:
+              <input type="date" id="export-to-date" style="margin-top: 4px;" />
+            </label>
+          </div>
+
+          <!-- Column Checklist / Field Preview -->
+          <div class="studio-subpanel" style="margin: 14px 0 10px; font-size: 12px; line-height: 1.6;">
+            <span style="font-weight: 600; color: var(--rose-light); display: block; margin-bottom: 4px;">📊 Structured CSV Columns Included:</span>
+            <span class="muted">
+              • 👤 <b>Name</b> (Client Name)<br/>
+              • 📱 <b>WhatsApp Number</b> (Phone Digits)<br/>
+              • 💬 <b>WhatsApp Username</b> (Profile / Pushname)<br/>
+              • 📅 <b>Date of Lead</b> (BD Time &amp; Timezone)<br/>
+              • 🌐 <b>Company / Website Link</b> (From Msg / Ref)<br/>
+              • 🎬 <b>Video Style Requested</b> (Reels, Long-Form, Hormozi, etc.)<br/>
+              • 💰 <b>Package / Deal Value</b> ($330 Growth, $630 Content Engine, $320, 30 videos, etc.)<br/>
+              • 📋 Lead Status · Follow-Up Stage · Scheduled Meeting
+            </span>
+          </div>
+
+          <div class="actions" style="margin-top: 16px; justify-content: flex-end; gap: 8px;">
+            <button type="button" id="cancel-export-csv-btn" class="ghost small">Cancel</button>
+            <button type="button" id="confirm-export-csv-btn" class="small btn-tone-emerald">
+              ⬇ Download Leads CSV
+            </button>
+          </div>
+          <div id="export-csv-feedback" class="muted small-text" style="margin-top: 8px;"></div>
+        </div>
+      </div>
     </section>
 
     <!-- Rule Book -->

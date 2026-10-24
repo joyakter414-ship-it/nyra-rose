@@ -1595,18 +1595,23 @@ export async function processDueFollowups(
 
     if (jid) {
       outbound.push({ jid, text: message, bookingId: b.id });
-      await insertMessage(env, {
-        id: `followup:${crypto.randomUUID()}`,
-        chat_id: jid,
-        role: "assistant",
-        sender: null,
-        sender_name: "Nyra Rose",
-        content: message,
-        source: "whatsapp",
-        model: "auto:followup",
-        neurons: 0,
-        created_at: now,
-      }).catch(() => {});
+      // Track inference credit/neurons for automated follow-up dispatch
+      const estimatedNeurons = Math.max(15, Math.round((message.length / 4) * 0.85));
+      await Promise.all([
+        insertMessage(env, {
+          id: `followup:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "auto:followup",
+          neurons: estimatedNeurons,
+          created_at: now,
+        }).catch(() => {}),
+        addUsage(env, estimatedNeurons).catch(() => {}),
+      ]);
     }
   }
 
@@ -1620,6 +1625,7 @@ export async function processDueFollowups(
     }
     const jid = `${cleanPhone}@s.whatsapp.net`;
     outbound.push({ jid, text: msg, bookingId: t.id });
+    const estimatedTaskNeurons = Math.max(15, Math.round((msg.length / 4) * 0.85));
     await Promise.all([
       updateTodo(env, t.id, { completed: 1, sent_at: now }),
       insertMessage(env, {
@@ -1631,9 +1637,10 @@ export async function processDueFollowups(
         content: msg,
         source: "whatsapp",
         model: "auto:task",
-        neurons: 0,
+        neurons: estimatedTaskNeurons,
         created_at: now,
       }).catch(() => {}),
+      addUsage(env, estimatedTaskNeurons).catch(() => {}),
     ]);
   }
 
