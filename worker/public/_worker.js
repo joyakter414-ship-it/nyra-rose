@@ -475,6 +475,106 @@ async function deleteBooking(env, id) {
 async function findLatestBookingForChat(env, chatId) {
   return await env.DB.prepare("SELECT * FROM bookings WHERE chat_id = ? ORDER BY created_at DESC LIMIT 1").bind(chatId).first();
 }
+async function ensureBudgetTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS budget_entries (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+      date        TEXT NOT NULL,
+      amount      REAL NOT NULL DEFAULT 0,
+      source      TEXT NOT NULL,
+      category    TEXT,
+      notes       TEXT,
+      created_at  INTEGER NOT NULL
+    )
+  `).run().catch(() => {
+  });
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_budget_type_date ON budget_entries (type, date)
+  `).run().catch(() => {
+  });
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_budget_created ON budget_entries (created_at DESC)
+  `).run().catch(() => {
+  });
+}
+async function getBudgetEntries(env, type, startDate, endDate) {
+  await ensureBudgetTable(env);
+  let query = "SELECT * FROM budget_entries";
+  const conditions = [];
+  const bindings = [];
+  if (type) {
+    conditions.push("type = ?");
+    bindings.push(type);
+  }
+  if (startDate) {
+    conditions.push("date >= ?");
+    bindings.push(startDate);
+  }
+  if (endDate) {
+    conditions.push("date <= ?");
+    bindings.push(endDate);
+  }
+  if (conditions.length > 0) {
+    query += " WHERE " + conditions.join(" AND ");
+  }
+  query += " ORDER BY date DESC, created_at DESC";
+  const stmt = env.DB.prepare(query);
+  const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all();
+  return results || [];
+}
+async function getBudgetSummary(env) {
+  await ensureBudgetTable(env);
+  const row = await env.DB.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS totalIncome,
+      COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS totalExpense,
+      COALESCE(SUM(CASE WHEN type = 'income' THEN 1 ELSE 0 END), 0) AS incomeCount,
+      COALESCE(SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END), 0) AS expenseCount
+    FROM budget_entries
+  `).first();
+  const totalIncome = Number(row?.totalIncome || 0);
+  const totalExpense = Number(row?.totalExpense || 0);
+  const totalStock = totalIncome - totalExpense;
+  const incomeCount = Number(row?.incomeCount || 0);
+  const expenseCount = Number(row?.expenseCount || 0);
+  return {
+    totalIncome,
+    totalExpense,
+    totalStock,
+    incomeCount,
+    expenseCount
+  };
+}
+async function createBudgetEntry(env, entry) {
+  await ensureBudgetTable(env);
+  const id = entry.id || `b_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const created_at = entry.created_at || Date.now();
+  const date = entry.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const amount = Number(entry.amount) || 0;
+  const source = (entry.source || "").trim();
+  const category = (entry.category || "").trim() || (entry.type === "income" ? "Client Payment" : "Operations");
+  const notes = (entry.notes || "").trim();
+  await env.DB.prepare(`
+    INSERT INTO budget_entries (id, type, date, amount, source, category, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, entry.type, date, amount, source, category, notes, created_at).run();
+  return {
+    id,
+    type: entry.type,
+    date,
+    amount,
+    source,
+    category,
+    notes,
+    created_at
+  };
+}
+async function deleteBudgetEntry(env, id) {
+  await ensureBudgetTable(env);
+  const res = await env.DB.prepare("DELETE FROM budget_entries WHERE id = ?").bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
+}
 
 // src/analytics.ts
 var CLIENT_ID = "54d11594-84e4-41aa-b438-e81b8fa78ee7";
@@ -3564,6 +3664,95 @@ async function dashboardRoutes(request, env, url) {
         filename += `_all_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}`;
       }
       filename += ".csv";
+      return new Response(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Cache-Control": "no-store"
+        }
+      });
+    }
+    // ── Budget & Vault Management (Management & Master Admin) ──
+    case "GET /api/budget": {
+      const typeParam = url.searchParams.get("type");
+      const startDate = url.searchParams.get("startDate") || void 0;
+      const endDate = url.searchParams.get("endDate") || void 0;
+      const [entries, summary] = await Promise.all([
+        getBudgetEntries(env, typeParam || void 0, startDate, endDate),
+        getBudgetSummary(env)
+      ]);
+      return json({ ok: true, summary, entries });
+    }
+    case "POST /api/budget": {
+      const body = await request.json();
+      if (!body || body.type !== "income" && body.type !== "expense") {
+        return json({ error: "Valid type ('income' or 'expense') is required" }, 400);
+      }
+      if (typeof body.amount !== "number" || isNaN(body.amount) || body.amount <= 0) {
+        return json({ error: "Valid amount greater than 0 is required" }, 400);
+      }
+      if (!body.source || !body.source.trim()) {
+        return json({ error: "Source / Client / Payee description is required" }, 400);
+      }
+      const entry = await createBudgetEntry(env, {
+        type: body.type,
+        date: body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+        amount: body.amount,
+        source: body.source.trim(),
+        category: body.category?.trim(),
+        notes: body.notes?.trim()
+      });
+      const summary = await getBudgetSummary(env);
+      return json({ ok: true, entry, summary });
+    }
+    case "DELETE /api/budget": {
+      const id = url.searchParams.get("id");
+      if (!id) return json({ error: "id is required" }, 400);
+      const deleted = await deleteBudgetEntry(env, id);
+      const summary = await getBudgetSummary(env);
+      return json({ ok: true, deleted, summary });
+    }
+    case "GET /api/budget/export-csv": {
+      let csvCell2 = function(val) {
+        if (val === null || val === void 0) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      };
+      var csvCell = csvCell2;
+      const typeParam = url.searchParams.get("type");
+      const startDate = url.searchParams.get("startDate") || void 0;
+      const endDate = url.searchParams.get("endDate") || void 0;
+      const entries = await getBudgetEntries(env, typeParam || void 0, startDate, endDate);
+      const summary = await getBudgetSummary(env);
+      const COLS = [
+        "Entry Type",
+        "Date",
+        "Amount ($)",
+        "Source / Client / Payee",
+        "Category",
+        "Notes / Reference",
+        "Record Created At"
+      ];
+      const rows = [COLS.map(csvCell2).join(",")];
+      for (const e of entries) {
+        rows.push([
+          csvCell2(e.type.toUpperCase()),
+          csvCell2(e.date),
+          csvCell2(e.amount.toFixed(2)),
+          csvCell2(e.source),
+          csvCell2(e.category || ""),
+          csvCell2(e.notes || ""),
+          csvCell2(new Date(e.created_at).toISOString())
+        ].join(","));
+      }
+      rows.push("");
+      rows.push(["Summary", "", "", "", "", "", ""].map(csvCell2).join(","));
+      rows.push(["TOTAL INCOME", "", `$${summary.totalIncome.toFixed(2)}`, `${summary.incomeCount} records`, "", "", ""].map(csvCell2).join(","));
+      rows.push(["TOTAL EXPENSE", "", `$${summary.totalExpense.toFixed(2)}`, `${summary.expenseCount} records`, "", "", ""].map(csvCell2).join(","));
+      rows.push(["TOTAL STOCK (NET RESERVE)", "", `$${summary.totalStock.toFixed(2)}`, "Available Vault Reserve", "", "", ""].map(csvCell2).join(","));
+      const BOM = "\uFEFF";
+      const csv = BOM + rows.join("\r\n");
+      const filename = `vidmox_budget_vault_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.csv`;
       return new Response(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",

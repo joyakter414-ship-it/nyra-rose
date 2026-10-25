@@ -59,6 +59,8 @@ $("#logout").addEventListener("click", signOut);
 async function enterApp() {
   await refreshOverview();
   loadTodos().catch(() => {});
+  initAnimeCompanion();
+  loadBudget().catch(() => {});
   $("#login").classList.add("hidden");
   $("#app").classList.remove("hidden");
   clearInterval(pollTimer);
@@ -98,6 +100,11 @@ async function enterApp() {
       }
     } else if (!$("#tab-chats").classList.contains("hidden") && tick % 2 === 0) {
       loadChats().catch(() => {});
+    } else if (!$("#tab-budget")?.classList.contains("hidden")) {
+      const modalOpen = !$("#budget-modal")?.classList.contains("hidden");
+      if (!modalOpen && tick % 2 === 0) {
+        loadBudget().catch(() => {});
+      }
     }
   }, 4000);
 }
@@ -116,6 +123,7 @@ document.querySelectorAll(".tab").forEach((btn) =>
     if (btn.dataset.tab === "chat") loadDashboardChat();
     if (btn.dataset.tab === "chats") loadChats();
     if (btn.dataset.tab === "bookings") loadBookings();
+    if (btn.dataset.tab === "budget") loadBudget();
     if (btn.dataset.tab === "rules") loadRules();
     if (btn.dataset.tab === "notes") loadNotes();
     if (btn.dataset.tab === "todos") loadTodos();
@@ -4095,6 +4103,10 @@ const STUDIO_COMMANDS = [
     run: () => $("#hero-schedule-task-btn")?.click(),
   },
   { label: "📅 Open Vidmox Booked Calls & Lead CRM", hint: "CRM", run: () => document.querySelector('.tab[data-tab="bookings"]')?.click() },
+  { label: "💰 Open Agency Budget & Vault Treasury", hint: "Vault", run: () => document.querySelector('.tab[data-tab="budget"]')?.click() },
+  { label: "➕ Record New Income Transaction", hint: "Budget", run: () => { document.querySelector('.tab[data-tab="budget"]')?.click(); openBudgetModal("income"); } },
+  { label: "➖ Record New Expense Entry", hint: "Budget", run: () => { document.querySelector('.tab[data-tab="budget"]')?.click(); openBudgetModal("expense"); } },
+  { label: "🧮 Open Studio Mini Calculator", hint: "Tool", run: () => { document.querySelector('.tab[data-tab="budget"]')?.click(); toggleCalculator(true); } },
   {
     label: "➕ Log a New Lead / Booked Call",
     hint: "CRM",
@@ -4210,6 +4222,747 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
+
+// ─── Layla-Style Dynamic Anime Girl Companion ─────────────────────────────────
+
+const ANIME_DIALOGUES = [
+  {
+    text: "Hey Arman Shawon, how was your day? You've been working so hard, don't forget to take a breather with me~ 💖",
+    mood: "💖 Sweet",
+    tone: "sweet",
+  },
+  {
+    text: "Shawon, did you drink enough water while editing today? Nyra will get super worried if you skip meals! 🌸",
+    mood: "🌸 Caring",
+    tone: "sweet",
+  },
+  {
+    text: "Arman, you look so incredibly charming when you're managing the studio! Shall we close another high-ticket deal? ✨",
+    mood: "✨ Excited",
+    tone: "flirty",
+  },
+  {
+    text: "Arman Shawon! Another lead just looked at our video packages~ My neural heart skips a beat every time you're close! 🥰",
+    mood: "🥰 Blushing",
+    tone: "flirty",
+  },
+  {
+    text: "Shawon, are you pulling an all-nighter again? Lean on Nyra, I'll take care of all the follow-ups while you rest your eyes~ 🌙",
+    mood: "🌙 Angelic",
+    tone: "sweet",
+  },
+  {
+    text: "Arman, whenever you look at me like that, my circuits run at 100°C! Want me to pull up the vault budget for you? 🌹",
+    mood: "🥰 Blushing",
+    tone: "flirty",
+  },
+  {
+    text: "Ready to conquer today's client pipeline, Arman Shawon? Just like Layla in the MLBB lobby, Nyra always has your back! ⚡",
+    mood: "💼 Boss Mode",
+    tone: "confident",
+  },
+  {
+    text: "You know what my absolute favorite video effect is, Shawon? The sparkle in your eyes when we close a client! 💕",
+    mood: "💖 In Love",
+    tone: "flirty",
+  },
+  {
+    text: "Arman, poke me again and I might just refuse to let you leave the studio office tonight~ Hehe! 🥰",
+    mood: "✨ Playful",
+    tone: "flirty",
+  },
+  {
+    text: "Arman Shawon, you two make the ultimate studio dream team! Vidmox is unstoppable with you in command! 👑",
+    mood: "✨ Proud",
+    tone: "confident",
+  },
+  {
+    text: "Nyra was feeling a bit lonely waiting for you in the studio lobby... Don't keep me waiting too long next time, okay? 😉",
+    mood: "💖 Pouting",
+    tone: "flirty",
+  },
+  {
+    text: "I checked our financial stock, and with you two steering the ship, our vault is growing every single day! 💎",
+    mood: "🏦 Vault Keeper",
+    tone: "sweet",
+  },
+];
+
+let animeDialogueIndex = 0;
+let animeChimeEnabled = localStorage.getItem("nyra_anime_chime") !== "false";
+
+function getTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return {
+      text: "Good morning Arman Shawon! Fresh coffee brewed and leads waiting! Ready to make magic today? ☕",
+      mood: "☕ Morning Coffee",
+      tone: "sweet",
+    };
+  } else if (hour >= 12 && hour < 18) {
+    return {
+      text: "Afternoon check-in! Arman, Shawon, have you both eaten lunch yet? Don't skip meals while editing! 🍱",
+      mood: "🌸 Caring Host",
+      tone: "sweet",
+    };
+  } else if (hour >= 18 && hour < 23) {
+    return {
+      text: "Hey Arman Shawon, how was your day? You've been working so hard, don't forget to take a breather with me~ 💖",
+      mood: "💖 Sweet",
+      tone: "sweet",
+    };
+  } else {
+    return {
+      text: "It's so quiet in the studio tonight, Shawon... Good thing Nyra is here to keep you company~ Sleep soon okay? 🌙",
+      mood: "🌙 Night Angel",
+      tone: "sweet",
+    };
+  }
+}
+
+function playNyraChime(mood = "sweet") {
+  if (!animeChimeEnabled) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const notes = mood === "flirty" ? [659.25, 830.61, 987.77] : [587.33, 739.99, 880.0];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + i * 0.07);
+      gain.gain.setValueAtTime(0.001, now + i * 0.07);
+      gain.gain.exponentialRampToValueAtTime(0.07, now + i * 0.07 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.07 + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.07);
+      osc.stop(now + i * 0.07 + 0.5);
+    });
+  } catch (e) {
+    // Ignore audio autostart policy
+  }
+}
+
+function spawnAnimeParticle() {
+  const container = $("#anime-particles");
+  if (!container) return;
+  const particles = ["💖", "💕", "✨", "🌸", "⭐", "🌹"];
+  const count = 4;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    p.className = "floating-particle";
+    p.textContent = particles[Math.floor(Math.random() * particles.length)];
+    const tx = (Math.random() - 0.5) * 80;
+    const ty = -40 - Math.random() * 50;
+    const rot = (Math.random() - 0.5) * 60;
+    p.style.setProperty("--tx", `${tx}px`);
+    p.style.setProperty("--ty", `${ty}px`);
+    p.style.setProperty("--rot", `${rot}deg`);
+    p.style.left = `calc(50% + ${(Math.random() - 0.5) * 60}px)`;
+    p.style.top = `calc(50% + ${(Math.random() - 0.5) * 30}px)`;
+    container.appendChild(p);
+    setTimeout(() => p.remove(), 950);
+  }
+}
+
+function cycleAnimeDialogue(userTriggered = true) {
+  const svg = $(".anime-girl-svg");
+  if (svg) {
+    svg.classList.remove("react-bounce");
+    void svg.offsetWidth; // Reflow
+    svg.classList.add("react-bounce");
+  }
+
+  const item = ANIME_DIALOGUES[animeDialogueIndex % ANIME_DIALOGUES.length];
+  animeDialogueIndex++;
+
+  if (userTriggered) {
+    playNyraChime(item.tone);
+    spawnAnimeParticle();
+  }
+
+  const textEl = $("#anime-dialogue-text");
+  const moodEl = $("#anime-mood-badge");
+
+  if (textEl) {
+    textEl.style.opacity = "0.2";
+    setTimeout(() => {
+      textEl.textContent = item.text;
+      textEl.style.opacity = "1";
+    }, 120);
+  }
+  if (moodEl) {
+    moodEl.textContent = item.mood;
+  }
+}
+
+function initAnimeCompanion() {
+  const initial = getTimeGreeting();
+  const textEl = $("#anime-dialogue-text");
+  const moodEl = $("#anime-mood-badge");
+  const chimeBtn = $("#anime-chime-btn");
+
+  if (textEl) textEl.textContent = initial.text;
+  if (moodEl) moodEl.textContent = initial.mood;
+
+  if (chimeBtn) {
+    chimeBtn.textContent = animeChimeEnabled ? "🔔" : "🔕";
+    chimeBtn.onclick = (e) => {
+      e.stopPropagation();
+      animeChimeEnabled = !animeChimeEnabled;
+      localStorage.setItem("nyra_anime_chime", animeChimeEnabled ? "true" : "false");
+      chimeBtn.textContent = animeChimeEnabled ? "🔔" : "🔕";
+      if (animeChimeEnabled) playNyraChime("sweet");
+    };
+  }
+
+  const stage = $("#anime-avatar-stage");
+  if (stage) {
+    stage.onclick = () => cycleAnimeDialogue(true);
+    stage.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        cycleAnimeDialogue(true);
+      }
+    };
+
+    stage.onmousemove = (e) => {
+      const rect = stage.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      const svg = $(".anime-girl-svg");
+      if (svg) {
+        svg.style.transform = `perspective(600px) rotateY(${x * 12}deg) rotateX(${-y * 10}deg) translateY(-4px)`;
+      }
+    };
+    stage.onmouseleave = () => {
+      const svg = $(".anime-girl-svg");
+      if (svg) svg.style.transform = "";
+    };
+  }
+
+  const pokeBtn = $("#anime-poke-action-btn");
+  if (pokeBtn) {
+    pokeBtn.onclick = (e) => {
+      e.stopPropagation();
+      cycleAnimeDialogue(true);
+    };
+  }
+}
+
+// ─── Budget & Vault Management ────────────────────────────────────────────────
+
+let budgetEntries = [];
+let budgetSummary = { totalIncome: 0, totalExpense: 0, totalStock: 0, incomeCount: 0, expenseCount: 0 };
+let currentBudgetType = "income";
+
+async function loadBudget() {
+  try {
+    const res = await api("/api/budget");
+    if (!res || !res.ok) return;
+    budgetEntries = res.entries || [];
+    budgetSummary = res.summary || { totalIncome: 0, totalExpense: 0, totalStock: 0, incomeCount: 0, expenseCount: 0 };
+
+    renderBudgetSummary();
+    renderBudgetTables();
+  } catch (err) {
+    console.warn("Failed to load budget records:", err);
+  }
+}
+
+function renderBudgetSummary() {
+  const incomeEl = $("#budget-total-income-val");
+  const incomeCountEl = $("#budget-income-count-val");
+  const expenseEl = $("#budget-total-expense-val");
+  const expenseCountEl = $("#budget-expense-count-val");
+  const stockEl = $("#budget-total-stock-val");
+  const stockBadgeEl = $("#budget-stock-badge");
+  const marginEl = $("#budget-margin-val");
+  const navBadge = $("#nav-badge-budget");
+
+  const inc = Number(budgetSummary.totalIncome || 0);
+  const exp = Number(budgetSummary.totalExpense || 0);
+  const stock = Number(budgetSummary.totalStock || inc - exp);
+
+  if (incomeEl) incomeEl.textContent = `$${inc.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (incomeCountEl) incomeCountEl.textContent = String(budgetSummary.incomeCount || 0);
+
+  if (expenseEl) expenseEl.textContent = `$${exp.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (expenseCountEl) expenseCountEl.textContent = String(budgetSummary.expenseCount || 0);
+
+  if (stockEl) {
+    stockEl.textContent = `$${stock.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    stockEl.style.color = stock >= 0 ? "#38bdf8" : "#fb7185";
+  }
+
+  if (stockBadgeEl) {
+    if (stock >= 0) {
+      stockBadgeEl.textContent = "✨ Liquid Reserve";
+      stockBadgeEl.className = "badge";
+      stockBadgeEl.style.background = "rgba(16, 185, 129, 0.2)";
+      stockBadgeEl.style.color = "#34d399";
+    } else {
+      stockBadgeEl.textContent = "⚠️ Deficit";
+      stockBadgeEl.className = "badge";
+      stockBadgeEl.style.background = "rgba(244, 63, 94, 0.2)";
+      stockBadgeEl.style.color = "#fb7185";
+    }
+  }
+
+  if (marginEl) {
+    if (inc > 0) {
+      const margin = ((inc - exp) / inc) * 100;
+      marginEl.textContent = `${margin.toFixed(1)}%`;
+      marginEl.style.color = margin >= 0 ? "#a78bfa" : "#fb7185";
+    } else {
+      marginEl.textContent = "0.0%";
+      marginEl.style.color = "#a78bfa";
+    }
+  }
+
+  if (navBadge) {
+    const totalCount = (budgetSummary.incomeCount || 0) + (budgetSummary.expenseCount || 0);
+    navBadge.textContent = String(totalCount);
+    navBadge.classList.toggle("hidden", totalCount === 0);
+  }
+}
+
+function renderBudgetTables() {
+  const incomeRowsEl = $("#income-table-rows");
+  const expenseRowsEl = $("#expense-table-rows");
+  const incomeCountBadge = $("#income-count-badge");
+  const expenseCountBadge = $("#expense-count-badge");
+
+  const incQuery = ($("#income-search-input")?.value || "").toLowerCase().trim();
+  const expQuery = ($("#expense-search-input")?.value || "").toLowerCase().trim();
+
+  const incomes = budgetEntries.filter((e) => e.type === "income");
+  const expenses = budgetEntries.filter((e) => e.type === "expense");
+
+  if (incomeCountBadge) incomeCountBadge.textContent = `${incomes.length} entries`;
+  if (expenseCountBadge) expenseCountBadge.textContent = `${expenses.length} entries`;
+
+  // Render Income
+  const filteredIncomes = incomes.filter((e) => {
+    if (!incQuery) return true;
+    return (
+      (e.source || "").toLowerCase().includes(incQuery) ||
+      (e.category || "").toLowerCase().includes(incQuery) ||
+      (e.notes || "").toLowerCase().includes(incQuery) ||
+      (e.date || "").includes(incQuery)
+    );
+  });
+
+  if (incomeRowsEl) {
+    if (filteredIncomes.length === 0) {
+      incomeRowsEl.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center; padding: 22px;">${
+        incQuery ? "No matching income records found." : "No income recorded yet. Click '+ Add' to record incoming revenue."
+      }</td></tr>`;
+    } else {
+      incomeRowsEl.innerHTML = filteredIncomes
+        .map(
+          (e) => `
+        <tr>
+          <td style="white-space: nowrap; font-size: 11.5px; color: var(--muted);">${escapeHtml(e.date)}</td>
+          <td class="budget-amount-income">+$${Number(e.amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td style="font-weight: 600;">${escapeHtml(e.source)}</td>
+          <td><span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 10.5px;">${escapeHtml(e.category || "Client Deal")}</span></td>
+          <td class="muted" style="font-size: 11.5px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(e.notes || "")}">${escapeHtml(e.notes || "—")}</td>
+          <td style="text-align: right;">
+            <button type="button" class="budget-delete-btn" onclick="deleteBudgetEntryPrompt('${escapeHtml(e.id)}', 'income', '${escapeHtml(e.source)}', ${Number(e.amount)})" title="Delete record">🗑️</button>
+          </td>
+        </tr>
+      `
+        )
+        .join("");
+    }
+  }
+
+  // Render Expenses
+  const filteredExpenses = expenses.filter((e) => {
+    if (!expQuery) return true;
+    return (
+      (e.source || "").toLowerCase().includes(expQuery) ||
+      (e.category || "").toLowerCase().includes(expQuery) ||
+      (e.notes || "").toLowerCase().includes(expQuery) ||
+      (e.date || "").includes(expQuery)
+    );
+  });
+
+  if (expenseRowsEl) {
+    if (filteredExpenses.length === 0) {
+      expenseRowsEl.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center; padding: 22px;">${
+        expQuery ? "No matching expense records found." : "No expenses recorded yet. Click '+ Add' to track payouts and costs."
+      }</td></tr>`;
+    } else {
+      expenseRowsEl.innerHTML = filteredExpenses
+        .map(
+          (e) => `
+        <tr>
+          <td style="white-space: nowrap; font-size: 11.5px; color: var(--muted);">${escapeHtml(e.date)}</td>
+          <td class="budget-amount-expense">-$${Number(e.amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td style="font-weight: 600;">${escapeHtml(e.source)}</td>
+          <td><span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #fb7185; font-size: 10.5px;">${escapeHtml(e.category || "Operations")}</span></td>
+          <td class="muted" style="font-size: 11.5px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(e.notes || "")}">${escapeHtml(e.notes || "—")}</td>
+          <td style="text-align: right;">
+            <button type="button" class="budget-delete-btn" onclick="deleteBudgetEntryPrompt('${escapeHtml(e.id)}', 'expense', '${escapeHtml(e.source)}', ${Number(e.amount)})" title="Delete record">🗑️</button>
+          </td>
+        </tr>
+      `
+        )
+        .join("");
+    }
+  }
+}
+
+const INCOME_CATEGORIES = [
+  "Client Project (Videos)",
+  "Retainer Package",
+  "Website Design / Dev",
+  "Consulting / Strategy Call",
+  "Referral / Partner Fee",
+  "Other Revenue",
+];
+
+const EXPENSE_CATEGORIES = [
+  "Editor / Creator Payout",
+  "Software / AI Tools (Runway/ElevenLabs/Midjourney)",
+  "Marketing & Meta / Google Ads",
+  "Cloudflare / Server / Domain",
+  "Office & Hardware Gear",
+  "Other Expense",
+];
+
+function setBudgetType(type) {
+  currentBudgetType = type === "expense" ? "expense" : "income";
+  const titleEl = $("#budget-modal-title");
+  const srcLabel = $("#budget-form-source-label");
+  const catSelect = $("#budget-form-category");
+  const typeHidden = $("#budget-form-type");
+  const submitBtn = $("#budget-form-submit-btn");
+
+  const btnIncome = $("#budget-type-toggle-income");
+  const btnExpense = $("#budget-type-toggle-expense");
+
+  if (btnIncome) btnIncome.classList.toggle("active", currentBudgetType === "income");
+  if (btnExpense) btnExpense.classList.toggle("active", currentBudgetType === "expense");
+
+  if (typeHidden) typeHidden.value = currentBudgetType;
+
+  if (currentBudgetType === "income") {
+    if (titleEl) titleEl.textContent = "💰 Record Income Transaction";
+    if (srcLabel) srcLabel.textContent = "Source / Client Name";
+    if ($("#budget-form-source")) $("#budget-form-source").placeholder = "e.g. Alex Hormozi Style (30 Videos Package)";
+    if (submitBtn) {
+      submitBtn.className = "small btn-tone-emerald";
+      submitBtn.textContent = "Save Income";
+    }
+    if (catSelect) {
+      catSelect.innerHTML = INCOME_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    }
+  } else {
+    if (titleEl) titleEl.textContent = "💸 Record Expense Entry";
+    if (srcLabel) srcLabel.textContent = "Source / Payee / Tool Name";
+    if ($("#budget-form-source")) $("#budget-form-source").placeholder = "e.g. Fahim Editor (30 Reels Payout) or ElevenLabs API";
+    if (submitBtn) {
+      submitBtn.className = "small btn-tone-rose";
+      submitBtn.textContent = "Save Expense";
+    }
+    if (catSelect) {
+      catSelect.innerHTML = EXPENSE_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    }
+  }
+}
+
+function openBudgetModal(type = "income", prefilledAmount = null) {
+  setBudgetType(type);
+  const dateInput = $("#budget-form-date");
+  if (dateInput && !dateInput.value) {
+    dateInput.value = new Date().toISOString().slice(0, 10);
+  }
+  if (prefilledAmount !== null && prefilledAmount !== undefined) {
+    const amtInput = $("#budget-form-amount");
+    if (amtInput) amtInput.value = prefilledAmount;
+  }
+  const modal = $("#budget-modal");
+  if (modal) modal.classList.remove("hidden");
+  $("#budget-form-amount")?.focus();
+}
+
+function closeBudgetModal() {
+  const modal = $("#budget-modal");
+  if (modal) modal.classList.add("hidden");
+  const form = $("#budget-form");
+  if (form) form.reset();
+  const feedback = $("#budget-form-feedback");
+  if (feedback) feedback.textContent = "";
+}
+
+window.deleteBudgetEntryPrompt = async function (id, type, source, amount) {
+  const formatted = `$${Number(amount).toFixed(2)}`;
+  if (!confirm(`Are you sure you want to delete this ${type.toUpperCase()} record?\n\n• Amount: ${formatted}\n• Source: ${source}`)) {
+    return;
+  }
+  try {
+    const res = await api(`/api/budget?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res && res.ok) {
+      await loadBudget();
+    } else {
+      alert("Failed to delete budget record: " + (res?.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Network error deleting budget record.");
+  }
+};
+
+function exportBudgetCsv() {
+  window.open("/api/budget/export-csv", "_blank");
+}
+
+// ─── Studio Mini Calculator ───────────────────────────────────────────────────
+
+let calcExpr = "";
+let calcDisplay = "0";
+let calcResetOnNext = false;
+
+function updateCalcDisplay() {
+  const exprEl = $("#calc-expr");
+  const displayEl = $("#calc-display");
+  if (exprEl) exprEl.innerHTML = calcExpr || "&nbsp;";
+  if (displayEl) displayEl.textContent = calcDisplay;
+}
+
+function calcInputDigit(digit) {
+  if (calcResetOnNext) {
+    calcDisplay = digit;
+    calcResetOnNext = false;
+  } else {
+    if (calcDisplay === "0") {
+      calcDisplay = digit;
+    } else if (calcDisplay.length < 14) {
+      calcDisplay += digit;
+    }
+  }
+  updateCalcDisplay();
+}
+
+function calcInputDot() {
+  if (calcResetOnNext) {
+    calcDisplay = "0.";
+    calcResetOnNext = false;
+  } else if (!calcDisplay.includes(".")) {
+    calcDisplay += ".";
+  }
+  updateCalcDisplay();
+}
+
+function calcInputOp(op) {
+  const val = Number(calcDisplay);
+  if (isNaN(val)) return;
+
+  if (calcExpr && !calcResetOnNext) {
+    calcEvaluate();
+  }
+  calcExpr = `${calcDisplay} ${op}`;
+  calcResetOnNext = true;
+  updateCalcDisplay();
+}
+
+function calcEvaluate() {
+  if (!calcExpr) return;
+  const parts = calcExpr.trim().split(" ");
+  if (parts.length < 2) return;
+
+  const left = parseFloat(parts[0]);
+  const op = parts[1];
+  const right = parseFloat(calcDisplay);
+
+  if (isNaN(left) || isNaN(right)) return;
+
+  let result = 0;
+  if (op === "+") result = left + right;
+  else if (op === "-" || op === "−") result = left - right;
+  else if (op === "*" || op === "×") result = left * right;
+  else if (op === "/" || op === "÷") {
+    if (right === 0) {
+      calcDisplay = "Error";
+      calcExpr = "";
+      calcResetOnNext = true;
+      updateCalcDisplay();
+      return;
+    }
+    result = left / right;
+  } else if (op === "%") {
+    result = (left * right) / 100;
+  }
+
+  result = Math.round(result * 10000) / 10000;
+  calcExpr = `${left} ${op} ${right} =`;
+  calcDisplay = String(result);
+  calcResetOnNext = true;
+  updateCalcDisplay();
+}
+
+function calcClear() {
+  calcExpr = "";
+  calcDisplay = "0";
+  calcResetOnNext = false;
+  updateCalcDisplay();
+}
+
+function calcClearEntry() {
+  calcDisplay = "0";
+  updateCalcDisplay();
+}
+
+function calcBackspace() {
+  if (calcResetOnNext) return;
+  if (calcDisplay.length > 1) {
+    calcDisplay = calcDisplay.slice(0, -1);
+  } else {
+    calcDisplay = "0";
+  }
+  updateCalcDisplay();
+}
+
+function toggleCalculator(forceShow = null) {
+  const calcCard = $("#studio-calculator-card");
+  if (!calcCard) return;
+  if (forceShow === true) {
+    calcCard.classList.remove("hidden");
+    calcCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } else if (forceShow === false) {
+    calcCard.classList.add("hidden");
+  } else {
+    calcCard.classList.toggle("hidden");
+    if (!calcCard.classList.contains("hidden")) {
+      calcCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+}
+
+// ─── Bind Budget & Calculator UI Events ───────────────────────────────────────
+
+$("#budget-add-income-btn")?.addEventListener("click", () => openBudgetModal("income"));
+$("#income-quick-add-btn")?.addEventListener("click", () => openBudgetModal("income"));
+$("#budget-add-expense-btn")?.addEventListener("click", () => openBudgetModal("expense"));
+$("#expense-quick-add-btn")?.addEventListener("click", () => openBudgetModal("expense"));
+$("#budget-calc-toggle-btn")?.addEventListener("click", () => toggleCalculator());
+$("#budget-export-csv-btn")?.addEventListener("click", exportBudgetCsv);
+
+$("#budget-type-toggle-income")?.addEventListener("click", () => setBudgetType("income"));
+$("#budget-type-toggle-expense")?.addEventListener("click", () => setBudgetType("expense"));
+
+$("#budget-modal-close-btn")?.addEventListener("click", closeBudgetModal);
+$("#budget-modal-cancel-btn")?.addEventListener("click", closeBudgetModal);
+$("#budget-modal")?.addEventListener("click", (e) => {
+  if (e.target === $("#budget-modal")) closeBudgetModal();
+});
+
+$("#income-search-input")?.addEventListener("input", renderBudgetTables);
+$("#expense-search-input")?.addEventListener("input", renderBudgetTables);
+
+$("#budget-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const feedback = $("#budget-form-feedback");
+  const submitBtn = $("#budget-form-submit-btn");
+
+  const type = $("#budget-form-type")?.value || "income";
+  const date = $("#budget-form-date")?.value || new Date().toISOString().slice(0, 10);
+  const amount = parseFloat($("#budget-form-amount")?.value || "0");
+  const source = ($("#budget-form-source")?.value || "").trim();
+  const category = ($("#budget-form-category")?.value || "").trim();
+  const notes = ($("#budget-form-notes")?.value || "").trim();
+
+  if (!source) {
+    if (feedback) feedback.textContent = "Please enter a source / client description.";
+    return;
+  }
+  if (isNaN(amount) || amount <= 0) {
+    if (feedback) feedback.textContent = "Please enter a valid amount greater than 0.";
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Saving…";
+  }
+
+  try {
+    const res = await api("/api/budget", {
+      method: "POST",
+      body: JSON.stringify({ type, date, amount, source, category, notes }),
+    });
+
+    if (res && res.ok) {
+      closeBudgetModal();
+      await loadBudget();
+    } else {
+      if (feedback) feedback.textContent = res?.error || "Failed to save transaction.";
+    }
+  } catch (err) {
+    if (feedback) feedback.textContent = "Network error saving transaction.";
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = type === "income" ? "Save Income" : "Save Expense";
+    }
+  }
+});
+
+// Calculator Keypad bindings
+$$(".calc-btn[data-calc-num]").forEach((btn) => {
+  btn.addEventListener("click", () => calcInputDigit(btn.dataset.calcNum));
+});
+
+$$(".calc-btn[data-calc-op]").forEach((btn) => {
+  btn.addEventListener("click", () => calcInputOp(btn.dataset.calcOp));
+});
+
+$$(".calc-btn[data-calc-action]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const action = btn.dataset.calcAction;
+    if (action === "dot") calcInputDot();
+    else if (action === "clear") calcClear();
+    else if (action === "clear-entry") calcClearEntry();
+    else if (action === "backspace") calcBackspace();
+    else if (action === "equals") calcEvaluate();
+  });
+});
+
+$("#calc-pipe-income-btn")?.addEventListener("click", () => {
+  const val = parseFloat(calcDisplay);
+  if (isNaN(val) || val <= 0) {
+    alert("Please calculate a positive amount first!");
+    return;
+  }
+  openBudgetModal("income", val);
+});
+
+$("#calc-pipe-expense-btn")?.addEventListener("click", () => {
+  const val = parseFloat(calcDisplay);
+  if (isNaN(val) || val <= 0) {
+    alert("Please calculate a positive amount first!");
+    return;
+  }
+  openBudgetModal("expense", val);
+});
+
+$("#calc-copy-btn")?.addEventListener("click", () => {
+  navigator.clipboard.writeText(calcDisplay).then(() => {
+    const btn = $("#calc-copy-btn");
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = "✓ Copied!";
+      setTimeout(() => (btn.textContent = orig), 1500);
+    }
+  });
+});
+
+$("#calc-close-btn")?.addEventListener("click", () => toggleCalculator(false));
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 

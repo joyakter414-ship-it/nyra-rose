@@ -74,6 +74,11 @@
           <span>Booked Calls</span>
           <span id="nav-badge-bookings" class="nav-count-pill hidden">0</span>
         </button>
+        <button data-tab="budget" class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>
+          <span>Budget &amp; Vault</span>
+          <span id="nav-badge-budget" class="nav-count-pill hidden">0</span>
+        </button>
         <button data-tab="todos" class="tab">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>Task Bar</span>
@@ -135,6 +140,165 @@
               <button type="button" id="hero-test-chat-btn" class="ghost small">💬 Talk to Nyra Rose</button>
             </div>
           </div>
+
+          <!-- MLBB Layla-Style Dynamic Anime Girl Companion -->
+          <div class="studio-hero-companion" id="hero-anime-companion">
+            <div class="anime-dialogue-bubble" id="anime-dialogue-bubble">
+              <div class="anime-dialogue-header">
+                <div class="anime-header-speaker">
+                  <span class="anime-dot-live">●</span>
+                  <span class="anime-name-tag">Nyra Rose</span>
+                </div>
+                <div class="anime-header-actions">
+                  <span id="anime-mood-badge" class="anime-mood-pill">💖 Sweet</span>
+                  <button type="button" id="anime-chime-btn" class="anime-chime-toggle" title="Toggle audio chime">🔔</button>
+                </div>
+              </div>
+              <p id="anime-dialogue-text" class="anime-dialogue-text">
+                Hey Arman Shawon, how was your day? You've been working so hard, don't forget to take a breather with me~ 💖
+              </p>
+              <div class="anime-dialogue-footer">
+                <span class="anime-dialogue-hint">Tap Nyra for reactions</span>
+                <button type="button" id="anime-poke-action-btn" class="anime-action-btn">✨ Poke</button>
+              </div>
+              <div class="anime-dialogue-tail"></div>
+            </div>
+
+            <div class="anime-avatar-stage" id="anime-avatar-stage" role="button" tabindex="0" title="Tap Nyra to talk to her!">
+              <div class="anime-particles-layer" id="anime-particles"></div>
+              
+              <!-- Dynamic Layered Vector Anime Girl (Layla / Nyra Rose) -->
+              <svg class="anime-girl-svg" viewBox="0 0 200 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="roseSkin" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#fff1eb"/>
+                    <stop offset="100%" stop-color="#fcd5ce"/>
+                  </linearGradient>
+                  <linearGradient id="animeHairGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#fb7185"/>
+                    <stop offset="50%" stop-color="#e11d48"/>
+                    <stop offset="100%" stop-color="#881337"/>
+                  </linearGradient>
+                  <linearGradient id="eyeIrisGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#e11d48"/>
+                    <stop offset="60%" stop-color="#8b5cf6"/>
+                    <stop offset="100%" stop-color="#4c1d95"/>
+                  </linearGradient>
+                  <radialGradient id="blushGrad" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="rgba(244,63,94,0.65)"/>
+                    <stop offset="100%" stop-color="rgba(244,63,94,0)"/>
+                  </radialGradient>
+                  <linearGradient id="suitGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#1e1b4b"/>
+                    <stop offset="100%" stop-color="#0f172a"/>
+                  </linearGradient>
+                  <filter id="animeGlow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="3" result="blur"/>
+                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                  </filter>
+                </defs>
+
+                <!-- Back Hair & Twin Tails with Sway Animations -->
+                <g class="anime-twintail-left">
+                  <path d="M60 90 C30 110 15 150 25 190 C30 210 20 230 15 240 C35 230 45 200 48 170 C52 140 65 110 70 100 Z" fill="url(#animeHairGrad)"/>
+                  <path d="M30 150 C22 175 24 205 18 225" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+                  <circle cx="62" cy="96" r="7" fill="#f43f5e"/>
+                  <path d="M56 94 C50 90 44 98 52 104 Z" fill="#fda4af"/>
+                  <path d="M68 94 C74 90 80 98 72 104 Z" fill="#fda4af"/>
+                </g>
+
+                <g class="anime-twintail-right">
+                  <path d="M140 90 C170 110 185 150 175 190 C170 210 180 230 185 240 C165 230 155 200 152 170 C148 140 135 110 130 100 Z" fill="url(#animeHairGrad)"/>
+                  <path d="M170 150 C178 175 176 205 182 225" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+                  <circle cx="138" cy="96" r="7" fill="#f43f5e"/>
+                  <path d="M132 94 C126 90 120 98 128 104 Z" fill="#fda4af"/>
+                  <path d="M144 94 C150 90 156 98 148 104 Z" fill="#fda4af"/>
+                </g>
+
+                <!-- Floating Breathing Torso Group -->
+                <g class="anime-body-group">
+                  <!-- Torso / Studio Blazer -->
+                  <path d="M68 185 L50 240 L150 240 L132 185 Q100 190 68 185 Z" fill="url(#suitGrad)"/>
+                  <path d="M85 188 L100 215 L115 188 Z" fill="#ffffff" opacity="0.9"/>
+                  <!-- Tie & Rose Studio Brooch -->
+                  <path d="M97 205 L103 205 L104 235 L100 240 L96 235 Z" fill="#f43f5e"/>
+                  <circle cx="100" cy="204" r="5" fill="#f43f5e" filter="url(#animeGlow)"/>
+                  <circle cx="100" cy="204" r="2.5" fill="#ffe4e6"/>
+                  <!-- Collar Lapels -->
+                  <path d="M68 185 L84 218 L94 188" stroke="#f43f5e" stroke-width="1.8" fill="none"/>
+                  <path d="M132 185 L116 218 L106 188" stroke="#f43f5e" stroke-width="1.8" fill="none"/>
+
+                  <!-- Neck -->
+                  <path d="M88 160 L88 188 Q100 192 112 188 L112 160 Z" fill="url(#roseSkin)"/>
+                  <path d="M88 172 Q100 178 112 172" stroke="#fbcfe8" stroke-width="1" fill="none" opacity="0.5"/>
+
+                  <!-- Head & Face -->
+                  <path d="M64 110 C64 70 136 70 136 110 C136 142 118 168 100 170 C82 168 64 142 64 110 Z" fill="url(#roseSkin)"/>
+
+                  <!-- Cheeks / Anime Blush -->
+                  <ellipse class="anime-blush" cx="78" cy="138" rx="10" ry="5.5" fill="url(#blushGrad)"/>
+                  <ellipse class="anime-blush" cx="122" cy="138" rx="10" ry="5.5" fill="url(#blushGrad)"/>
+
+                  <!-- Delicate Anime Nose & Smiling Lips -->
+                  <circle cx="100" cy="142" r="1.2" fill="#fda4af"/>
+                  <path d="M93 153 Q100 159 107 153" stroke="#e11d48" stroke-width="2" stroke-linecap="round" fill="none"/>
+                  <ellipse cx="100" cy="155.5" rx="2" ry="0.8" fill="#ffffff" opacity="0.8"/>
+
+                  <!-- Expressive Eyes -->
+                  <!-- Left Eye -->
+                  <g class="anime-eye-left">
+                    <ellipse cx="82" cy="122" rx="11" ry="13" fill="#ffffff"/>
+                    <ellipse cx="83" cy="123" rx="8" ry="11" fill="url(#eyeIrisGrad)"/>
+                    <ellipse cx="83" cy="124" rx="4.5" ry="6" fill="#1e1b4b"/>
+                    <circle cx="80" cy="118" r="3.2" fill="#ffffff"/>
+                    <circle cx="86" cy="126" r="1.5" fill="#ffffff"/>
+                    <path d="M80 128 Q83 131 86 128" stroke="#f472b6" stroke-width="1.2" fill="none"/>
+                    <path d="M69 118 Q82 108 94 116" stroke="#4c0519" stroke-width="3" stroke-linecap="round" fill="none"/>
+                    <path d="M92 114 L96 112" stroke="#4c0519" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M72 106 Q82 101 92 105" stroke="#be123c" stroke-width="2" stroke-linecap="round" fill="none"/>
+                    <path class="anime-eyelid anime-eyelid-l" d="M69 110 Q82 108 95 110 L95 125 Q82 136 69 125 Z" fill="url(#roseSkin)"/>
+                  </g>
+
+                  <!-- Right Eye -->
+                  <g class="anime-eye-right">
+                    <ellipse cx="118" cy="122" rx="11" ry="13" fill="#ffffff"/>
+                    <ellipse cx="117" cy="123" rx="8" ry="11" fill="url(#eyeIrisGrad)"/>
+                    <ellipse cx="117" cy="124" rx="4.5" ry="6" fill="#1e1b4b"/>
+                    <circle cx="114" cy="118" r="3.2" fill="#ffffff"/>
+                    <circle cx="120" cy="126" r="1.5" fill="#ffffff"/>
+                    <path d="M114 128 Q117 131 120 128" stroke="#f472b6" stroke-width="1.2" fill="none"/>
+                    <path d="M106 116 Q118 108 131 118" stroke="#4c0519" stroke-width="3" stroke-linecap="round" fill="none"/>
+                    <path d="M108 112 L104 114" stroke="#4c0519" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M108 105 Q118 101 128 106" stroke="#be123c" stroke-width="2" stroke-linecap="round" fill="none"/>
+                    <path class="anime-eyelid anime-eyelid-r" d="M105 110 Q118 108 131 110 L131 125 Q118 136 105 125 Z" fill="url(#roseSkin)"/>
+                  </g>
+
+                  <!-- Cyber Headphones / Studio Headset (Layla Style) -->
+                  <g class="anime-headset">
+                    <path d="M60 108 C50 108 50 132 60 132 Z" fill="#0f172a" stroke="#f43f5e" stroke-width="2"/>
+                    <circle cx="56" cy="120" r="4" fill="#f43f5e" filter="url(#animeGlow)"/>
+                    <path d="M140 108 C150 108 150 132 140 132 Z" fill="#0f172a" stroke="#f43f5e" stroke-width="2"/>
+                    <circle cx="144" cy="120" r="4" fill="#f43f5e" filter="url(#animeGlow)"/>
+                    <path d="M60 110 C60 62 140 62 140 110" stroke="#1e293b" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+                    <path d="M68 85 C80 72 120 72 132 85" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" fill="none"/>
+                    <path d="M58 126 Q65 145 84 148" stroke="#334155" stroke-width="2" stroke-linecap="round" fill="none"/>
+                    <circle cx="85" cy="148" r="2.5" fill="#f43f5e" filter="url(#animeGlow)"/>
+                  </g>
+
+                  <!-- Front Bangs & Anime Hair Framing -->
+                  <path d="M62 100 C60 70 140 70 138 100 C138 100 130 92 124 95 C116 98 114 116 112 120 C108 108 104 98 98 96 C92 94 86 114 84 118 C80 105 74 95 68 96 C64 97 62 100 62 100 Z" fill="url(#animeHairGrad)"/>
+                  <path d="M72 86 C82 80 118 80 128 86" stroke="#fda4af" stroke-width="2.5" stroke-linecap="round" opacity="0.75" fill="none"/>
+                  <path d="M63 98 C60 118 63 140 66 150 C67 142 68 120 69 105 Z" fill="url(#animeHairGrad)"/>
+                  <path d="M137 98 C140 118 137 140 134 150 C133 142 132 120 131 105 Z" fill="url(#animeHairGrad)"/>
+                </g>
+              </svg>
+
+              <div class="anime-poke-hint">
+                <span>✨ Poke Nyra</span>
+              </div>
+            </div>
+          </div>
+
           <div class="studio-hero-metrics">
             <div class="hero-metric-card" data-jump-tab="home">
               <span class="hero-metric-label">Gateway Link</span>
@@ -693,6 +857,293 @@
         </div>
       </div>
     </section>
+
+    <!-- Budget & Vault Management Section (Income, Expense, Stock, Mini Calculator) -->
+    <section id="tab-budget" class="page hidden">
+      <!-- Budget Header Banner -->
+      <div class="budget-header-card card" style="margin-bottom: 18px; padding: 20px 24px; position: relative; overflow: hidden;">
+        <div class="budget-glow-1" aria-hidden="true"></div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; position: relative; z-index: 1;">
+          <div>
+            <div class="login-eyebrow" style="margin-bottom: 4px;">● MANAGEMENT VAULT &amp; BUDGET CONTROL</div>
+            <h1 style="margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em;">Agency Budget &amp; Vault Treasury</h1>
+            <p class="muted" style="margin: 0; font-size: 13.5px; max-width: 640px;">
+              Manage incoming client revenue, editor payouts, operational software costs, and monitor available studio stock reserve in real time.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button type="button" id="budget-add-income-btn" class="small btn-tone-emerald">
+              + Add Income
+            </button>
+            <button type="button" id="budget-add-expense-btn" class="small btn-tone-rose">
+              + Add Expense
+            </button>
+            <button type="button" id="budget-calc-toggle-btn" class="small ghost">
+              🧮 Mini Calculator
+            </button>
+            <button type="button" id="budget-export-csv-btn" class="small ghost">
+              ⬇ Export Vault CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Key Financial KPI Cards -->
+        <div class="budget-kpi-grid" style="margin-top: 22px;">
+          <!-- Card 1: Total Income -->
+          <div class="budget-kpi-card income-kpi">
+            <div class="budget-kpi-head">
+              <span class="budget-kpi-title">Total Income</span>
+              <span class="budget-kpi-icon">💰</span>
+            </div>
+            <div class="budget-kpi-val" id="budget-total-income-val">$0.00</div>
+            <div class="budget-kpi-sub">
+              <span id="budget-income-count-val">0</span> client payments &amp; deals
+            </div>
+          </div>
+
+          <!-- Card 2: Total Expense -->
+          <div class="budget-kpi-card expense-kpi">
+            <div class="budget-kpi-head">
+              <span class="budget-kpi-title">Total Expense</span>
+              <span class="budget-kpi-icon">💸</span>
+            </div>
+            <div class="budget-kpi-val" id="budget-total-expense-val">$0.00</div>
+            <div class="budget-kpi-sub">
+              <span id="budget-expense-count-val">0</span> payouts &amp; software expenses
+            </div>
+          </div>
+
+          <!-- Card 3: Total Stock / Reserve -->
+          <div class="budget-kpi-card stock-kpi">
+            <div class="budget-kpi-head">
+              <span class="budget-kpi-title">Total Stock (Reserve)</span>
+              <span class="budget-kpi-icon">🏦</span>
+            </div>
+            <div class="budget-kpi-val" id="budget-total-stock-val">$0.00</div>
+            <div class="budget-kpi-sub" style="display: flex; align-items: center; justify-content: space-between;">
+              <span>Net Vault Reserve (Income − Expense)</span>
+              <span id="budget-stock-badge" class="badge" style="font-size: 10px;">Liquid Stock</span>
+            </div>
+          </div>
+
+          <!-- Card 4: Profit Margin -->
+          <div class="budget-kpi-card margin-kpi">
+            <div class="budget-kpi-head">
+              <span class="budget-kpi-title">Profit Margin</span>
+              <span class="budget-kpi-icon">📊</span>
+            </div>
+            <div class="budget-kpi-val" id="budget-margin-val">0%</div>
+            <div class="budget-kpi-sub">
+              Operational studio efficiency
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Layout: Dual Tables & Mini Calculator Widget -->
+      <div class="budget-layout-grid">
+        <!-- Left: Income Registry -->
+        <div class="card budget-panel-card">
+          <div class="chat-head" style="margin-bottom: 12px;">
+            <div class="card-title-group">
+              <div class="card-icon-cap" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">💰</div>
+              <div>
+                <h2 style="margin: 0; font-size: 17px;">Income Transactions</h2>
+                <div class="muted small-text" style="font-size: 11px;">Incoming client deals &amp; project payments</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span id="income-count-badge" class="badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">0 entries</span>
+              <button type="button" id="income-quick-add-btn" class="small btn-tone-emerald">+ Add</button>
+            </div>
+          </div>
+
+          <!-- Search & Filter -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="income-search-input" placeholder="Search client name, source, or notes…" style="font-size: 12px; padding: 7px 10px;" />
+          </div>
+
+          <!-- Table -->
+          <div class="table-wrap">
+            <table class="budget-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Source / Client</th>
+                  <th>Category</th>
+                  <th>Notes</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="income-table-rows">
+                <tr><td colspan="6" class="muted" style="text-align: center; padding: 24px;">Loading income records…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: Expense Registry -->
+        <div class="card budget-panel-card">
+          <div class="chat-head" style="margin-bottom: 12px;">
+            <div class="card-title-group">
+              <div class="card-icon-cap" style="background: rgba(244, 63, 94, 0.15); color: #fb7185;">💸</div>
+              <div>
+                <h2 style="margin: 0; font-size: 17px;">Expense Ledger</h2>
+                <div class="muted small-text" style="font-size: 11px;">Editor payouts, software licenses &amp; ad costs</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span id="expense-count-badge" class="badge" style="background: rgba(244, 63, 94, 0.2); color: #fb7185; font-size: 11px;">0 entries</span>
+              <button type="button" id="expense-quick-add-btn" class="small btn-tone-rose">+ Add</button>
+            </div>
+          </div>
+
+          <!-- Search & Filter -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="expense-search-input" placeholder="Search payee, tool name, or notes…" style="font-size: 12px; padding: 7px 10px;" />
+          </div>
+
+          <!-- Table -->
+          <div class="table-wrap">
+            <table class="budget-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Source / Payee</th>
+                  <th>Category</th>
+                  <th>Notes</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="expense-table-rows">
+                <tr><td colspan="6" class="muted" style="text-align: center; padding: 24px;">Loading expense records…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Studio Mini Calculator Floating / Docked Widget -->
+      <div id="studio-calculator-card" class="card mini-calc-card">
+        <div class="calc-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 16px;">🧮</span>
+            <span style="font-weight: 700; font-size: 13.5px;">Studio Mini Calculator</span>
+          </div>
+          <button type="button" id="calc-close-btn" class="ghost small calc-close-btn" title="Hide calculator">✕</button>
+        </div>
+
+        <!-- LCD Screen -->
+        <div class="calc-screen">
+          <div id="calc-expr" class="calc-expr">&nbsp;</div>
+          <div id="calc-display" class="calc-display">0</div>
+        </div>
+
+        <!-- Keypad -->
+        <div class="calc-keypad">
+          <button type="button" class="calc-btn calc-btn-fn" data-calc-action="clear">C</button>
+          <button type="button" class="calc-btn calc-btn-fn" data-calc-action="clear-entry">CE</button>
+          <button type="button" class="calc-btn calc-btn-fn" data-calc-action="backspace">⌫</button>
+          <button type="button" class="calc-btn calc-btn-op" data-calc-op="/">÷</button>
+
+          <button type="button" class="calc-btn" data-calc-num="7">7</button>
+          <button type="button" class="calc-btn" data-calc-num="8">8</button>
+          <button type="button" class="calc-btn" data-calc-num="9">9</button>
+          <button type="button" class="calc-btn calc-btn-op" data-calc-op="*">×</button>
+
+          <button type="button" class="calc-btn" data-calc-num="4">4</button>
+          <button type="button" class="calc-btn" data-calc-num="5">5</button>
+          <button type="button" class="calc-btn" data-calc-num="6">6</button>
+          <button type="button" class="calc-btn calc-btn-op" data-calc-op="-">−</button>
+
+          <button type="button" class="calc-btn" data-calc-num="1">1</button>
+          <button type="button" class="calc-btn" data-calc-num="2">2</button>
+          <button type="button" class="calc-btn" data-calc-num="3">3</button>
+          <button type="button" class="calc-btn calc-btn-op" data-calc-op="+">+</button>
+
+          <button type="button" class="calc-btn calc-btn-fn" data-calc-op="%">%</button>
+          <button type="button" class="calc-btn" data-calc-num="0">0</button>
+          <button type="button" class="calc-btn" data-calc-action="dot">.</button>
+          <button type="button" class="calc-btn calc-btn-eq" data-calc-action="equals">=</button>
+        </div>
+
+        <!-- Quick Pipe Actions -->
+        <div class="calc-actions-row">
+          <button type="button" id="calc-pipe-income-btn" class="small btn-tone-emerald" title="Open Add Income with this amount">
+            💰 Use as Income
+          </button>
+          <button type="button" id="calc-pipe-expense-btn" class="small btn-tone-rose" title="Open Add Expense with this amount">
+            💸 Use as Expense
+          </button>
+          <button type="button" id="calc-copy-btn" class="small ghost" title="Copy calculated result">
+            📋 Copy
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Budget Transaction Modal (Add Income / Add Expense) -->
+    <div id="budget-modal" class="modal-backdrop hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.72); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+      <div class="card" style="width: 100%; max-width: 480px; box-shadow: 0 20px 45px rgba(0,0,0,0.6); border: 1px solid var(--line); border-radius: 18px; padding: 22px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 id="budget-modal-title" style="margin: 0; font-size: 18px;">Add Budget Transaction</h3>
+          <button type="button" id="budget-modal-close-btn" class="ghost small" style="padding: 2px 8px; font-size: 16px;">✕</button>
+        </div>
+
+        <form id="budget-form">
+          <input type="hidden" id="budget-form-type" value="income" />
+
+          <!-- Transaction Type Toggle -->
+          <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+            <button type="button" id="budget-type-toggle-income" class="small tab active" style="flex: 1; text-align: center; justify-content: center;">
+              💰 Income
+            </button>
+            <button type="button" id="budget-type-toggle-expense" class="small tab" style="flex: 1; text-align: center; justify-content: center;">
+              💸 Expense
+            </button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <label style="font-size: 12px; font-weight: 600;">
+              Date
+              <input type="date" id="budget-form-date" required style="margin-top: 4px;" />
+            </label>
+            <label style="font-size: 12px; font-weight: 600;">
+              Amount ($)
+              <input type="number" step="0.01" min="0.01" id="budget-form-amount" placeholder="0.00" required style="margin-top: 4px;" />
+            </label>
+          </div>
+
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 12px;">
+            <span id="budget-form-source-label">Source / Client Name</span>
+            <input type="text" id="budget-form-source" placeholder="e.g. Alex Hormozi Style (30 Videos)" required style="margin-top: 4px;" />
+          </label>
+
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 12px;">
+            Category
+            <select id="budget-form-category" style="margin-top: 4px;">
+              <!-- Dynamically populated according to income/expense -->
+            </select>
+          </label>
+
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 16px;">
+            Notes / Reference (Optional)
+            <textarea id="budget-form-notes" rows="2" placeholder="e.g. Stripe ref, bank transfer, invoice number..." style="margin-top: 4px;"></textarea>
+          </label>
+
+          <div class="actions" style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" id="budget-modal-cancel-btn" class="ghost small">Cancel</button>
+            <button type="submit" id="budget-form-submit-btn" class="small btn-tone-emerald">
+              Save Transaction
+            </button>
+          </div>
+          <div id="budget-form-feedback" class="muted small-text" style="margin-top: 8px;"></div>
+        </form>
+      </div>
+    </div>
+
 
     <!-- Rule Book -->
     <section id="tab-rules" class="page hidden">

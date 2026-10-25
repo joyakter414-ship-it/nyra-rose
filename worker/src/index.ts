@@ -15,14 +15,18 @@ import {
 import {
   addUsage,
   createBooking,
+  createBudgetEntry,
   createNote,
   createRule,
   createTodo,
   deleteBooking,
+  deleteBudgetEntry,
   deleteNote,
   deleteRule,
   deleteTodo,
   getBookings,
+  getBudgetEntries,
+  getBudgetSummary,
   getNotes,
   getRules,
   getTodos,
@@ -36,6 +40,8 @@ import {
   updateTodo,
   type Booking,
   type BookingStatus,
+  type BudgetEntry,
+  type BudgetType,
   type FollowupType,
   type Todo,
 } from "./db";
@@ -1315,6 +1321,113 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         filename += `_all_${new Date().toISOString().slice(0, 10)}`;
       }
       filename += ".csv";
+
+      return new Response(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    // ── Budget & Vault Management (Management & Master Admin) ──
+    case "GET /api/budget": {
+      const typeParam = url.searchParams.get("type") as BudgetType | null;
+      const startDate = url.searchParams.get("startDate") || undefined;
+      const endDate = url.searchParams.get("endDate") || undefined;
+      const [entries, summary] = await Promise.all([
+        getBudgetEntries(env, typeParam || undefined, startDate, endDate),
+        getBudgetSummary(env),
+      ]);
+      return json({ ok: true, summary, entries });
+    }
+
+    case "POST /api/budget": {
+      const body = (await request.json()) as {
+        type?: BudgetType;
+        date?: string;
+        amount?: number;
+        source?: string;
+        category?: string;
+        notes?: string;
+      };
+
+      if (!body || (body.type !== "income" && body.type !== "expense")) {
+        return json({ error: "Valid type ('income' or 'expense') is required" }, 400);
+      }
+      if (typeof body.amount !== "number" || isNaN(body.amount) || body.amount <= 0) {
+        return json({ error: "Valid amount greater than 0 is required" }, 400);
+      }
+      if (!body.source || !body.source.trim()) {
+        return json({ error: "Source / Client / Payee description is required" }, 400);
+      }
+
+      const entry = await createBudgetEntry(env, {
+        type: body.type,
+        date: body.date || new Date().toISOString().slice(0, 10),
+        amount: body.amount,
+        source: body.source.trim(),
+        category: body.category?.trim(),
+        notes: body.notes?.trim(),
+      });
+      const summary = await getBudgetSummary(env);
+      return json({ ok: true, entry, summary });
+    }
+
+    case "DELETE /api/budget": {
+      const id = url.searchParams.get("id");
+      if (!id) return json({ error: "id is required" }, 400);
+      const deleted = await deleteBudgetEntry(env, id);
+      const summary = await getBudgetSummary(env);
+      return json({ ok: true, deleted, summary });
+    }
+
+    case "GET /api/budget/export-csv": {
+      const typeParam = url.searchParams.get("type") as BudgetType | null;
+      const startDate = url.searchParams.get("startDate") || undefined;
+      const endDate = url.searchParams.get("endDate") || undefined;
+      const entries = await getBudgetEntries(env, typeParam || undefined, startDate, endDate);
+      const summary = await getBudgetSummary(env);
+
+      function csvCell(val: unknown): string {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      }
+
+      const COLS = [
+        "Entry Type",
+        "Date",
+        "Amount ($)",
+        "Source / Client / Payee",
+        "Category",
+        "Notes / Reference",
+        "Record Created At",
+      ];
+
+      const rows: string[] = [COLS.map(csvCell).join(",")];
+      for (const e of entries) {
+        rows.push([
+          csvCell(e.type.toUpperCase()),
+          csvCell(e.date),
+          csvCell(e.amount.toFixed(2)),
+          csvCell(e.source),
+          csvCell(e.category || ""),
+          csvCell(e.notes || ""),
+          csvCell(new Date(e.created_at).toISOString()),
+        ].join(","));
+      }
+
+      rows.push("");
+      rows.push(["Summary", "", "", "", "", "", ""].map(csvCell).join(","));
+      rows.push(["TOTAL INCOME", "", `$${summary.totalIncome.toFixed(2)}`, `${summary.incomeCount} records`, "", "", ""].map(csvCell).join(","));
+      rows.push(["TOTAL EXPENSE", "", `$${summary.totalExpense.toFixed(2)}`, `${summary.expenseCount} records`, "", "", ""].map(csvCell).join(","));
+      rows.push(["TOTAL STOCK (NET RESERVE)", "", `$${summary.totalStock.toFixed(2)}`, "Available Vault Reserve", "", "", ""].map(csvCell).join(","));
+
+      const BOM = "\uFEFF";
+      const csv = BOM + rows.join("\r\n");
+      const filename = `vidmox_budget_vault_${new Date().toISOString().slice(0, 10)}.csv`;
 
       return new Response(csv, {
         headers: {

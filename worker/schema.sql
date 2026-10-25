@@ -99,3 +99,18 @@ CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_chat ON bookings (chat_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_next_followup ON bookings (next_followup_at);
 
+-- Budget & Vault Management (Income, Expense, Stock tracking for management)
+CREATE TABLE IF NOT EXISTS budget_entries (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  date        TEXT NOT NULL,                     -- YYYY-MM-DD
+  amount      REAL NOT NULL DEFAULT 0,
+  source      TEXT NOT NULL,                     -- Source / Client / Payee
+  category    TEXT,                              -- Category (e.g. 'Client Payment', 'Editor Payout', etc.)
+  notes       TEXT,                              -- Extra notes / reference
+  created_at  INTEGER NOT NULL                   -- unix ms
+);
+CREATE INDEX IF NOT EXISTS idx_budget_type_date ON budget_entries (type, date);
+CREATE INDEX IF NOT EXISTS idx_budget_created ON budget_entries (created_at DESC);
+
+

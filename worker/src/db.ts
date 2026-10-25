@@ -742,4 +742,159 @@ export async function findLatestBookingForChat(env: AppEnv, chatId: string): Pro
     .first<Booking>();
 }
 
+// ── Budget & Vault Management (Income, Expense, Stock) ─────────────────────────
+
+export type BudgetType = "income" | "expense";
+
+export interface BudgetEntry {
+  id: string;
+  type: BudgetType;
+  date: string;
+  amount: number;
+  source: string;
+  category?: string;
+  notes?: string;
+  created_at: number;
+}
+
+export interface BudgetSummary {
+  totalIncome: number;
+  totalExpense: number;
+  totalStock: number;
+  incomeCount: number;
+  expenseCount: number;
+}
+
+export async function ensureBudgetTable(env: AppEnv): Promise<void> {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS budget_entries (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+      date        TEXT NOT NULL,
+      amount      REAL NOT NULL DEFAULT 0,
+      source      TEXT NOT NULL,
+      category    TEXT,
+      notes       TEXT,
+      created_at  INTEGER NOT NULL
+    )
+  `).run().catch(() => {});
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_budget_type_date ON budget_entries (type, date)
+  `).run().catch(() => {});
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_budget_created ON budget_entries (created_at DESC)
+  `).run().catch(() => {});
+}
+
+export async function getBudgetEntries(
+  env: AppEnv,
+  type?: BudgetType,
+  startDate?: string,
+  endDate?: string
+): Promise<BudgetEntry[]> {
+  await ensureBudgetTable(env);
+  let query = "SELECT * FROM budget_entries";
+  const conditions: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (type) {
+    conditions.push("type = ?");
+    bindings.push(type);
+  }
+  if (startDate) {
+    conditions.push("date >= ?");
+    bindings.push(startDate);
+  }
+  if (endDate) {
+    conditions.push("date <= ?");
+    bindings.push(endDate);
+  }
+
+  if (conditions.length > 0) {
+    query += " WHERE " + conditions.join(" AND ");
+  }
+
+  query += " ORDER BY date DESC, created_at DESC";
+
+  const stmt = env.DB.prepare(query);
+  const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all<BudgetEntry>();
+  return results || [];
+}
+
+export async function getBudgetSummary(env: AppEnv): Promise<BudgetSummary> {
+  await ensureBudgetTable(env);
+  const row = await env.DB.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS totalIncome,
+      COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS totalExpense,
+      COALESCE(SUM(CASE WHEN type = 'income' THEN 1 ELSE 0 END), 0) AS incomeCount,
+      COALESCE(SUM(CASE WHEN type = 'expense' THEN 1 ELSE 0 END), 0) AS expenseCount
+    FROM budget_entries
+  `).first<{ totalIncome: number; totalExpense: number; incomeCount: number; expenseCount: number }>();
+
+  const totalIncome = Number(row?.totalIncome || 0);
+  const totalExpense = Number(row?.totalExpense || 0);
+  const totalStock = totalIncome - totalExpense;
+  const incomeCount = Number(row?.incomeCount || 0);
+  const expenseCount = Number(row?.expenseCount || 0);
+
+  return {
+    totalIncome,
+    totalExpense,
+    totalStock,
+    incomeCount,
+    expenseCount,
+  };
+}
+
+export async function createBudgetEntry(
+  env: AppEnv,
+  entry: {
+    id?: string;
+    type: BudgetType;
+    date: string;
+    amount: number;
+    source: string;
+    category?: string;
+    notes?: string;
+    created_at?: number;
+  }
+): Promise<BudgetEntry> {
+  await ensureBudgetTable(env);
+  const id = entry.id || `b_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const created_at = entry.created_at || Date.now();
+  const date = entry.date || new Date().toISOString().slice(0, 10);
+  const amount = Number(entry.amount) || 0;
+  const source = (entry.source || "").trim();
+  const category = (entry.category || "").trim() || (entry.type === "income" ? "Client Payment" : "Operations");
+  const notes = (entry.notes || "").trim();
+
+  await env.DB.prepare(`
+    INSERT INTO budget_entries (id, type, date, amount, source, category, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(id, entry.type, date, amount, source, category, notes, created_at)
+    .run();
+
+  return {
+    id,
+    type: entry.type,
+    date,
+    amount,
+    source,
+    category,
+    notes,
+    created_at,
+  };
+}
+
+export async function deleteBudgetEntry(env: AppEnv, id: string): Promise<boolean> {
+  await ensureBudgetTable(env);
+  const res = await env.DB.prepare("DELETE FROM budget_entries WHERE id = ?").bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+
 

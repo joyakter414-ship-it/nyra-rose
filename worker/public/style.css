@@ -794,8 +794,8 @@ nav {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  gap: 22px;
+  grid-template-columns: 1.15fr 0.95fr 0.9fr;
+  gap: 20px;
   align-items: center;
 }
 .studio-eyebrow {
@@ -902,7 +902,7 @@ nav {
   gap: 16px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1140px) {
   .studio-hero-content { grid-template-columns: 1fr; }
   .studio-clock-pill { display: none; }
 }
@@ -2336,3 +2336,629 @@ html[data-theme="light"] .task-call-pill {
   min-width: 80px;
   width: 100%;
 }
+
+/* ── MLBB Layla-Style Dynamic Anime Girl Studio Companion ─────────────────── */
+
+.studio-hero-companion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 6px 10px;
+}
+
+.anime-dialogue-bubble {
+  position: relative;
+  width: 100%;
+  max-width: 330px;
+  background: rgba(18, 20, 32, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 16px rgba(244, 63, 94, 0.15);
+  margin-bottom: 12px;
+  transition: transform 0.25s var(--ease-spring), border-color 0.25s ease;
+  z-index: 2;
+}
+
+.anime-dialogue-bubble:hover {
+  border-color: rgba(244, 63, 94, 0.6);
+  transform: translateY(-2px);
+}
+
+.anime-dialogue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  gap: 8px;
+}
+
+.anime-header-speaker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anime-dot-live {
+  color: var(--green);
+  font-size: 10px;
+  animation: pulseGreen 1.8s infinite;
+}
+
+.anime-name-tag {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--rose-light);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.anime-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anime-mood-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(244, 63, 94, 0.18);
+  border: 1px solid rgba(244, 63, 94, 0.32);
+  color: #fda4af;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.anime-chime-toggle {
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.75;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.anime-chime-toggle:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.anime-dialogue-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  font-weight: 450;
+  min-height: 38px;
+  transition: opacity 0.2s ease;
+}
+
+.anime-dialogue-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.anime-dialogue-hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.anime-action-btn {
+  background: rgba(244, 63, 94, 0.14);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: var(--rose-light);
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.anime-action-btn:hover {
+  background: rgba(244, 63, 94, 0.28);
+  transform: scale(1.04);
+}
+
+.anime-dialogue-tail {
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgba(18, 20, 32, 0.95);
+}
+
+.anime-avatar-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  padding-bottom: 4px;
+}
+
+.anime-girl-svg {
+  width: 175px;
+  max-width: 100%;
+  height: auto;
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 18px rgba(244, 63, 94, 0.22));
+  transition: transform 0.3s var(--ease-spring);
+}
+
+.anime-avatar-stage:hover .anime-girl-svg {
+  transform: translateY(-4px) scale(1.02);
+}
+
+.anime-poke-hint {
+  margin-top: 2px;
+  opacity: 0.65;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.anime-poke-hint span {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--rose-light);
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.anime-avatar-stage:hover .anime-poke-hint {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+/* Character SVG CSS Keyframe Animations */
+.anime-body-group {
+  animation: animeBreatheFloat 3.8s ease-in-out infinite;
+  transform-origin: 100px 200px;
+}
+
+.anime-twintail-left {
+  animation: animeHairSwayLeft 2.9s ease-in-out infinite alternate;
+  transform-origin: 62px 96px;
+}
+
+.anime-twintail-right {
+  animation: animeHairSwayRight 2.9s ease-in-out infinite alternate;
+  transform-origin: 138px 96px;
+}
+
+.anime-eyelid {
+  opacity: 0;
+  transform-origin: 100px 115px;
+  animation: animeEyeBlink 4.2s infinite;
+}
+
+.anime-blush {
+  animation: animeBlushGlow 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes animeBreatheFloat {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-4.5px) rotate(0.4deg);
+  }
+}
+
+@keyframes animeHairSwayLeft {
+  0% {
+    transform: rotate(-3.5deg);
+  }
+  100% {
+    transform: rotate(4.5deg);
+  }
+}
+
+@keyframes animeHairSwayRight {
+  0% {
+    transform: rotate(3.5deg);
+  }
+  100% {
+    transform: rotate(-4.5deg);
+  }
+}
+
+@keyframes animeEyeBlink {
+  0%, 94%, 100% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  96%, 98% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes animeBlushGlow {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 0.95;
+    transform: scale(1.08);
+  }
+}
+
+/* Reaction spring bounce on click */
+.react-bounce {
+  animation: reactBounceAnim 0.48s var(--ease-spring);
+}
+
+@keyframes reactBounceAnim {
+  0% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(0.92) translateY(3px);
+  }
+  55% {
+    transform: scale(1.08) translateY(-6px);
+  }
+  75% {
+    transform: scale(0.98) translateY(1px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Floating particle burst */
+.anime-particles-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 10;
+}
+
+.floating-particle {
+  position: absolute;
+  pointer-events: none;
+  font-size: 16px;
+  animation: particleBurstAnim 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes particleBurstAnim {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.6) rotate(0deg);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translate(var(--tx, 0px), var(--ty, -35px)) scale(1.2) rotate(var(--rot, 15deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx, 0px), var(--ty, -65px)) scale(0.8) rotate(var(--rot, 30deg));
+  }
+}
+
+/* ── Budget & Vault Management Section Styles ─────────────────────────────── */
+
+.budget-glow-1 {
+  position: absolute;
+  top: -80px;
+  right: -60px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.16) 0%, transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.budget-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.budget-kpi-card {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s var(--ease-spring), border-color 0.25s ease;
+}
+
+.budget-kpi-card:hover {
+  transform: translateY(-2px);
+}
+
+.budget-kpi-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.budget-kpi-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.budget-kpi-icon {
+  font-size: 18px;
+}
+
+.budget-kpi-val {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-family: var(--font-mono, monospace);
+  margin-bottom: 6px;
+}
+
+.budget-kpi-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.budget-kpi-card.income-kpi {
+  border-left: 4px solid #10b981;
+}
+.budget-kpi-card.income-kpi .budget-kpi-val {
+  color: #34d399;
+  text-shadow: 0 0 20px rgba(16, 185, 129, 0.25);
+}
+
+.budget-kpi-card.expense-kpi {
+  border-left: 4px solid #f43f5e;
+}
+.budget-kpi-card.expense-kpi .budget-kpi-val {
+  color: #fb7185;
+  text-shadow: 0 0 20px rgba(244, 63, 94, 0.25);
+}
+
+.budget-kpi-card.stock-kpi {
+  border-left: 4px solid #06b6d4;
+  background: linear-gradient(145deg, rgba(6, 182, 212, 0.08) 0%, var(--surface-inset) 100%);
+}
+.budget-kpi-card.stock-kpi .budget-kpi-val {
+  color: #38bdf8;
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.28);
+}
+
+.budget-kpi-card.margin-kpi {
+  border-left: 4px solid #8b5cf6;
+}
+.budget-kpi-card.margin-kpi .budget-kpi-val {
+  color: #a78bfa;
+}
+
+/* Dual Side-by-Side Tables */
+.budget-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+  .budget-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.budget-panel-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.budget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.budget-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-inset);
+}
+
+.budget-table td {
+  padding: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.budget-table tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.budget-amount-income {
+  color: #34d399;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+}
+
+.budget-amount-expense {
+  color: #fb7185;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+}
+
+.budget-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.budget-delete-btn:hover {
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.15);
+}
+
+/* ── Studio Mini Calculator Widget ────────────────────────────────────────── */
+
+.mini-calc-card {
+  max-width: 380px;
+  margin: 0 auto 24px;
+  border: 1px solid rgba(244, 63, 94, 0.28);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(165deg, rgba(24, 26, 42, 0.95) 0%, rgba(15, 17, 28, 0.98) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: all 0.3s var(--ease-spring);
+}
+
+.mini-calc-card.hidden {
+  display: none;
+}
+
+.calc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.calc-close-btn {
+  padding: 2px 7px;
+  font-size: 13px;
+}
+
+.calc-screen {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 14px;
+  text-align: right;
+  margin-bottom: 12px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.calc-expr {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  min-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc-display {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc-keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.calc-btn {
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  padding: 10px 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calc-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.calc-btn:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.calc-btn-op {
+  background: rgba(244, 63, 94, 0.14);
+  border-color: rgba(244, 63, 94, 0.28);
+  color: var(--rose-light);
+  font-size: 17px;
+}
+
+.calc-btn-op:hover {
+  background: rgba(244, 63, 94, 0.25);
+}
+
+.calc-btn-fn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.calc-btn-eq {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-color: #10b981;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+}
+
+.calc-btn-eq:hover {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+}
+
+.calc-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
