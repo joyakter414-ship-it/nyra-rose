@@ -4291,6 +4291,37 @@ const ANIME_DIALOGUES = [
 let animeDialogueIndex = 0;
 let animeChimeEnabled = localStorage.getItem("nyra_anime_chime") !== "false";
 
+const POKE_VOICE_TRACKS = [
+  "/assets/poke-ow.mp3",
+  "/assets/poke-ara.mp3",
+  "/assets/poke-senpai.mp3",
+  "/assets/poke-uwu.mp3",
+];
+let pokeVoiceIndex = 0;
+let activeVoiceAudio = null;
+
+function playCuteVoiceSound() {
+  if (!animeChimeEnabled) return;
+  try {
+    if (activeVoiceAudio) {
+      activeVoiceAudio.pause();
+      activeVoiceAudio.currentTime = 0;
+    }
+    const track = POKE_VOICE_TRACKS[pokeVoiceIndex % POKE_VOICE_TRACKS.length];
+    pokeVoiceIndex++;
+    activeVoiceAudio = new Audio(track);
+    activeVoiceAudio.volume = 0.9;
+    const playPromise = activeVoiceAudio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        playNyraChime("flirty");
+      });
+    }
+  } catch (e) {
+    playNyraChime("flirty");
+  }
+}
+
 function getTimeGreeting() {
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) {
@@ -4349,38 +4380,38 @@ function playNyraChime(mood = "sweet") {
 function spawnAnimeParticle() {
   const container = $("#anime-particles");
   if (!container) return;
-  const particles = ["💖", "💕", "✨", "🌸", "⭐", "🌹"];
-  const count = 4;
+  const particles = ["💖", "💕", "✨", "🌸", "⭐", "🌹", "🦊"];
+  const count = 5;
   for (let i = 0; i < count; i++) {
     const p = document.createElement("div");
     p.className = "floating-particle";
     p.textContent = particles[Math.floor(Math.random() * particles.length)];
-    const tx = (Math.random() - 0.5) * 80;
-    const ty = -40 - Math.random() * 50;
+    const tx = (Math.random() - 0.5) * 120;
+    const ty = -50 - Math.random() * 60;
     const rot = (Math.random() - 0.5) * 60;
     p.style.setProperty("--tx", `${tx}px`);
     p.style.setProperty("--ty", `${ty}px`);
     p.style.setProperty("--rot", `${rot}deg`);
-    p.style.left = `calc(50% + ${(Math.random() - 0.5) * 60}px)`;
-    p.style.top = `calc(50% + ${(Math.random() - 0.5) * 30}px)`;
+    p.style.left = `calc(50% + ${(Math.random() - 0.5) * 80}px)`;
+    p.style.top = `calc(50% + ${(Math.random() - 0.5) * 40}px)`;
     container.appendChild(p);
     setTimeout(() => p.remove(), 950);
   }
 }
 
 function cycleAnimeDialogue(userTriggered = true) {
-  const svg = $(".anime-girl-svg");
-  if (svg) {
-    svg.classList.remove("react-bounce");
-    void svg.offsetWidth; // Reflow
-    svg.classList.add("react-bounce");
+  const bubble = $("#anime-dialogue-bubble");
+  if (bubble) {
+    bubble.classList.remove("react-wobble");
+    void bubble.offsetWidth; // Reflow
+    bubble.classList.add("react-wobble");
   }
 
   const item = ANIME_DIALOGUES[animeDialogueIndex % ANIME_DIALOGUES.length];
   animeDialogueIndex++;
 
   if (userTriggered) {
-    playNyraChime(item.tone);
+    playCuteVoiceSound();
     spawnAnimeParticle();
   }
 
@@ -4400,13 +4431,17 @@ function cycleAnimeDialogue(userTriggered = true) {
 }
 
 function initAnimeCompanion() {
-  const initial = getTimeGreeting();
+  const defaultEntry = {
+    text: "Nyra was feeling a bit lonely waiting for you in the studio lobby... Don't keep me waiting too long next time, okay? 😉",
+    mood: "💖 Pouting",
+    tone: "flirty",
+  };
   const textEl = $("#anime-dialogue-text");
   const moodEl = $("#anime-mood-badge");
   const chimeBtn = $("#anime-chime-btn");
 
-  if (textEl) textEl.textContent = initial.text;
-  if (moodEl) moodEl.textContent = initial.mood;
+  if (textEl) textEl.textContent = defaultEntry.text;
+  if (moodEl) moodEl.textContent = defaultEntry.mood;
 
   if (chimeBtn) {
     chimeBtn.textContent = animeChimeEnabled ? "🔔" : "🔕";
@@ -4415,7 +4450,7 @@ function initAnimeCompanion() {
       animeChimeEnabled = !animeChimeEnabled;
       localStorage.setItem("nyra_anime_chime", animeChimeEnabled ? "true" : "false");
       chimeBtn.textContent = animeChimeEnabled ? "🔔" : "🔕";
-      if (animeChimeEnabled) playNyraChime("sweet");
+      if (animeChimeEnabled) playCuteVoiceSound();
     };
   }
 
@@ -4428,20 +4463,6 @@ function initAnimeCompanion() {
         cycleAnimeDialogue(true);
       }
     };
-
-    stage.onmousemove = (e) => {
-      const rect = stage.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width - 0.5;
-      const y = (e.clientY - rect.top) / rect.height - 0.5;
-      const svg = $(".anime-girl-svg");
-      if (svg) {
-        svg.style.transform = `perspective(600px) rotateY(${x * 12}deg) rotateX(${-y * 10}deg) translateY(-4px)`;
-      }
-    };
-    stage.onmouseleave = () => {
-      const svg = $(".anime-girl-svg");
-      if (svg) svg.style.transform = "";
-    };
   }
 
   const pokeBtn = $("#anime-poke-action-btn");
@@ -4450,6 +4471,20 @@ function initAnimeCompanion() {
       e.stopPropagation();
       cycleAnimeDialogue(true);
     };
+  }
+
+  const bubble = $("#anime-dialogue-bubble");
+  if (bubble) {
+    bubble.onclick = (e) => {
+      e.stopPropagation();
+      cycleAnimeDialogue(true);
+    };
+  }
+
+  // Ensure hero fox video autoplays
+  const heroVideo = $("#hero-fox-video");
+  if (heroVideo) {
+    heroVideo.play().catch(() => {});
   }
 }
 

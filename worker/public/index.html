@@ -119,44 +119,59 @@
     <!-- Home / Studio Overview -->
     <section id="tab-home" class="page">
       <!-- Vidmox × MotionHero Dynamic Studio Hero Banner -->
+      <!-- Vidmox × Hsin The Silver Fox Live Dynamic Studio Hero Banner -->
       <div class="studio-hero" id="studio-hero-banner">
-        <div class="studio-hero-glow-1" aria-hidden="true"></div>
-        <div class="studio-hero-glow-2" aria-hidden="true"></div>
-        <div class="studio-hero-content">
-          <div class="studio-hero-top">
-            <div class="studio-hero-left">
-              <div class="studio-eyebrow">
-                <span class="pulse-dot"></span>
-                <span>VIDMOX × NYRA ROSE · AUTONOMOUS 24/7 ENGINE</span>
-              </div>
-              <h1 class="studio-hero-title">
-                Scale client conversations with <span class="serif-italic">intelligent precision.</span>
-              </h1>
-              <p class="studio-hero-sub">
-                Real-time WhatsApp AI sales concierge, timezone-aware meeting scheduler, and automated 4-stage follow-up command studio.
-              </p>
-              <div class="studio-hero-actions">
-                <button type="button" id="hero-schedule-task-btn" class="small">+ Schedule Client Follow-Up</button>
-                <button type="button" id="hero-open-crm-btn" class="ghost small">📅 Open Booked Calls CRM</button>
-                <button type="button" id="hero-test-chat-btn" class="ghost small">💬 Talk to Nyra Rose</button>
-              </div>
-            </div>
+        <!-- Live Animated Video Background: Hsin the Silver Fox -->
+        <div class="studio-hero-video-wrap" id="anime-avatar-stage" role="button" tabindex="0" title="Tap Nyra to talk to her!">
+          <video
+            id="hero-fox-video"
+            class="studio-hero-video"
+            src="/assets/hsin-silver-fox.mp4"
+            poster="/assets/hsin-silver-fox.jpg"
+            autoplay
+            loop
+            muted
+            playsinline
+          ></video>
+          <div class="studio-hero-video-overlay" aria-hidden="true"></div>
+          <div class="anime-particles-layer" id="anime-particles"></div>
+        </div>
 
-            <!-- MLBB Layla-Style Dynamic Anime Girl Companion -->
-            <div class="studio-hero-companion" id="hero-anime-companion">
+        <div class="studio-hero-content">
+          <!-- Left: Title & Actions -->
+          <div class="studio-hero-left">
+            <div class="studio-eyebrow">
+              <span class="pulse-dot"></span>
+              <span>VIDMOX × NYRA ROSE · AUTONOMOUS 24/7 ENGINE</span>
+            </div>
+            <h1 class="studio-hero-title">
+              Scale client conversations with <span class="serif-italic">intelligent precision.</span>
+            </h1>
+            <p class="studio-hero-sub">
+              Real-time WhatsApp AI sales concierge, timezone-aware meeting scheduler, and automated 4-stage follow-up command studio.
+            </p>
+            <div class="studio-hero-actions">
+              <button type="button" id="hero-schedule-task-btn" class="small btn-hero-schedule">+ Schedule Client Follow-Up</button>
+              <button type="button" id="hero-open-crm-btn" class="ghost small btn-hero-crm">📅 Open Booked Calls CRM</button>
+              <button type="button" id="hero-test-chat-btn" class="ghost small btn-hero-chat">💬 Talk to Nyra Rose</button>
+            </div>
+          </div>
+
+          <!-- Center: Floating Dialogue Bubble -->
+          <div class="studio-hero-companion" id="hero-anime-companion">
             <div class="anime-dialogue-bubble" id="anime-dialogue-bubble">
               <div class="anime-dialogue-header">
                 <div class="anime-header-speaker">
                   <span class="anime-dot-live">●</span>
-                  <span class="anime-name-tag">Nyra Rose</span>
+                  <span class="anime-name-tag">NYRA ROSE</span>
                 </div>
                 <div class="anime-header-actions">
-                  <span id="anime-mood-badge" class="anime-mood-pill">💖 Sweet</span>
-                  <button type="button" id="anime-chime-btn" class="anime-chime-toggle" title="Toggle audio chime">🔔</button>
+                  <span id="anime-mood-badge" class="anime-mood-pill">💖 Pouting</span>
+                  <button type="button" id="anime-chime-btn" class="anime-chime-toggle" title="Toggle companion voice">🔔</button>
                 </div>
               </div>
               <p id="anime-dialogue-text" class="anime-dialogue-text">
-                Hey Arman Shawon, how was your day? You've been working so hard, don't forget to take a breather with me~ 💖
+                Nyra was feeling a bit lonely waiting for you in the studio lobby... Don't keep me waiting too long next time, okay? 😉
               </p>
               <div class="anime-dialogue-footer">
                 <span class="anime-dialogue-hint">Tap Nyra for reactions</span>
@@ -164,161 +179,27 @@
               </div>
               <div class="anime-dialogue-tail"></div>
             </div>
-
-            <div class="anime-avatar-stage" id="anime-avatar-stage" role="button" tabindex="0" title="Tap Nyra to talk to her!">
-              <div class="anime-particles-layer" id="anime-particles"></div>
-              
-              <!-- Dynamic Layered Vector Anime Girl (Layla / Nyra Rose) -->
-              <svg class="anime-girl-svg" viewBox="0 0 200 240" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="roseSkin" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#fff1eb"/>
-                    <stop offset="100%" stop-color="#fcd5ce"/>
-                  </linearGradient>
-                  <linearGradient id="animeHairGrad" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stop-color="#fb7185"/>
-                    <stop offset="50%" stop-color="#e11d48"/>
-                    <stop offset="100%" stop-color="#881337"/>
-                  </linearGradient>
-                  <linearGradient id="eyeIrisGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#e11d48"/>
-                    <stop offset="60%" stop-color="#8b5cf6"/>
-                    <stop offset="100%" stop-color="#4c1d95"/>
-                  </linearGradient>
-                  <radialGradient id="blushGrad" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stop-color="rgba(244,63,94,0.65)"/>
-                    <stop offset="100%" stop-color="rgba(244,63,94,0)"/>
-                  </radialGradient>
-                  <linearGradient id="suitGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#1e1b4b"/>
-                    <stop offset="100%" stop-color="#0f172a"/>
-                  </linearGradient>
-                  <filter id="animeGlow" x="-20%" y="-20%" width="140%" height="140%">
-                    <feGaussianBlur stdDeviation="3" result="blur"/>
-                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-                  </filter>
-                </defs>
-
-                <!-- Back Hair & Twin Tails with Sway Animations -->
-                <g class="anime-twintail-left">
-                  <path d="M60 90 C30 110 15 150 25 190 C30 210 20 230 15 240 C35 230 45 200 48 170 C52 140 65 110 70 100 Z" fill="url(#animeHairGrad)"/>
-                  <path d="M30 150 C22 175 24 205 18 225" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
-                  <circle cx="62" cy="96" r="7" fill="#f43f5e"/>
-                  <path d="M56 94 C50 90 44 98 52 104 Z" fill="#fda4af"/>
-                  <path d="M68 94 C74 90 80 98 72 104 Z" fill="#fda4af"/>
-                </g>
-
-                <g class="anime-twintail-right">
-                  <path d="M140 90 C170 110 185 150 175 190 C170 210 180 230 185 240 C165 230 155 200 152 170 C148 140 135 110 130 100 Z" fill="url(#animeHairGrad)"/>
-                  <path d="M170 150 C178 175 176 205 182 225" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
-                  <circle cx="138" cy="96" r="7" fill="#f43f5e"/>
-                  <path d="M132 94 C126 90 120 98 128 104 Z" fill="#fda4af"/>
-                  <path d="M144 94 C150 90 156 98 148 104 Z" fill="#fda4af"/>
-                </g>
-
-                <!-- Floating Breathing Torso Group -->
-                <g class="anime-body-group">
-                  <!-- Torso / Studio Blazer -->
-                  <path d="M68 185 L50 240 L150 240 L132 185 Q100 190 68 185 Z" fill="url(#suitGrad)"/>
-                  <path d="M85 188 L100 215 L115 188 Z" fill="#ffffff" opacity="0.9"/>
-                  <!-- Tie & Rose Studio Brooch -->
-                  <path d="M97 205 L103 205 L104 235 L100 240 L96 235 Z" fill="#f43f5e"/>
-                  <circle cx="100" cy="204" r="5" fill="#f43f5e" filter="url(#animeGlow)"/>
-                  <circle cx="100" cy="204" r="2.5" fill="#ffe4e6"/>
-                  <!-- Collar Lapels -->
-                  <path d="M68 185 L84 218 L94 188" stroke="#f43f5e" stroke-width="1.8" fill="none"/>
-                  <path d="M132 185 L116 218 L106 188" stroke="#f43f5e" stroke-width="1.8" fill="none"/>
-
-                  <!-- Neck -->
-                  <path d="M88 160 L88 188 Q100 192 112 188 L112 160 Z" fill="url(#roseSkin)"/>
-                  <path d="M88 172 Q100 178 112 172" stroke="#fbcfe8" stroke-width="1" fill="none" opacity="0.5"/>
-
-                  <!-- Head & Face -->
-                  <path d="M64 110 C64 70 136 70 136 110 C136 142 118 168 100 170 C82 168 64 142 64 110 Z" fill="url(#roseSkin)"/>
-
-                  <!-- Cheeks / Anime Blush -->
-                  <ellipse class="anime-blush" cx="78" cy="138" rx="10" ry="5.5" fill="url(#blushGrad)"/>
-                  <ellipse class="anime-blush" cx="122" cy="138" rx="10" ry="5.5" fill="url(#blushGrad)"/>
-
-                  <!-- Delicate Anime Nose & Smiling Lips -->
-                  <circle cx="100" cy="142" r="1.2" fill="#fda4af"/>
-                  <path d="M93 153 Q100 159 107 153" stroke="#e11d48" stroke-width="2" stroke-linecap="round" fill="none"/>
-                  <ellipse cx="100" cy="155.5" rx="2" ry="0.8" fill="#ffffff" opacity="0.8"/>
-
-                  <!-- Expressive Eyes -->
-                  <!-- Left Eye -->
-                  <g class="anime-eye-left">
-                    <ellipse cx="82" cy="122" rx="11" ry="13" fill="#ffffff"/>
-                    <ellipse cx="83" cy="123" rx="8" ry="11" fill="url(#eyeIrisGrad)"/>
-                    <ellipse cx="83" cy="124" rx="4.5" ry="6" fill="#1e1b4b"/>
-                    <circle cx="80" cy="118" r="3.2" fill="#ffffff"/>
-                    <circle cx="86" cy="126" r="1.5" fill="#ffffff"/>
-                    <path d="M80 128 Q83 131 86 128" stroke="#f472b6" stroke-width="1.2" fill="none"/>
-                    <path d="M69 118 Q82 108 94 116" stroke="#4c0519" stroke-width="3" stroke-linecap="round" fill="none"/>
-                    <path d="M92 114 L96 112" stroke="#4c0519" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M72 106 Q82 101 92 105" stroke="#be123c" stroke-width="2" stroke-linecap="round" fill="none"/>
-                    <path class="anime-eyelid anime-eyelid-l" d="M69 110 Q82 108 95 110 L95 125 Q82 136 69 125 Z" fill="url(#roseSkin)"/>
-                  </g>
-
-                  <!-- Right Eye -->
-                  <g class="anime-eye-right">
-                    <ellipse cx="118" cy="122" rx="11" ry="13" fill="#ffffff"/>
-                    <ellipse cx="117" cy="123" rx="8" ry="11" fill="url(#eyeIrisGrad)"/>
-                    <ellipse cx="117" cy="124" rx="4.5" ry="6" fill="#1e1b4b"/>
-                    <circle cx="114" cy="118" r="3.2" fill="#ffffff"/>
-                    <circle cx="120" cy="126" r="1.5" fill="#ffffff"/>
-                    <path d="M114 128 Q117 131 120 128" stroke="#f472b6" stroke-width="1.2" fill="none"/>
-                    <path d="M106 116 Q118 108 131 118" stroke="#4c0519" stroke-width="3" stroke-linecap="round" fill="none"/>
-                    <path d="M108 112 L104 114" stroke="#4c0519" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M108 105 Q118 101 128 106" stroke="#be123c" stroke-width="2" stroke-linecap="round" fill="none"/>
-                    <path class="anime-eyelid anime-eyelid-r" d="M105 110 Q118 108 131 110 L131 125 Q118 136 105 125 Z" fill="url(#roseSkin)"/>
-                  </g>
-
-                  <!-- Cyber Headphones / Studio Headset (Layla Style) -->
-                  <g class="anime-headset">
-                    <path d="M60 108 C50 108 50 132 60 132 Z" fill="#0f172a" stroke="#f43f5e" stroke-width="2"/>
-                    <circle cx="56" cy="120" r="4" fill="#f43f5e" filter="url(#animeGlow)"/>
-                    <path d="M140 108 C150 108 150 132 140 132 Z" fill="#0f172a" stroke="#f43f5e" stroke-width="2"/>
-                    <circle cx="144" cy="120" r="4" fill="#f43f5e" filter="url(#animeGlow)"/>
-                    <path d="M60 110 C60 62 140 62 140 110" stroke="#1e293b" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-                    <path d="M68 85 C80 72 120 72 132 85" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" fill="none"/>
-                    <path d="M58 126 Q65 145 84 148" stroke="#334155" stroke-width="2" stroke-linecap="round" fill="none"/>
-                    <circle cx="85" cy="148" r="2.5" fill="#f43f5e" filter="url(#animeGlow)"/>
-                  </g>
-
-                  <!-- Front Bangs & Anime Hair Framing -->
-                  <path d="M62 100 C60 70 140 70 138 100 C138 100 130 92 124 95 C116 98 114 116 112 120 C108 108 104 98 98 96 C92 94 86 114 84 118 C80 105 74 95 68 96 C64 97 62 100 62 100 Z" fill="url(#animeHairGrad)"/>
-                  <path d="M72 86 C82 80 118 80 128 86" stroke="#fda4af" stroke-width="2.5" stroke-linecap="round" opacity="0.75" fill="none"/>
-                  <path d="M63 98 C60 118 63 140 66 150 C67 142 68 120 69 105 Z" fill="url(#animeHairGrad)"/>
-                  <path d="M137 98 C140 118 137 140 134 150 C133 142 132 120 131 105 Z" fill="url(#animeHairGrad)"/>
-                </g>
-              </svg>
-
-              <div class="anime-poke-hint">
-                <span>✨ Poke Nyra</span>
-              </div>
-            </div>
           </div>
-        </div>
 
-        <div class="studio-hero-metrics">
+          <!-- Right: 2x2 Frosted Metric Cards -->
+          <div class="studio-hero-metrics">
             <div class="hero-metric-card" data-jump-tab="home">
-              <span class="hero-metric-label">Gateway Link</span>
-              <strong class="hero-metric-val" id="hero-metric-gw">Checking…</strong>
-              <span class="hero-metric-sub" id="hero-metric-gw-sub">24/7 Cloud + Local Sync</span>
+              <span class="hero-metric-label">GATEWAY LINK</span>
+              <strong class="hero-metric-val" id="hero-metric-gw">Connected</strong>
+              <span class="hero-metric-sub" id="hero-metric-gw-sub">Vidmox · 24/7 Live</span>
             </div>
             <div class="hero-metric-card" data-jump-tab="todos">
-              <span class="hero-metric-label">Due Today</span>
+              <span class="hero-metric-label">DUE TODAY</span>
               <strong class="hero-metric-val" id="hero-metric-today">0</strong>
               <span class="hero-metric-sub">Scheduled AI actions</span>
             </div>
             <div class="hero-metric-card" data-jump-tab="bookings">
-              <span class="hero-metric-label">Active Pipeline</span>
+              <span class="hero-metric-label">ACTIVE PIPELINE</span>
               <strong class="hero-metric-val" id="hero-metric-leads">0</strong>
               <span class="hero-metric-sub">CRM leads &amp; calls</span>
             </div>
             <div class="hero-metric-card" data-jump-tab="todos">
-              <span class="hero-metric-label">Next AI Dispatch</span>
+              <span class="hero-metric-label">NEXT AI DISPATCH</span>
               <strong class="hero-metric-val mono-text" id="hero-metric-next">—</strong>
               <span class="hero-metric-sub" id="hero-metric-next-sub">Live countdown</span>
             </div>
