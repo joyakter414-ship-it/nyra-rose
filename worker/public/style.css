@@ -772,10 +772,10 @@ nav::-webkit-scrollbar {
   border-radius: 24px;
   border: 1px solid rgba(226, 232, 240, 0.9);
   background: #ffffff;
-  padding: 30px 32px;
+  padding: 26px 28px;
   margin-bottom: 22px;
   box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.02);
-  min-height: 380px;
+  min-height: 360px;
   display: flex;
   align-items: center;
   animation: fadeInUp 0.42s var(--ease-spring);
@@ -786,7 +786,7 @@ nav::-webkit-scrollbar {
   box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.5);
 }
 
-/* Background Animated Video Layer */
+/* Background Animated Video Layer: Centered in the open gap so Hsin's face is 100% visible */
 .studio-hero-video-wrap {
   position: absolute;
   inset: 0;
@@ -799,20 +799,21 @@ nav::-webkit-scrollbar {
 }
 .studio-hero-video {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: -12%;
+  left: -15%;
+  width: 130%;
+  height: 125%;
   object-fit: cover;
-  object-position: 63% 20%;
+  object-position: center 18%;
   pointer-events: none;
-  transform: scale(1.02);
+  transform: translateX(12%);
   transition: transform 0.4s ease;
 }
 .studio-hero-video-wrap:hover .studio-hero-video {
-  transform: scale(1.035);
+  transform: translateX(12%) scale(1.02);
 }
 
-/* Seamless Gradient Blend Overlay */
+/* Seamless Gradient Blend Overlay: Left text protection without masking Hsin */
 .studio-hero-video-overlay {
   position: absolute;
   inset: 0;
@@ -820,34 +821,36 @@ nav::-webkit-scrollbar {
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.98) 0%,
-    rgba(255, 255, 255, 0.95) 28%,
-    rgba(255, 255, 255, 0.72) 42%,
-    rgba(255, 255, 255, 0.12) 60%,
-    rgba(255, 255, 255, 0.20) 75%,
-    rgba(255, 255, 255, 0.35) 100%
+    rgba(255, 255, 255, 0.95) 24%,
+    rgba(255, 255, 255, 0.65) 34%,
+    rgba(255, 255, 255, 0.02) 48%,
+    rgba(255, 255, 255, 0.00) 65%,
+    rgba(255, 255, 255, 0.15) 76%,
+    rgba(255, 255, 255, 0.32) 100%
   );
 }
 [data-theme="dark"] .studio-hero-video-overlay {
   background: linear-gradient(
     90deg,
     rgba(13, 15, 24, 0.98) 0%,
-    rgba(13, 15, 24, 0.94) 28%,
-    rgba(13, 15, 24, 0.65) 42%,
-    rgba(13, 15, 24, 0.10) 60%,
-    rgba(13, 15, 24, 0.25) 75%,
-    rgba(13, 15, 24, 0.55) 100%
+    rgba(13, 15, 24, 0.95) 24%,
+    rgba(13, 15, 24, 0.60) 34%,
+    rgba(13, 15, 24, 0.02) 48%,
+    rgba(13, 15, 24, 0.00) 65%,
+    rgba(13, 15, 24, 0.20) 76%,
+    rgba(13, 15, 24, 0.45) 100%
   );
 }
 
-/* 3-Column Content Layout matching Reference Screenshot */
+/* 3-Column Content Layout: Left Title, Floating Dialogue on the Left of Hsin, Frosted Metrics on the Right */
 .studio-hero-content {
   position: relative;
   z-index: 2;
   width: 100%;
   display: grid;
-  grid-template-columns: 1.15fr 0.9fr 1fr;
-  gap: 22px;
-  align-items: center;
+  grid-template-columns: 340px 280px 1fr;
+  gap: 16px;
+  align-items: start;
 }
 
 /* Left: Eyebrow, Title, Subtitle & Action Buttons */
@@ -855,22 +858,23 @@ nav::-webkit-scrollbar {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  max-width: 440px;
+  max-width: 340px;
+  width: 100%;
 }
 .studio-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 14px;
+  padding: 3.5px 12px;
   border-radius: 999px;
   background: rgba(254, 226, 226, 0.9);
   border: 1px solid rgba(244, 63, 94, 0.35);
   color: #e11d48;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 [data-theme="dark"] .studio-eyebrow {
   background: rgba(244, 63, 94, 0.16);
@@ -878,17 +882,17 @@ nav::-webkit-scrollbar {
   color: #fda4af;
 }
 .pulse-dot {
-  width: 7.5px;
-  height: 7.5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--green, #10b981);
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
   animation: pulseGreen 2s infinite;
 }
 .studio-hero-title {
-  font-size: clamp(24px, 2.7vw, 32px);
+  font-size: clamp(22px, 2.3vw, 26px);
   line-height: 1.18;
-  margin: 0 0 10px 0;
+  margin: 0 0 8px 0;
   letter-spacing: -0.025em;
   font-weight: 800;
   color: #0f172a;
@@ -907,11 +911,11 @@ nav::-webkit-scrollbar {
   color: #fb7185;
 }
 .studio-hero-sub {
-  margin: 0 0 18px 0;
+  margin: 0 0 14px 0;
   color: #64748b;
-  font-size: 13.5px;
-  line-height: 1.55;
-  max-width: 420px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 330px;
 }
 [data-theme="dark"] .studio-hero-sub {
   color: #94a3b8;
@@ -919,15 +923,15 @@ nav::-webkit-scrollbar {
 .studio-hero-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .btn-hero-schedule {
   background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%) !important;
   color: #ffffff !important;
   font-weight: 700 !important;
-  font-size: 12px !important;
-  padding: 9px 16px !important;
+  font-size: 11.5px !important;
+  padding: 8px 14px !important;
   border-radius: 12px !important;
   border: none !important;
   box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35) !important;
@@ -944,8 +948,8 @@ nav::-webkit-scrollbar {
   border: 1px solid rgba(0, 0, 0, 0.1) !important;
   color: #1e293b !important;
   font-weight: 600 !important;
-  font-size: 12px !important;
-  padding: 9px 14px !important;
+  font-size: 11.5px !important;
+  padding: 8px 12px !important;
   border-radius: 12px !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
@@ -968,27 +972,72 @@ nav::-webkit-scrollbar {
 .studio-hero-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  max-width: 360px;
+  max-width: 320px;
   justify-self: end;
   padding-top: 0;
   border-top: none;
 }
 .hero-metric-card {
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.95);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
   transition: transform 0.2s var(--ease-spring), border-color 0.2s ease, box-shadow 0.2s ease;
-  min-height: 84px;
+  min-height: 76px;
+}
+[data-theme="dark"] .hero-metric-card {
+  background: rgba(20, 24, 38, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.hero-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(244, 63, 94, 0.45);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+.hero-metric-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+[data-theme="dark"] .hero-metric-label {
+  color: #94a3b8;
+}
+.hero-metric-val {
+  font-family: var(--font-display, var(--font-sans));
+  font-size: 19px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+[data-theme="dark"] .hero-metric-val {
+  color: #ffffff;
+}
+#hero-metric-gw.hero-metric-val {
+  color: #10b981;
+}
+.hero-metric-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-theme="dark"] .hero-metric-sub {
+  color: #94a3b8;
 }
 [data-theme="dark"] .hero-metric-card {
   background: rgba(20, 24, 38, 0.85);
@@ -1058,8 +1107,8 @@ nav::-webkit-scrollbar {
 @media (max-width: 1180px) {
   .studio-clock-pill { display: none; }
   .studio-hero-content {
-    grid-template-columns: 1.1fr 0.85fr 1fr;
-    gap: 16px;
+    grid-template-columns: 310px 250px 1fr;
+    gap: 12px;
   }
 }
 @media (max-width: 1024px) {
@@ -1067,11 +1116,19 @@ nav::-webkit-scrollbar {
     min-height: auto;
     padding: 24px 20px;
   }
+  .studio-hero-video {
+    left: 0;
+    width: 100%;
+    transform: none;
+    object-position: center 20%;
+  }
   .studio-hero-content {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: 18px;
   }
   .studio-hero-companion {
+    width: 100%;
+    max-width: 380px;
     order: 2;
   }
   .studio-hero-metrics {
@@ -2527,31 +2584,35 @@ html[data-theme="light"] .task-call-pill {
 .studio-hero-companion {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+  align-self: flex-start;
   position: relative;
+  width: 100%;
+  max-width: 280px;
   padding: 0;
+  margin-top: 4px;
   z-index: 5;
 }
 
 .anime-dialogue-bubble {
   position: relative;
   width: 100%;
-  max-width: 350px;
+  max-width: 280px;
   background: rgba(18, 20, 32, 0.92);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 18px;
-  padding: 14px 18px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(244, 63, 94, 0.18);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(244, 63, 94, 0.18);
   transition: transform 0.25s var(--ease-spring), border-color 0.25s ease, box-shadow 0.25s ease;
   z-index: 5;
 }
 
 .anime-dialogue-bubble:hover {
   border-color: rgba(244, 63, 94, 0.55);
-  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.45), 0 0 24px rgba(244, 63, 94, 0.22);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.45), 0 0 20px rgba(244, 63, 94, 0.22);
   transform: translateY(-2px);
 }
 
@@ -2559,25 +2620,25 @@ html[data-theme="light"] .task-call-pill {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  gap: 8px;
+  margin-bottom: 6px;
+  gap: 6px;
 }
 
 .anime-header-speaker {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .anime-dot-live {
   color: #10b981;
-  font-size: 10px;
+  font-size: 9px;
   animation: pulseGreen 1.8s infinite;
 }
 
 .anime-name-tag {
   font-weight: 800;
-  font-size: 11px;
+  font-size: 10px;
   color: #fda4af;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2586,13 +2647,13 @@ html[data-theme="light"] .task-call-pill {
 .anime-header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .anime-mood-pill {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 2.5px 9px;
+  padding: 2px 7.5px;
   border-radius: 999px;
   background: rgba(244, 63, 94, 0.24);
   border: 1px solid rgba(244, 63, 94, 0.45);
@@ -2604,7 +2665,7 @@ html[data-theme="light"] .task-call-pill {
 .anime-chime-toggle {
   background: transparent;
   border: none;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   padding: 0 2px;
   opacity: 0.85;
@@ -2617,13 +2678,13 @@ html[data-theme="light"] .task-call-pill {
 }
 
 .anime-dialogue-text {
-  margin: 6px 0 8px;
-  font-size: 12.5px;
-  line-height: 1.5;
+  margin: 5px 0 7px;
+  font-size: 11.5px;
+  line-height: 1.45;
   color: #f1f5f9;
   font-weight: 500;
   letter-spacing: -0.01em;
-  min-height: 44px;
+  min-height: 38px;
   transition: opacity 0.2s ease;
 }
 
@@ -2631,13 +2692,13 @@ html[data-theme="light"] .task-call-pill {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .anime-dialogue-hint {
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 500;
   color: #94a3b8;
 }
@@ -2647,8 +2708,12 @@ html[data-theme="light"] .task-call-pill {
   border: 1px solid rgba(244, 63, 94, 0.45);
   color: #fda4af;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
   padding: 3px 12px;
   cursor: pointer;
   transition: all 0.2s ease;
