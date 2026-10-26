@@ -3100,3 +3100,178 @@ html[data-theme="light"] .task-call-pill {
   gap: 8px;
 }
 
+/* ── WhatsApp Lead Broadcast & Campaign Studio ────────────────────────────── */
+
+.broadcast-preset-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.broadcast-preset-btn:hover {
+  border-color: #a78bfa;
+  color: var(--text);
+}
+.broadcast-preset-btn.active {
+  background: rgba(167, 139, 250, 0.2);
+  border-color: #a78bfa;
+  color: #c4b5fd;
+}
+
+.broadcast-tag-pill {
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  color: #c4b5fd;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.broadcast-tag-pill:hover {
+  background: rgba(167, 139, 250, 0.28);
+  transform: translateY(-1px);
+}
+
+.broadcast-tpl-btn {
+  padding: 3px 10px !important;
+  font-size: 11px !important;
+  border-radius: 6px !important;
+}
+
+.btn-broadcast-send {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  padding: 9px 20px !important;
+  border-radius: 10px !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4) !important;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+.btn-broadcast-send:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.55) !important;
+}
+
+.broadcast-table th,
+.broadcast-table td {
+  border-bottom: 1px solid var(--line);
+}
+.broadcast-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* WhatsApp Phone Preview Mockup */
+.wa-preview-mockup {
+  background: #0b141a;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 220px;
+}
+.wa-preview-header {
+  background: #1f2c34;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.wa-preview-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #f43f5e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.wa-preview-meta {
+  display: flex;
+  flex-direction: column;
+}
+.wa-preview-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e9edef;
+}
+.wa-preview-status {
+  font-size: 10px;
+  color: #25d366;
+}
+.wa-preview-body {
+  background: #0b141a;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 16px 16px;
+  padding: 16px 14px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.wa-bubble-out {
+  background: #005c4b;
+  color: #e9edef;
+  border-radius: 10px 10px 2px 10px;
+  padding: 10px 12px 6px;
+  max-width: 90%;
+  align-self: flex-end;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.wa-bubble-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.wa-bubble-time {
+  display: block;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* Progress Bar & Live Log */
+.broadcast-progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.broadcast-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #10b981);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.broadcast-live-log {
+  max-height: 140px;
+  overflow-y: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+}
+
+

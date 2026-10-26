@@ -74,6 +74,11 @@
           <span>Booked Calls</span>
           <span id="nav-badge-bookings" class="nav-count-pill hidden">0</span>
         </button>
+        <button data-tab="broadcast" class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5-5 18-4-8-9-5Z"/><path d="M14 14l7-7"/></svg>
+          <span>Lead Broadcast</span>
+          <span id="nav-badge-broadcast" class="nav-count-pill hidden">0</span>
+        </button>
         <button data-tab="budget" class="tab">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>
           <span>Budget &amp; Vault</span>
@@ -464,6 +469,7 @@
             </div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="crm-open-broadcast-btn" class="small ghost" style="border-color: #a78bfa; color: #a78bfa;" title="Broadcast a WhatsApp message to leads in any date range">📢 Lead Broadcast</button>
             <button id="toggle-add-booking-btn" class="small">+ Log Lead / Call</button>
             <button id="refresh-bookings-btn" class="ghost small">↻ Refresh</button>
             <button id="export-leads-csv-btn" class="ghost small hidden" title="Master Admin Only — Downloads all client leads with phone numbers as CSV">⬇ Export CSV</button>
@@ -737,6 +743,264 @@
             </button>
           </div>
           <div id="export-csv-feedback" class="muted small-text" style="margin-top: 8px;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WhatsApp Lead Broadcast & Campaign Studio -->
+    <section id="tab-broadcast" class="page hidden">
+      <!-- Broadcast Header Banner -->
+      <div class="card" style="margin-bottom: 18px; padding: 22px 26px; position: relative; overflow: hidden; border-left: 4px solid #a78bfa;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+          <div style="max-width: 680px;">
+            <div class="studio-eyebrow" style="margin-bottom: 8px;">
+              <span class="pulse-dot"></span>
+              <span>VIDMOX CAMPAIGN &amp; LEAD BROADCAST STUDIO</span>
+            </div>
+            <h1 style="margin: 0 0 6px 0; font-size: 24px; font-weight: 800; color: var(--text);">
+              WhatsApp Lead Broadcast <span class="serif-italic" style="color: #a78bfa;">&amp; Campaign Dispatcher</span>
+            </h1>
+            <p class="muted small-text" style="margin: 0; line-height: 1.6;">
+              Filter client leads by date range (e.g. <em>from this date to that date</em>), compose your message with smart personalization tags like <code>{first_name}</code>, and broadcast directly to all matching WhatsApp clients with anti-ban speed protection.
+            </p>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+            <span id="broadcast-gw-status" class="badge" style="font-size: 11px;">Checking Gateway…</span>
+            <span class="muted small-text">Vidmox Cloud + WhatsApp Live</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 1: Lead Date Range & Status Filter -->
+      <div class="card" style="margin-bottom: 18px; padding: 20px 22px;">
+        <div class="card-title-group" style="margin-bottom: 14px;">
+          <div class="card-icon-cap">📅</div>
+          <div>
+            <h3 style="margin: 0; font-size: 16px;">Step 1 · Select Lead Date Range</h3>
+            <p class="muted small-text" style="margin: 2px 0 0;">
+              Pick the start date and end date of when leads entered your CRM or WhatsApp.
+            </p>
+          </div>
+        </div>
+
+        <!-- Quick Presets -->
+        <div class="broadcast-preset-row" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;">
+          <button type="button" class="broadcast-preset-btn active" data-preset="all">All Time</button>
+          <button type="button" class="broadcast-preset-btn" data-preset="today">Today</button>
+          <button type="button" class="broadcast-preset-btn" data-preset="yesterday">Yesterday</button>
+          <button type="button" class="broadcast-preset-btn" data-preset="last7">Last 7 Days</button>
+          <button type="button" class="broadcast-preset-btn" data-preset="last14">Last 14 Days</button>
+          <button type="button" class="broadcast-preset-btn" data-preset="last30">Last 30 Days</button>
+          <button type="button" class="broadcast-preset-btn" data-preset="thisMonth">This Month</button>
+        </div>
+
+        <!-- Custom Inputs Row -->
+        <div class="row" style="align-items: flex-end; gap: 14px;">
+          <label style="flex: 1; min-width: 170px;">
+            <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">From Date (Start)</span>
+            <input type="date" id="broadcast-from-date" style="margin-top: 4px;" />
+          </label>
+          <label style="flex: 1; min-width: 170px;">
+            <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">To Date (End)</span>
+            <input type="date" id="broadcast-to-date" style="margin-top: 4px;" />
+          </label>
+          <label style="flex: 1.2; min-width: 200px;">
+            <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">Lead Pipeline Status</span>
+            <select id="broadcast-status-filter" style="margin-top: 4px;">
+              <option value="all">All Leads (Any Status)</option>
+              <option value="active">🌱 Active Leads (Excludes Cancelled/Fake)</option>
+              <option value="lead">🌱 New Leads (Not Booked Yet)</option>
+              <option value="booked">📅 Booked Calls</option>
+              <option value="buy_soon">⏳ Buying in Few Days</option>
+              <option value="not_attended">⚠️ Missed Calls (Not Attended)</option>
+              <option value="confirmed">✅ Confirmed Calls</option>
+            </select>
+          </label>
+          <button type="button" id="broadcast-fetch-btn" class="small" style="height: 40px; padding: 0 18px; margin-bottom: 2px;">
+            🔍 Filter Leads
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Message Composer & Live WhatsApp Preview -->
+      <div class="grid split" style="grid-template-columns: 1.2fr 0.8fr; gap: 18px; margin-bottom: 18px;">
+        <!-- Left: Composer -->
+        <div class="card" style="padding: 20px 22px;">
+          <div class="card-title-group" style="margin-bottom: 12px;">
+            <div class="card-icon-cap">✍️</div>
+            <div>
+              <h3 style="margin: 0; font-size: 16px;">Step 2 · Compose Broadcast Message</h3>
+              <p class="muted small-text" style="margin: 2px 0 0;">
+                Write the one message to send to all matching leads in the selected date range.
+              </p>
+            </div>
+          </div>
+
+          <!-- Quick Templates Bar -->
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;">
+            <span class="muted small-text" style="font-weight: 600;">Templates:</span>
+            <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="offer">🎁 Special Offer</button>
+            <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="followup">👋 Check-In Follow-Up</button>
+            <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="call">📅 Book Call Invite</button>
+          </div>
+
+          <!-- Personalization Tags -->
+          <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;">
+            <span class="muted small-text" style="font-size: 11px;">Insert dynamic tags:</span>
+            <button type="button" class="broadcast-tag-pill" data-tag="{first_name}">+ {first_name}</button>
+            <button type="button" class="broadcast-tag-pill" data-tag="{name}">+ {name}</button>
+            <button type="button" class="broadcast-tag-pill" data-tag="{deal}">+ {deal}</button>
+          </div>
+
+          <textarea
+            id="broadcast-message-text"
+            rows="6"
+            placeholder="Hey {first_name}! Thanks for reaching out to VIDMOX. We have an exclusive video editing package available this week. Would love to discuss your content needs: https://calendly.com/armaan-gineus/30min"
+            style="font-family: inherit; font-size: 13.5px; line-height: 1.55; resize: vertical; width: 100%; box-sizing: border-box;"
+          ></textarea>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; flex-wrap: wrap; gap: 6px;">
+            <span id="broadcast-char-count" class="muted small-text">0 characters</span>
+            <span class="muted small-text">Tip: Use <code>{first_name}</code> so each client sees their own name!</span>
+          </div>
+        </div>
+
+        <!-- Right: WhatsApp Phone Preview Bubble -->
+        <div class="card" style="padding: 20px 22px; display: flex; flex-direction: column;">
+          <div class="card-title-group" style="margin-bottom: 12px;">
+            <div class="card-icon-cap">📱</div>
+            <div>
+              <h3 style="margin: 0; font-size: 15px;">Live WhatsApp Client Preview</h3>
+              <p class="muted small-text" style="margin: 2px 0 0;" id="broadcast-preview-lead-info">
+                Simulated view for the first selected lead
+              </p>
+            </div>
+          </div>
+
+          <!-- WhatsApp Chat Preview Mockup -->
+          <div class="wa-preview-mockup">
+            <div class="wa-preview-header">
+              <div class="wa-preview-avatar">🌹</div>
+              <div class="wa-preview-meta">
+                <span class="wa-preview-name">Nyra Rose (Vidmox Studio)</span>
+                <span class="wa-preview-status">online</span>
+              </div>
+            </div>
+            <div class="wa-preview-body">
+              <div class="wa-bubble-out">
+                <p id="broadcast-preview-text" class="wa-bubble-text">
+                  Hey mate! Thanks for reaching out to VIDMOX…
+                </p>
+                <span class="wa-bubble-time" id="broadcast-preview-time">12:00 PM · ✓✓</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Audience Table & Selector Card -->
+      <div class="card" style="margin-bottom: 18px; padding: 20px 22px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+          <div class="card-title-group">
+            <div class="card-icon-cap">👥</div>
+            <div>
+              <h3 style="margin: 0; font-size: 16px;">
+                Step 3 · Selected Leads Audience (<span id="broadcast-matched-count">0</span> matched · <span id="broadcast-selected-count">0</span> to receive)
+              </h3>
+              <p class="muted small-text" style="margin: 2px 0 0;">
+                All leads who entered between <b id="broadcast-date-range-label">All Time</b>. You can uncheck individual contacts if needed.
+              </p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" id="broadcast-select-all-btn" class="ghost small">Select All</button>
+            <button type="button" id="broadcast-deselect-all-btn" class="ghost small">Deselect All</button>
+          </div>
+        </div>
+
+        <!-- Scrollable Audience List -->
+        <div class="broadcast-audience-wrap" style="max-height: 380px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px;">
+          <table class="broadcast-table" style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+            <thead>
+              <tr style="background: rgba(255, 255, 255, 0.04); border-bottom: 1px solid var(--line); text-align: left;">
+                <th style="padding: 10px 14px; width: 40px;"><input type="checkbox" id="broadcast-master-check" checked /></th>
+                <th style="padding: 10px 14px;">Client Name</th>
+                <th style="padding: 10px 14px;">WhatsApp Number</th>
+                <th style="padding: 10px 14px;">Date Lead Entered</th>
+                <th style="padding: 10px 14px;">Lead Status</th>
+                <th style="padding: 10px 14px;">Package / Deal</th>
+                <th style="padding: 10px 14px; text-align: right;">Dispatch Status</th>
+              </tr>
+            </thead>
+            <tbody id="broadcast-leads-tbody">
+              <tr>
+                <td colspan="7" style="padding: 28px; text-align: center;" class="muted">
+                  Click "Filter Leads" above to populate leads for your date range.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Step 4: Dispatch Action Bar & Live Progress Monitor -->
+      <div class="card" style="margin-bottom: 24px; padding: 22px 26px; border: 1px solid rgba(167, 139, 250, 0.35);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <div style="font-size: 15px; font-weight: 700; color: var(--text);">
+              Step 4 · Dispatch Broadcast to WhatsApp
+            </div>
+            <div class="muted small-text" style="margin-top: 2px;">
+              Anti-spam safety delay sends messages spaced out so your WhatsApp business account stays 100% healthy.
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin: 0;">
+              <span class="muted">Speed:</span>
+              <select id="broadcast-speed-select" style="padding: 6px 10px; font-size: 12px; border-radius: 8px;">
+                <option value="5" selected>⏱️ Safe Delay (5s delay - Recommended)</option>
+                <option value="3">⏱️ Fast Delay (3s)</option>
+                <option value="8">⏱️ Extra Safe (8s)</option>
+                <option value="0">⚡ Server Instant Queue (All At Once)</option>
+              </select>
+            </label>
+
+            <button type="button" id="broadcast-start-send-btn" class="small btn-broadcast-send">
+              🚀 Start Broadcast (<span id="broadcast-btn-badge">0</span> Leads)
+            </button>
+            <button type="button" id="broadcast-stop-send-btn" class="small ghost hidden" style="border-color: #ef4444; color: #ef4444;">
+              🛑 Stop Broadcast
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Progress Container (visible during dispatch) -->
+        <div id="broadcast-progress-container" class="hidden" style="margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong id="broadcast-progress-label" style="font-size: 13px; color: #a78bfa;">Sending Broadcast…</strong>
+            <span id="broadcast-progress-percent" style="font-size: 13px; font-weight: 700;">0%</span>
+          </div>
+          <div class="broadcast-progress-track">
+            <div id="broadcast-progress-fill" class="broadcast-progress-fill" style="width: 0%;"></div>
+          </div>
+          <div id="broadcast-live-status-log" class="broadcast-live-log" style="margin-top: 12px;"></div>
+        </div>
+      </div>
+
+      <!-- Past Broadcast Campaigns History -->
+      <div class="card" style="padding: 20px 22px;">
+        <div class="card-title-group" style="margin-bottom: 14px;">
+          <div class="card-icon-cap">📜</div>
+          <div>
+            <h3 style="margin: 0; font-size: 16px;">Broadcast Campaign History</h3>
+            <p class="muted small-text" style="margin: 2px 0 0;">
+              Log of previous broadcasts dispatched to leads.
+            </p>
+          </div>
+        </div>
+        <div id="broadcast-history-list" style="display: flex; flex-direction: column; gap: 8px;">
+          <div class="muted small-text" style="padding: 12px 0;">No broadcast campaigns recorded yet.</div>
         </div>
       </div>
     </section>

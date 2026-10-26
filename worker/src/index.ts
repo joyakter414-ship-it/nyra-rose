@@ -1437,6 +1437,234 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         },
       });
     }
+
+    // ── WhatsApp Lead Broadcast & Campaign Studio Endpoints ──────────────────
+    case "GET /api/broadcast/leads": {
+      const fromParam = url.searchParams.get("from")?.trim() || "";
+      const toParam = url.searchParams.get("to")?.trim() || "";
+      const statusParam = url.searchParams.get("status")?.trim() || "all";
+
+      let fromMs: number | null = null;
+      if (fromParam) {
+        const parsed = Date.parse(fromParam.includes("T") ? fromParam : `${fromParam}T00:00:00+06:00`);
+        if (!Number.isNaN(parsed)) fromMs = parsed;
+      }
+
+      let toMs: number | null = null;
+      if (toParam) {
+        const parsed = Date.parse(toParam.includes("T") ? toParam : `${toParam}T23:59:59.999+06:00`);
+        if (!Number.isNaN(parsed)) toMs = parsed;
+      }
+
+      let sql = `
+        SELECT b.id, b.client_name, b.phone, b.chat_id, b.email, b.status, b.followup_type,
+               b.scheduled_at, b.timezone, b.company_or_website, b.requirements,
+               b.source, b.notes, b.followup_count, b.next_followup_at,
+               b.last_followup_at, b.created_at,
+               c.name AS chat_pushname
+        FROM bookings b
+        LEFT JOIN chats c ON b.chat_id = c.id
+        WHERE (b.phone IS NOT NULL AND b.phone != '')
+           OR (b.chat_id IS NOT NULL AND b.chat_id LIKE '%@s.whatsapp.net')
+      `;
+
+      const conditions: string[] = [];
+      const bindings: unknown[] = [];
+
+      if (fromMs !== null) {
+        conditions.push("b.created_at >= ?");
+        bindings.push(fromMs);
+      }
+      if (toMs !== null) {
+        conditions.push("b.created_at <= ?");
+        bindings.push(toMs);
+      }
+      if (statusParam && statusParam !== "all") {
+        if (statusParam === "active") {
+          conditions.push("b.status NOT IN ('cancelled', 'completed', 'not_interested', 'fake_lead')");
+        } else {
+          conditions.push("b.status = ?");
+          bindings.push(statusParam);
+        }
+      }
+
+      if (conditions.length > 0) {
+        sql += " AND " + conditions.join(" AND ");
+      }
+      sql += " ORDER BY b.created_at DESC";
+
+      const stmt = env.DB.prepare(sql);
+      const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all<Record<string, unknown>>();
+
+      // Deduplicate by clean phone number so clients aren't messaged twice
+      const seenPhones = new Set<string>();
+      const leads = [];
+
+      for (const row of results || []) {
+        const rawPhone = String(row.phone || (typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") ? row.chat_id.replace(/@.*$/, "") : "")).replace(/[^\d+]/g, "");
+        const digits = rawPhone.replace(/\D/g, "");
+        if (digits.length < 7) continue;
+
+        const cleanPhone = rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
+        if (seenPhones.has(digits)) continue;
+        seenPhones.add(digits);
+
+        const fullName = String(row.client_name || row.chat_pushname || "Friend").trim();
+        const firstName = fullName.split(/\s+/)[0] || fullName;
+        const leadDateFormatted = row.created_at ? formatTimeInTimezone(Number(row.created_at), "BD", cleanPhone) : "";
+
+        leads.push({
+          id: String(row.id),
+          name: fullName,
+          firstName,
+          phone: cleanPhone,
+          digits,
+          jid: `${digits}@s.whatsapp.net`,
+          status: String(row.status || "lead"),
+          requirements: String(row.requirements || ""),
+          notes: String(row.notes || ""),
+          createdAt: Number(row.created_at || 0),
+          formattedDate: leadDateFormatted,
+        });
+      }
+
+      return json({ leads, count: leads.length, from: fromParam, to: toParam });
+    }
+
+    case "POST /api/broadcast/dispatch-single": {
+      const body = (await request.json()) as {
+        leadId?: string;
+        phone?: string;
+        text?: string;
+      };
+      if (!body.phone || !body.text?.trim()) {
+        return json({ error: "Phone number and message text are required." }, 400);
+      }
+
+      const digits = body.phone.replace(/\D/g, "");
+      if (digits.length < 7) {
+        return json({ error: "Invalid phone number." }, 400);
+      }
+
+      const jid = `${digits}@s.whatsapp.net`;
+      const message = body.text.trim();
+      const now = Date.now();
+
+      // Enqueue to gateway outbound queue
+      const existingQueue = (await kvGet<Array<{ jid: string; text: string; bookingId?: string }>>(env, "gateway_outbound_queue")) || [];
+      existingQueue.push({ jid, text: message, bookingId: body.leadId });
+      await kvSet(env, "gateway_outbound_queue", existingQueue);
+
+      const estimatedNeurons = Math.max(10, Math.round((message.length / 4) * 0.8));
+      await Promise.all([
+        insertMessage(env, {
+          id: `broadcast:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: message,
+          source: "whatsapp",
+          model: "broadcast:direct",
+          neurons: estimatedNeurons,
+          created_at: now,
+        }).catch(() => {}),
+        addUsage(env, estimatedNeurons).catch(() => {}),
+      ]);
+
+      if (body.leadId) {
+        await env.DB.prepare(
+          "UPDATE bookings SET last_followup_at = ?, followup_count = followup_count + 1 WHERE id = ?"
+        ).bind(now, body.leadId).run().catch(() => {});
+      }
+
+      return json({ ok: true, jid, sentAt: now });
+    }
+
+    case "POST /api/broadcast/send-batch": {
+      const body = (await request.json()) as {
+        leads: Array<{ id?: string; phone: string; name?: string; firstName?: string; requirements?: string }>;
+        messageTemplate: string;
+        fromDate?: string;
+        toDate?: string;
+      };
+
+      if (!Array.isArray(body.leads) || body.leads.length === 0) {
+        return json({ error: "No leads selected for broadcast." }, 400);
+      }
+      if (!body.messageTemplate?.trim()) {
+        return json({ error: "Message template is empty." }, 400);
+      }
+
+      const template = body.messageTemplate.trim();
+      const now = Date.now();
+      const outboundItems: Array<{ jid: string; text: string; bookingId?: string }> = [];
+      const existingQueue = (await kvGet<Array<{ jid: string; text: string; bookingId?: string }>>(env, "gateway_outbound_queue")) || [];
+
+      let queuedCount = 0;
+      for (const lead of body.leads) {
+        const digits = lead.phone.replace(/\D/g, "");
+        if (digits.length < 7) continue;
+
+        const jid = `${digits}@s.whatsapp.net`;
+        const fullName = lead.name || "Friend";
+        const firstName = lead.firstName || fullName.split(/\s+/)[0] || fullName;
+        const deal = lead.requirements || "our video packages";
+
+        // Personalize template tags
+        let customized = template
+          .replace(/\{first_name\}/gi, firstName)
+          .replace(/\{name\}/gi, fullName)
+          .replace(/\{deal\}/gi, deal)
+          .replace(/\{package\}/gi, deal);
+
+        outboundItems.push({ jid, text: customized, bookingId: lead.id });
+
+        const estimatedNeurons = Math.max(10, Math.round((customized.length / 4) * 0.8));
+        insertMessage(env, {
+          id: `broadcast:${crypto.randomUUID()}`,
+          chat_id: jid,
+          role: "assistant",
+          sender: null,
+          sender_name: "Nyra Rose",
+          content: customized,
+          source: "whatsapp",
+          model: "broadcast:batch_campaign",
+          neurons: estimatedNeurons,
+          created_at: now,
+        }).catch(() => {});
+
+        if (lead.id) {
+          env.DB.prepare(
+            "UPDATE bookings SET last_followup_at = ?, followup_count = followup_count + 1 WHERE id = ?"
+          ).bind(now, lead.id).run().catch(() => {});
+        }
+
+        queuedCount++;
+      }
+
+      existingQueue.push(...outboundItems);
+      await kvSet(env, "gateway_outbound_queue", existingQueue);
+
+      // Record campaign in history
+      const history = (await kvGet<Array<Record<string, unknown>>>(env, "broadcast_campaigns_history")) || [];
+      history.unshift({
+        id: `camp_${Date.now()}`,
+        dateFrom: body.fromDate || "All Time",
+        dateTo: body.toDate || "All Time",
+        messageSnippet: template.slice(0, 140),
+        recipientCount: queuedCount,
+        dispatchedAt: now,
+      });
+      await kvSet(env, "broadcast_campaigns_history", history.slice(0, 30));
+
+      return json({ ok: true, queuedCount });
+    }
+
+    case "GET /api/broadcast/history": {
+      const history = (await kvGet<Array<Record<string, unknown>>>(env, "broadcast_campaigns_history")) || [];
+      return json({ history });
+    }
   }
   return json({ error: "Not found" }, 404);
 }

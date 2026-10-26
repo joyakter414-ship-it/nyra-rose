@@ -123,6 +123,7 @@ document.querySelectorAll(".tab").forEach((btn) =>
     if (btn.dataset.tab === "chat") loadDashboardChat();
     if (btn.dataset.tab === "chats") loadChats();
     if (btn.dataset.tab === "bookings") loadBookings();
+    if (btn.dataset.tab === "broadcast") loadBroadcastSection();
     if (btn.dataset.tab === "budget") loadBudget();
     if (btn.dataset.tab === "rules") loadRules();
     if (btn.dataset.tab === "notes") loadNotes();
@@ -4103,6 +4104,7 @@ const STUDIO_COMMANDS = [
     run: () => $("#hero-schedule-task-btn")?.click(),
   },
   { label: "📅 Open Vidmox Booked Calls & Lead CRM", hint: "CRM", run: () => document.querySelector('.tab[data-tab="bookings"]')?.click() },
+  { label: "📢 Open WhatsApp Lead Broadcast Studio", hint: "Broadcast", run: () => document.querySelector('.tab[data-tab="broadcast"]')?.click() },
   { label: "💰 Open Agency Budget & Vault Treasury", hint: "Vault", run: () => document.querySelector('.tab[data-tab="budget"]')?.click() },
   { label: "➕ Record New Income Transaction", hint: "Budget", run: () => { document.querySelector('.tab[data-tab="budget"]')?.click(); openBudgetModal("income"); } },
   { label: "➖ Record New Expense Entry", hint: "Budget", run: () => { document.querySelector('.tab[data-tab="budget"]')?.click(); openBudgetModal("expense"); } },
@@ -4998,6 +5000,569 @@ $("#calc-copy-btn")?.addEventListener("click", () => {
 });
 
 $("#calc-close-btn")?.addEventListener("click", () => toggleCalculator(false));
+
+// ─── WhatsApp Lead Broadcast & Campaign Studio ──────────────────────────────
+
+let broadcastLeads = [];
+let broadcastSelectedIds = new Set();
+let broadcastIsSending = false;
+let broadcastAbortRequested = false;
+
+const BROADCAST_TEMPLATES = {
+  offer: `Hey {first_name}! 🎬 Arman & Shawon here from VIDMOX studio.\n\nWe have an exclusive video editing package opening this week. Would love to help you scale your views & content with high-retention editing!\n\nCan we hop on a quick 15-min call to discuss? Book directly here:\nhttps://calendly.com/armaan-gineus/30min`,
+  followup: `Hey {first_name}! Just following up to see how your video content is going? Vidmox has some fresh editing slots available for you. Let me know if you'd like to check out some sample edits! 🚀`,
+  call: `Hey {first_name}! Thanks for reaching out to VIDMOX. You can book a quick call with our CSO directly using the link below to discuss your video editing needs ☺️:\nhttps://calendly.com/armaan-gineus/30min`,
+};
+
+function formatBroadcastDateLabel(from, to) {
+  if (!from && !to) return "All Time";
+  if (from && to && from === to) return from;
+  if (from && to) return `${from} to ${to}`;
+  if (from) return `From ${from}`;
+  return `Up to ${to}`;
+}
+
+async function loadBroadcastSection() {
+  // Sync Gateway connection status pill
+  const gwStatus = $("#broadcast-gw-status");
+  if (gwStatus) {
+    const isOnline = overview?.gateway?.online && overview?.gateway?.state === "open";
+    gwStatus.textContent = isOnline ? "🟢 WhatsApp Gateway Online" : "🟡 Gateway Offline / Standby";
+    gwStatus.className = `badge ${isOnline ? "badge-instant" : "badge-warn"}`;
+  }
+
+  // Set default message template if empty
+  const msgInput = $("#broadcast-message-text");
+  if (msgInput && !msgInput.value.trim()) {
+    msgInput.value = BROADCAST_TEMPLATES.offer;
+  }
+
+  // Fetch leads and history
+  await Promise.all([
+    fetchBroadcastLeads(),
+    loadBroadcastHistory(),
+  ]);
+}
+
+async function fetchBroadcastLeads() {
+  const from = $("#broadcast-from-date")?.value.trim() || "";
+  const to = $("#broadcast-to-date")?.value.trim() || "";
+  const status = $("#broadcast-status-filter")?.value.trim() || "all";
+
+  const labelEl = $("#broadcast-date-range-label");
+  if (labelEl) labelEl.textContent = formatBroadcastDateLabel(from, to);
+
+  const tbody = $("#broadcast-leads-tbody");
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding: 24px; text-align: center;" class="muted">🔍 Searching leads from ${formatBroadcastDateLabel(from, to)}…</td></tr>`;
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    if (status && status !== "all") params.set("status", status);
+
+    const res = await api(`/api/broadcast/leads?${params.toString()}`);
+    if (!res || !Array.isArray(res.leads)) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center;" class="error">Failed to fetch leads.</td></tr>`;
+      return;
+    }
+
+    broadcastLeads = res.leads;
+    // Default: all matched leads selected
+    broadcastSelectedIds = new Set(broadcastLeads.map((l) => l.id));
+
+    renderBroadcastLeadsTable();
+    updateBroadcastCounters();
+    updateBroadcastPreview();
+  } catch (err) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center;" class="error">Error loading leads: ${err.message}</td></tr>`;
+  }
+}
+
+function renderBroadcastLeadsTable() {
+  const tbody = $("#broadcast-leads-tbody");
+  if (!tbody) return;
+
+  if (broadcastLeads.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="padding: 32px; text-align: center;" class="muted">
+          No leads found in this date range. Try expanding the From/To dates or selecting "All Time".
+        </td>
+      </tr>`;
+    return;
+  }
+
+  tbody.innerHTML = broadcastLeads
+    .map((lead) => {
+      const isChecked = broadcastSelectedIds.has(lead.id) ? "checked" : "";
+      const statusPill = getLeadStatusBadge(lead.status);
+      const phoneDigits = lead.phone.replace(/[^\d+]/g, "");
+
+      return `
+        <tr id="broadcast-row-${lead.id}" data-lead-id="${lead.id}">
+          <td style="padding: 10px 14px;">
+            <input type="checkbox" class="broadcast-lead-check" data-lead-id="${lead.id}" ${isChecked} />
+          </td>
+          <td style="padding: 10px 14px; font-weight: 600; color: var(--text);">
+            ${lead.name || "Friend"}
+          </td>
+          <td style="padding: 10px 14px;">
+            <a href="https://wa.me/${phoneDigits.replace("+", "")}" target="_blank" rel="noopener noreferrer" style="color: #25d366; text-decoration: none; font-weight: 600;">
+              ${lead.phone}
+            </a>
+          </td>
+          <td style="padding: 10px 14px; color: var(--muted); font-size: 11.5px;">
+            ${lead.formattedDate || "—"}
+          </td>
+          <td style="padding: 10px 14px;">
+            ${statusPill}
+          </td>
+          <td style="padding: 10px 14px; color: var(--muted); font-size: 11.5px;">
+            ${lead.requirements || "—"}
+          </td>
+          <td style="padding: 10px 14px; text-align: right;" id="broadcast-status-col-${lead.id}">
+            <span class="muted small-text">Ready ⏳</span>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  // Attach individual checkbox listeners
+  tbody.querySelectorAll(".broadcast-lead-check").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      const id = e.target.dataset.leadId;
+      if (e.target.checked) {
+        broadcastSelectedIds.add(id);
+      } else {
+        broadcastSelectedIds.delete(id);
+      }
+      updateBroadcastCounters();
+      updateBroadcastPreview();
+
+      const master = $("#broadcast-master-check");
+      if (master) {
+        master.checked = broadcastSelectedIds.size === broadcastLeads.length;
+        master.indeterminate = broadcastSelectedIds.size > 0 && broadcastSelectedIds.size < broadcastLeads.length;
+      }
+    });
+  });
+}
+
+function getLeadStatusBadge(status) {
+  switch (status) {
+    case "lead":
+      return '<span class="badge" style="background: rgba(167, 139, 250, 0.2); color: #c4b5fd; font-size: 10px;">🌱 New Lead</span>';
+    case "booked":
+      return '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; font-size: 10px;">📅 Booked</span>';
+    case "confirmed":
+      return '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 10px;">✅ Confirmed</span>';
+    case "buy_soon":
+      return '<span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 10px;">⏳ Buy Soon</span>';
+    case "not_attended":
+      return '<span class="badge" style="background: rgba(248, 113, 113, 0.2); color: #f87171; font-size: 10px;">⚠️ Missed Call</span>';
+    default:
+      return `<span class="badge" style="font-size: 10px;">${status || "lead"}</span>`;
+  }
+}
+
+function updateBroadcastCounters() {
+  const matched = broadcastLeads.length;
+  const selected = broadcastSelectedIds.size;
+
+  const matchedEl = $("#broadcast-matched-count");
+  const selectedEl = $("#broadcast-selected-count");
+  const btnBadgeEl = $("#broadcast-btn-badge");
+  const navBadgeEl = $("#nav-badge-broadcast");
+
+  if (matchedEl) matchedEl.textContent = String(matched);
+  if (selectedEl) selectedEl.textContent = String(selected);
+  if (btnBadgeEl) btnBadgeEl.textContent = String(selected);
+
+  if (navBadgeEl) {
+    navBadgeEl.textContent = String(matched);
+    navBadgeEl.classList.toggle("hidden", matched === 0);
+  }
+
+  const master = $("#broadcast-master-check");
+  if (master) {
+    master.checked = matched > 0 && selected === matched;
+    master.indeterminate = selected > 0 && selected < matched;
+  }
+}
+
+function updateBroadcastPreview() {
+  const msgInput = $("#broadcast-message-text");
+  const previewText = $("#broadcast-preview-text");
+  const charCount = $("#broadcast-char-count");
+  const leadInfo = $("#broadcast-preview-lead-info");
+
+  if (!msgInput) return;
+  const rawText = msgInput.value;
+
+  if (charCount) {
+    const chars = rawText.length;
+    const bubbles = Math.max(1, Math.ceil(chars / 160));
+    charCount.textContent = `${chars} characters · ~${bubbles} WhatsApp message${bubbles > 1 ? "s" : ""}`;
+  }
+
+  // Find the first selected lead for live preview
+  let sampleLead = broadcastLeads.find((l) => broadcastSelectedIds.has(l.id)) || broadcastLeads[0];
+  if (!sampleLead) {
+    sampleLead = { name: "Marcus Shaw", firstName: "Marcus", requirements: "Growth ($330) · 30 Shorts" };
+  }
+
+  if (leadInfo) {
+    leadInfo.textContent = `Rendering preview for: ${sampleLead.name || "Client"} (${sampleLead.phone || "WhatsApp"})`;
+  }
+
+  if (previewText) {
+    const customized = rawText
+      .replace(/\{first_name\}/gi, sampleLead.firstName || sampleLead.name?.split(" ")[0] || "Friend")
+      .replace(/\{name\}/gi, sampleLead.name || "Friend")
+      .replace(/\{deal\}/gi, sampleLead.requirements || "our video packages")
+      .replace(/\{package\}/gi, sampleLead.requirements || "our video packages");
+
+    previewText.textContent = customized || "Type your message above to see preview…";
+  }
+
+  const timeEl = $("#broadcast-preview-time");
+  if (timeEl) {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    timeEl.textContent = `${hours % 12 || 12}:${minutes} ${ampm} · ✓✓`;
+  }
+}
+
+// Preset Filter Buttons
+document.querySelectorAll(".broadcast-preset-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".broadcast-preset-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const preset = btn.dataset.preset;
+    const now = new Date();
+    const toYmd = (d) => d.toISOString().slice(0, 10);
+    const todayStr = toYmd(now);
+
+    const fromInput = $("#broadcast-from-date");
+    const toInput = $("#broadcast-to-date");
+
+    if (preset === "all") {
+      if (fromInput) fromInput.value = "";
+      if (toInput) toInput.value = "";
+    } else if (preset === "today") {
+      if (fromInput) fromInput.value = todayStr;
+      if (toInput) toInput.value = todayStr;
+    } else if (preset === "yesterday") {
+      const yest = new Date(now.getTime() - 24 * 3600 * 1000);
+      if (fromInput) fromInput.value = toYmd(yest);
+      if (toInput) toInput.value = toYmd(yest);
+    } else if (preset === "last7") {
+      const past7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+      if (fromInput) fromInput.value = toYmd(past7);
+      if (toInput) toInput.value = todayStr;
+    } else if (preset === "last14") {
+      const past14 = new Date(now.getTime() - 14 * 24 * 3600 * 1000);
+      if (fromInput) fromInput.value = toYmd(past14);
+      if (toInput) toInput.value = todayStr;
+    } else if (preset === "last30") {
+      const past30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+      if (fromInput) fromInput.value = toYmd(past30);
+      if (toInput) toInput.value = todayStr;
+    } else if (preset === "thisMonth") {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      if (fromInput) fromInput.value = toYmd(firstDay);
+      if (toInput) toInput.value = todayStr;
+    }
+
+    fetchBroadcastLeads();
+  });
+});
+
+// Clear preset active state if manual date inputs are typed into
+[$("#broadcast-from-date"), $("#broadcast-to-date")].forEach((inp) => {
+  inp?.addEventListener("input", () => {
+    document.querySelectorAll(".broadcast-preset-btn").forEach((b) => b.classList.remove("active"));
+  });
+});
+
+$("#broadcast-fetch-btn")?.addEventListener("click", () => fetchBroadcastLeads());
+$("#broadcast-status-filter")?.addEventListener("change", () => fetchBroadcastLeads());
+
+// Select All / Deselect All
+$("#broadcast-select-all-btn")?.addEventListener("click", () => {
+  broadcastSelectedIds = new Set(broadcastLeads.map((l) => l.id));
+  renderBroadcastLeadsTable();
+  updateBroadcastCounters();
+  updateBroadcastPreview();
+});
+
+$("#broadcast-deselect-all-btn")?.addEventListener("click", () => {
+  broadcastSelectedIds.clear();
+  renderBroadcastLeadsTable();
+  updateBroadcastCounters();
+  updateBroadcastPreview();
+});
+
+$("#broadcast-master-check")?.addEventListener("change", (e) => {
+  if (e.target.checked) {
+    broadcastSelectedIds = new Set(broadcastLeads.map((l) => l.id));
+  } else {
+    broadcastSelectedIds.clear();
+  }
+  renderBroadcastLeadsTable();
+  updateBroadcastCounters();
+  updateBroadcastPreview();
+});
+
+// Quick Templates Buttons
+document.querySelectorAll(".broadcast-tpl-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tplKey = btn.dataset.tpl;
+    const msgInput = $("#broadcast-message-text");
+    if (msgInput && BROADCAST_TEMPLATES[tplKey]) {
+      msgInput.value = BROADCAST_TEMPLATES[tplKey];
+      updateBroadcastPreview();
+    }
+  });
+});
+
+// Dynamic Tag Buttons Insertion
+document.querySelectorAll(".broadcast-tag-pill").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tag = btn.dataset.tag;
+    const msgInput = $("#broadcast-message-text");
+    if (!msgInput) return;
+
+    const start = msgInput.selectionStart || msgInput.value.length;
+    const end = msgInput.selectionEnd || msgInput.value.length;
+    const val = msgInput.value;
+
+    msgInput.value = val.substring(0, start) + tag + val.substring(end);
+    msgInput.focus();
+    msgInput.setSelectionRange(start + tag.length, start + tag.length);
+    updateBroadcastPreview();
+  });
+});
+
+$("#broadcast-message-text")?.addEventListener("input", updateBroadcastPreview);
+
+// Broadcast Dispatch Engine
+$("#broadcast-start-send-btn")?.addEventListener("click", async () => {
+  if (broadcastIsSending) return;
+
+  const msgInput = $("#broadcast-message-text");
+  const template = msgInput?.value.trim() || "";
+  if (!template) {
+    alert("Please write a broadcast message first!");
+    msgInput?.focus();
+    return;
+  }
+
+  const selectedLeads = broadcastLeads.filter((l) => broadcastSelectedIds.has(l.id));
+  if (selectedLeads.length === 0) {
+    alert("No leads selected. Please check at least one lead from the table!");
+    return;
+  }
+
+  const speedVal = parseInt($("#broadcast-speed-select")?.value || "5", 10);
+  const from = $("#broadcast-from-date")?.value.trim() || "All Time";
+  const to = $("#broadcast-to-date")?.value.trim() || "All Time";
+
+  const confirmMsg = `Are you sure you want to broadcast this WhatsApp message to ${selectedLeads.length} leads (Dates: ${formatBroadcastDateLabel(from, to)})?\n\nSpeed: ${speedVal === 0 ? "Instant Background Queue" : `${speedVal}s Safe Delay`}`;
+  if (!confirm(confirmMsg)) return;
+
+  // Option A: Instant Server Batch Queue
+  if (speedVal === 0) {
+    const btn = $("#broadcast-start-send-btn");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ Queueing to Gateway…";
+    }
+    try {
+      const res = await api("/api/broadcast/send-batch", {
+        method: "POST",
+        body: JSON.stringify({
+          leads: selectedLeads,
+          messageTemplate: template,
+          fromDate: from,
+          toDate: to,
+        }),
+      });
+
+      if (res?.ok) {
+        alert(`🎉 Successfully queued broadcast to ${res.queuedCount} WhatsApp leads! The gateway will deliver them safely in the background.`);
+        loadBroadcastHistory();
+      } else {
+        alert(`Failed to queue broadcast: ${res?.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      alert(`Error sending broadcast: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = `🚀 Start Broadcast (${selectedLeads.length} Leads)`;
+      }
+    }
+    return;
+  }
+
+  // Option B: Live Sequenced Dispatch with Visual Progress Bar & Logs
+  broadcastIsSending = true;
+  broadcastAbortRequested = false;
+
+  const startBtn = $("#broadcast-start-send-btn");
+  const stopBtn = $("#broadcast-stop-send-btn");
+  const progressBox = $("#broadcast-progress-container");
+  const progressFill = $("#broadcast-progress-fill");
+  const progressPercent = $("#broadcast-progress-percent");
+  const progressLabel = $("#broadcast-progress-label");
+  const logBox = $("#broadcast-live-status-log");
+
+  if (startBtn) startBtn.classList.add("hidden");
+  if (stopBtn) stopBtn.classList.remove("hidden");
+  if (progressBox) progressBox.classList.remove("hidden");
+  if (logBox) logBox.innerHTML = "";
+
+  const total = selectedLeads.length;
+  let sentCount = 0;
+  let errorCount = 0;
+
+  function appendLog(text, isError = false) {
+    if (!logBox) return;
+    const row = document.createElement("div");
+    row.style.color = isError ? "#f87171" : "#34d399";
+    row.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    logBox.prepend(row);
+  }
+
+  appendLog(`🚀 Starting live broadcast to ${total} leads (${speedVal}s anti-spam delay between sends)…`);
+
+  for (let i = 0; i < total; i++) {
+    if (broadcastAbortRequested) {
+      appendLog("🛑 Broadcast stopped by user.", true);
+      break;
+    }
+
+    const lead = selectedLeads[i];
+    const statusCol = $(`#broadcast-status-col-${lead.id}`);
+    if (statusCol) statusCol.innerHTML = '<span style="color: #a78bfa; font-weight: 600;">Sending… 🚀</span>';
+
+    // Personalize tags
+    const personalizedText = template
+      .replace(/\{first_name\}/gi, lead.firstName || lead.name.split(" ")[0] || "Friend")
+      .replace(/\{name\}/gi, lead.name || "Friend")
+      .replace(/\{deal\}/gi, lead.requirements || "our video packages")
+      .replace(/\{package\}/gi, lead.requirements || "our video packages");
+
+    try {
+      const res = await api("/api/broadcast/dispatch-single", {
+        method: "POST",
+        body: JSON.stringify({
+          leadId: lead.id,
+          phone: lead.phone,
+          text: personalizedText,
+        }),
+      });
+
+      if (res?.ok) {
+        sentCount++;
+        if (statusCol) statusCol.innerHTML = '<span style="color: #34d399; font-weight: 700;">Sent ✅</span>';
+        appendLog(`Sent to ${lead.name} (${lead.phone}) ✅`);
+      } else {
+        errorCount++;
+        if (statusCol) statusCol.innerHTML = '<span style="color: #f87171; font-weight: 600;">Error ❌</span>';
+        appendLog(`Failed to send to ${lead.name}: ${res?.error || "Error"}`, true);
+      }
+    } catch (sendErr) {
+      errorCount++;
+      if (statusCol) statusCol.innerHTML = '<span style="color: #f87171; font-weight: 600;">Failed ❌</span>';
+      appendLog(`Network error sending to ${lead.name}: ${sendErr.message}`, true);
+    }
+
+    // Update Progress
+    const currentProgress = Math.round(((i + 1) / total) * 100);
+    if (progressFill) progressFill.style.width = `${currentProgress}%`;
+    if (progressPercent) progressPercent.textContent = `${currentProgress}%`;
+    if (progressLabel) progressLabel.textContent = `Sending Lead ${i + 1} of ${total} (${sentCount} sent, ${errorCount} errors)…`;
+
+    // Wait delay between sends if not last item
+    if (i < total - 1 && !broadcastAbortRequested) {
+      appendLog(`⏳ Spacing delay: waiting ${speedVal}s for WhatsApp safety…`);
+      await new Promise((resolve) => setTimeout(resolve, speedVal * 1000));
+    }
+  }
+
+  broadcastIsSending = false;
+  if (startBtn) startBtn.classList.remove("hidden");
+  if (stopBtn) stopBtn.classList.add("hidden");
+
+  if (progressLabel) {
+    progressLabel.textContent = broadcastAbortRequested
+      ? `🛑 Stopped: Dispatched to ${sentCount} of ${total} leads (${errorCount} errors)`
+      : `🎉 Broadcast Completed: ${sentCount} sent successfully (${errorCount} errors)!`;
+  }
+  appendLog(`🏁 Final: Dispatched to ${sentCount} leads.`);
+
+  loadBroadcastHistory();
+});
+
+$("#broadcast-stop-send-btn")?.addEventListener("click", () => {
+  if (confirm("Do you want to stop the remaining broadcast sends?")) {
+    broadcastAbortRequested = true;
+    const stopBtn = $("#broadcast-stop-send-btn");
+    if (stopBtn) stopBtn.textContent = "Halting…";
+  }
+});
+
+// Broadcast History
+async function loadBroadcastHistory() {
+  const container = $("#broadcast-history-list");
+  if (!container) return;
+
+  try {
+    const res = await api("/api/broadcast/history");
+    const history = res?.history || [];
+
+    if (history.length === 0) {
+      container.innerHTML = `<div class="muted small-text" style="padding: 12px 0;">No broadcast campaigns recorded yet.</div>`;
+      return;
+    }
+
+    container.innerHTML = history
+      .map(
+        (c) => `
+        <div style="padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.02); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <div style="font-weight: 700; font-size: 13px; color: var(--text);">
+              📅 Leads from: <span style="color: #c4b5fd;">${formatBroadcastDateLabel(c.dateFrom, c.dateTo)}</span> · <span style="color: #34d399;">${c.recipientCount || 0} Leads Contacted</span>
+            </div>
+            <div class="muted small-text" style="margin-top: 3px; font-style: italic;">
+              "${c.messageSnippet || "Broadcast message"}…"
+            </div>
+          </div>
+          <div class="muted small-text" style="font-size: 11px;">
+            ${new Date(c.dispatchedAt).toLocaleString()}
+          </div>
+        </div>
+      `
+      )
+      .join("");
+  } catch (e) {
+    container.innerHTML = `<div class="error small-text">Failed to load broadcast history.</div>`;
+  }
+}
+
+// CRM button shortcut to open broadcast
+$("#crm-open-broadcast-btn")?.addEventListener("click", () => {
+  document.querySelector('.tab[data-tab="broadcast"]')?.click();
+});
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
