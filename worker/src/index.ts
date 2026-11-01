@@ -733,11 +733,28 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       if (t.booking_id) {
         const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first<Booking>();
         if (b) {
-          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 6;
-          const nextFollowupAt = b.followup_type === "call_reminder" ? null : Math.round(now + nextInterval * 3600 * 1000);
+          const nextCount = (b.followup_count || 0) + 1;
+          let nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 4;
+          let nextFollowupAt: number | null = Math.round(now + nextInterval * 3600 * 1000);
+          let nextStatus: BookingStatus = b.status;
+          let nextType: FollowupType = b.followup_type;
+
+          if (nextCount >= 15) {
+            nextFollowupAt = null;
+            nextInterval = 0;
+            nextStatus = "fake_lead";
+            nextType = "rejected";
+          } else if (b.followup_type === "call_reminder") {
+            nextFollowupAt = null;
+            nextInterval = 0;
+          }
+
           const updatedB = await updateBooking(env, b.id, {
+            status: nextStatus,
+            followup_type: nextType,
+            followup_interval_hours: nextInterval,
             last_followup_at: now,
-            followup_count: (b.followup_count || 0) + 1,
+            followup_count: nextCount,
             next_followup_at: nextFollowupAt,
             custom_followup_msg: null,
           });
@@ -805,7 +822,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
 
       let nextFollowupAt: number | null = null;
-      let intervalHours = 4;
+      let intervalHours = 2;
 
       if (body.customFollowupAt) {
         const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
@@ -975,8 +992,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1" || nextType === "auto") {
           const isFirst = !existing.followup_count || existing.followup_count === 0;
-          patch.followup_interval_hours = isFirst ? 4 : 6;
-          patch.next_followup_at = Math.round(now + (isFirst ? 4 : 6) * 3600 * 1000);
+          patch.followup_interval_hours = isFirst ? 2 : 4;
+          patch.next_followup_at = Math.round(now + (isFirst ? 2 : 4) * 3600 * 1000);
         } else if (nextType === "day2_12h") {
           patch.followup_interval_hours = 12;
           patch.next_followup_at = Math.round(now + 12 * 3600 * 1000);
@@ -1106,14 +1123,27 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
       if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 6;
-        const nextFollowupAt =
-          b.followup_type === "call_reminder"
-            ? null
-            : nextInterval > 0
-            ? Math.round(now + nextInterval * 3600 * 1000)
-            : null;
+        let nextInterval = body.delayHours ?? (b.followup_type === "auto_day1" ? 4 : (b.followup_interval_hours ?? 4));
+        let nextFollowupAt: number | null = null;
+        let nextType: FollowupType = b.followup_type;
+        let nextStatus: BookingStatus = b.status;
+
+        if (nextCount >= 15) {
+          nextFollowupAt = null;
+          nextInterval = 0;
+          nextStatus = "fake_lead";
+          nextType = "rejected";
+        } else if (b.followup_type === "call_reminder") {
+          nextFollowupAt = null;
+          nextInterval = 0;
+        } else if (nextInterval > 0) {
+          nextFollowupAt = Math.round(now + nextInterval * 3600 * 1000);
+        }
+
         const patched = await updateBooking(env, b.id, {
+          status: nextStatus,
+          followup_type: nextType,
+          followup_interval_hours: nextInterval,
           last_followup_at: now,
           followup_count: nextCount,
           next_followup_at: nextFollowupAt,

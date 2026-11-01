@@ -289,7 +289,7 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
       taskTitle = `\u{1F3AF} Days 7\u201321 (Daily) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     } else {
-      taskTitle = `\u26A1 Day 1 (4h/6h) Follow-Up: ${clientLabel}`;
+      taskTitle = `\u26A1 Day 1 (2h/4h) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     }
     const effectiveMsg = b.custom_followup_msg?.trim() || defaultAiMessage || null;
@@ -1211,8 +1211,8 @@ async function handleIncoming(env, m) {
             timezone: detectedTz?.code || "BD",
             status: "lead",
             followupType: "auto_day1",
-            nextFollowupAt: nowMs + 4 * 3600 * 1e3,
-            followupIntervalHours: 4,
+            nextFollowupAt: nowMs + 2 * 3600 * 1e3,
+            followupIntervalHours: 2,
             lastClientReplyAt: nowMs,
             source: "whatsapp",
             notes: "New lead reached out. Sent CSO Calendly link & niche discovery question."
@@ -1222,8 +1222,8 @@ async function handleIncoming(env, m) {
           const updated = await updateBooking(env, existingBooking.id, {
             status: "lead",
             followup_type: "auto_day1",
-            next_followup_at: nowMs + 4 * 3600 * 1e3,
-            followup_interval_hours: 4,
+            next_followup_at: nowMs + 2 * 3600 * 1e3,
+            followup_interval_hours: 2,
             followup_count: 0,
             last_client_reply_at: nowMs
           });
@@ -1649,6 +1649,14 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
   }
   const lastReplyMs = b.last_client_reply_at || b.created_at || nowMs;
   const elapsedHours = (nowMs - lastReplyMs) / (3600 * 1e3);
+  if ((b.followup_count || 0) >= 15) {
+    return {
+      status: "fake_lead",
+      followup_type: "rejected",
+      next_followup_at: null,
+      followup_interval_hours: 0
+    };
+  }
   if (elapsedHours >= 24 * 21) {
     return {
       status: "fake_lead",
@@ -1701,7 +1709,7 @@ function computeNextFollowupState(b, nowMs = Date.now()) {
     };
   }
   const isFirstFollowup = !b.followup_count || b.followup_count === 0;
-  const day1Interval = isFirstFollowup ? 4 : 6;
+  const day1Interval = isFirstFollowup ? 2 : 4;
   return {
     status: curStatus,
     followup_type: "auto_day1",
@@ -2041,7 +2049,7 @@ function analyzeConversationMemory(params) {
 function generateFollowupText(b) {
   const type = b.followup_type || "auto_day1";
   const count = b.followup_count || 0;
-  if (type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
+  if (count >= 15 || type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
   }
   if (b.custom_followup_msg && b.custom_followup_msg.trim()) {
@@ -2107,14 +2115,18 @@ function generateFollowupText(b) {
   }
   if (type === "auto_day1" || type === "auto") {
     const day1Templates = [
-      // 0 (4h) - uses name if available
+      // 0 (2h) - uses name if available
       `${greetHey} Just following up on my earlier message \u2014 curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
-      // 1 (10h) - odd: NO name!
+      // 1 (6h) - odd: NO name!
       `Quick question \u2014 how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
-      // 2 (16h) - even: uses name if available
+      // 2 (10h) - even: uses name if available
       `${greetHi} In case you'd prefer to talk through your video editing or website needs directly, our CSO Armaan has a few slots open: https://calendly.com/armaan-gineus/30min`,
-      // 3 (22h) - odd: NO name!
-      `No rush at all! Just wanted to make sure my message didn't get buried. Whenever you have a minute, happy to look at your content and share relevant editing samples.`
+      // 3 (14h) - odd: NO name!
+      `No rush at all! Just wanted to make sure my message didn't get buried. Whenever you have a minute, happy to look at your content and share relevant editing samples.`,
+      // 4 (18h) - even: uses name if available
+      `${greetHey} Hope your day is going well! Just checking in to see if you had a chance to review our packages or if you have any questions on how our dedicated editor works?`,
+      // 5 (22h) - odd: NO name!
+      `Just following up before wrapping up for the day \u2014 let me know if you'd like us to share a couple of sample edits in your niche!`
     ];
     return day1Templates[count % day1Templates.length];
   }
@@ -2236,11 +2248,18 @@ async function processDueFollowups(env) {
     }
     const cleanPhone = (b.phone || (b.chat_id?.includes("@") ? b.chat_id.split("@")[0] : "")).replace(/[^0-9]/g, "");
     const jid = b.chat_id?.endsWith("@s.whatsapp.net") ? b.chat_id : cleanPhone.length >= 7 ? `${cleanPhone}@s.whatsapp.net` : null;
+    const currentCount = b.followup_count || 0;
+    const nextCount = currentCount + 1;
     let nextFollowupAt = null;
     let nextType = b.followup_type;
-    let nextInterval = b.followup_interval_hours ?? 3.5;
+    let nextInterval = b.followup_interval_hours ?? 2;
     let nextStatus = b.status;
-    if (b.followup_type === "call_reminder") {
+    if (nextCount >= 15) {
+      nextStatus = "fake_lead";
+      nextType = "rejected";
+      nextFollowupAt = null;
+      nextInterval = 0;
+    } else if (b.followup_type === "call_reminder") {
       nextFollowupAt = null;
       nextType = "call_reminder";
       nextInterval = 0;
@@ -2275,15 +2294,15 @@ async function processDueFollowups(env) {
       nextFollowupAt = now + 12 * 3600 * 1e3;
     } else {
       nextType = "auto_day1";
-      nextInterval = 6;
-      nextFollowupAt = now + 6 * 3600 * 1e3;
+      nextInterval = 4;
+      nextFollowupAt = now + 4 * 3600 * 1e3;
     }
     const updatedBooking = await updateBooking(env, b.id, {
       status: nextStatus,
       followup_type: nextType,
       followup_interval_hours: nextInterval,
       last_followup_at: now,
-      followup_count: (b.followup_count || 0) + 1,
+      followup_count: nextCount,
       next_followup_at: nextFollowupAt,
       custom_followup_msg: null
       // Clear one-time custom message so subsequent stage uses fresh template unless re-edited
@@ -2443,8 +2462,8 @@ async function generateReply(env, s, rules, c) {
             requirements: bookingInfo.requirements !== "Video Editing Consultation" ? bookingInfo.requirements : existing.requirements,
             status: hasBooked ? "booked" : existing.status,
             followup_type: hasBooked ? "call_reminder" : existing.followup_type,
-            next_followup_at: hasBooked ? reminderAt : nowMs + 3.5 * 3600 * 1e3,
-            followup_interval_hours: hasBooked ? 0 : 3.5,
+            next_followup_at: hasBooked ? reminderAt : nowMs + 2 * 3600 * 1e3,
+            followup_interval_hours: hasBooked ? 0 : 2,
             last_client_reply_at: nowMs
           });
           await syncBookingToTodo(env, saved, nowMs);
@@ -2472,8 +2491,8 @@ async function generateReply(env, s, rules, c) {
             requirements: bookingInfo.requirements,
             status: hasBooked ? "booked" : "lead",
             followup_type: hasBooked ? "call_reminder" : "auto_day1",
-            next_followup_at: hasBooked ? reminderAt : nowMs + 3.5 * 3600 * 1e3,
-            followup_interval_hours: hasBooked ? 0 : 4,
+            next_followup_at: hasBooked ? reminderAt : nowMs + 2 * 3600 * 1e3,
+            followup_interval_hours: hasBooked ? 0 : 2,
             last_client_reply_at: nowMs,
             source: c.source
           });
@@ -2563,8 +2582,8 @@ async function generateReply(env, s, rules, c) {
             nextFollowupAt = nowMs + nextInterval * 3600 * 1e3;
           } else {
             nextFollowupType = "auto_day1";
-            nextFollowupAt = nowMs + 4 * 3600 * 1e3;
-            nextInterval = 4;
+            nextFollowupAt = nowMs + 2 * 3600 * 1e3;
+            nextInterval = 2;
           }
           const saved = await updateBooking(env, existing.id, {
             client_name: bookingInfo.clientName || (existing.client_name === "New Lead" ? computedName : existing.client_name),
@@ -2584,7 +2603,7 @@ async function generateReply(env, s, rules, c) {
           const nextStatus = bookingInfo.inferredStatus || "lead";
           const isStopped = bookingInfo.inferredFollowupType === "rejected" || nextStatus === "not_interested";
           const nextFollowupType = isStopped ? "rejected" : bookingInfo.inferredFollowupType || "auto_day1";
-          const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 4;
+          const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 2;
           const saved = await createBooking(env, {
             chat_id: c.chatId,
             client_name: computedName,
@@ -3205,11 +3224,26 @@ async function dashboardRoutes(request, env, url) {
       if (t.booking_id) {
         const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first();
         if (b) {
-          const nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 6;
-          const nextFollowupAt = b.followup_type === "call_reminder" ? null : Math.round(now + nextInterval * 3600 * 1e3);
+          const nextCount = (b.followup_count || 0) + 1;
+          let nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 4;
+          let nextFollowupAt = Math.round(now + nextInterval * 3600 * 1e3);
+          let nextStatus = b.status;
+          let nextType = b.followup_type;
+          if (nextCount >= 15) {
+            nextFollowupAt = null;
+            nextInterval = 0;
+            nextStatus = "fake_lead";
+            nextType = "rejected";
+          } else if (b.followup_type === "call_reminder") {
+            nextFollowupAt = null;
+            nextInterval = 0;
+          }
           const updatedB = await updateBooking(env, b.id, {
+            status: nextStatus,
+            followup_type: nextType,
+            followup_interval_hours: nextInterval,
             last_followup_at: now,
-            followup_count: (b.followup_count || 0) + 1,
+            followup_count: nextCount,
             next_followup_at: nextFollowupAt,
             custom_followup_msg: null
           });
@@ -3251,7 +3285,7 @@ async function dashboardRoutes(request, env, url) {
       const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
       let nextFollowupAt = null;
-      let intervalHours = 4;
+      let intervalHours = 2;
       if (body.customFollowupAt) {
         const parsed = typeof body.customFollowupAt === "number" ? body.customFollowupAt : Date.parse(body.customFollowupAt);
         if (!Number.isNaN(parsed)) nextFollowupAt = parsed;
@@ -3380,8 +3414,8 @@ async function dashboardRoutes(request, env, url) {
           patch.followup_interval_hours = 0;
         } else if (nextType === "auto_day1" || nextType === "auto") {
           const isFirst = !existing.followup_count || existing.followup_count === 0;
-          patch.followup_interval_hours = isFirst ? 4 : 6;
-          patch.next_followup_at = Math.round(now + (isFirst ? 4 : 6) * 3600 * 1e3);
+          patch.followup_interval_hours = isFirst ? 2 : 4;
+          patch.next_followup_at = Math.round(now + (isFirst ? 2 : 4) * 3600 * 1e3);
         } else if (nextType === "day2_12h") {
           patch.followup_interval_hours = 12;
           patch.next_followup_at = Math.round(now + 12 * 3600 * 1e3);
@@ -3492,9 +3526,25 @@ async function dashboardRoutes(request, env, url) {
       }
       if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        const nextInterval = body.delayHours ?? b.followup_interval_hours ?? 6;
-        const nextFollowupAt = b.followup_type === "call_reminder" ? null : nextInterval > 0 ? Math.round(now + nextInterval * 3600 * 1e3) : null;
+        let nextInterval = body.delayHours ?? (b.followup_type === "auto_day1" ? 4 : b.followup_interval_hours ?? 4);
+        let nextFollowupAt = null;
+        let nextType = b.followup_type;
+        let nextStatus = b.status;
+        if (nextCount >= 15) {
+          nextFollowupAt = null;
+          nextInterval = 0;
+          nextStatus = "fake_lead";
+          nextType = "rejected";
+        } else if (b.followup_type === "call_reminder") {
+          nextFollowupAt = null;
+          nextInterval = 0;
+        } else if (nextInterval > 0) {
+          nextFollowupAt = Math.round(now + nextInterval * 3600 * 1e3);
+        }
         const patched = await updateBooking(env, b.id, {
+          status: nextStatus,
+          followup_type: nextType,
+          followup_interval_hours: nextInterval,
           last_followup_at: now,
           followup_count: nextCount,
           next_followup_at: nextFollowupAt,

@@ -464,7 +464,7 @@
             <div>
               <h2 style="margin: 0;">Vidmox Lead &amp; Call Booking CRM</h2>
               <p class="muted small-text" style="margin: 2px 0 0;">
-                Automated 4-Stage Follow-Up Engine: <b>Day 1 (3–4h)</b> → <b>Next 3 Days (8h)</b> → <b>3–30 Days (Daily → Fake Lead)</b> + <b>Client Choice Date</b> + <b>30-min Pre-Meeting Reminder</b>.
+                Automated 4-Stage Follow-Up Engine: <b>Day 1 (2h → 4h)</b> → <b>Day 2 (12h)</b> → <b>Days 3–7 (Daily)</b> → <b>Days 7–21 (Daily → Stop after 15 follow-ups)</b> + <b>Client Choice Date</b> + <b>30-min Pre-Meeting Reminder</b>.
               </p>
             </div>
           </div>
@@ -520,12 +520,12 @@
           <div class="row" style="margin-top: 10px;">
             <label>Follow-Up Stage / Type
               <select id="booking-followup-type">
-                <option value="auto_day1">⚡ Stage 1: Day 1 Auto (4h → 6h)</option>
+                <option value="auto_day1">⚡ Stage 1: Day 1 Auto (2h → 4h)</option>
                 <option value="day2_12h">⏳ Stage 2: Day 2 Follow-Up (Every 12h)</option>
                 <option value="days3_7_daily">📆 Stage 3: Days 3–7 Follow-Up (Daily / 24h)</option>
-                <option value="days7_21_daily">🎯 Stage 4: Days 7–21 Follow-Up (Daily → Fake Lead after 21d)</option>
+                <option value="days7_21_daily">🎯 Stage 4: Days 7–21 Follow-Up (Daily → Stop after 15 Follow-Ups)</option>
                 <option value="client_date">📅 Client Choice Date</option>
-                <option value="custom_timer">⏱️ Management Custom Timer (4h, 12h, 1d, 2d later)</option>
+                <option value="custom_timer">⏱️ Management Custom Timer (2h, 4h, 12h, 1d, 2d later)</option>
                 <option value="call_reminder">🔔 Booked Call Reminder (30m before meeting)</option>
                 <option value="rejected">🛑 Rejected (No Follow-Up)</option>
                 <option value="on_hold">⏸️ On Hold (Check-In)</option>
@@ -539,9 +539,9 @@
               <select id="booking-delay-hours">
                 <option value="">⚡ Automatic (Based on Stage / Call Time)</option>
                 <option value="0.5">⏱️ 30 Minutes Later</option>
-                <option value="2">⏱️ 2 Hours Later</option>
-                <option value="4">⏱️ 4 Hours Later (Day 1 First Follow-Up)</option>
-                <option value="6">⏱️ 6 Hours Later (Day 1 Subsequent Follow-Up)</option>
+                <option value="2">⏱️ 2 Hours Later (Day 1 First Follow-Up)</option>
+                <option value="4">⏱️ 4 Hours Later (Day 1 Subsequent Follow-Up)</option>
+                <option value="6">⏱️ 6 Hours Later</option>
                 <option value="12">⏱️ 12 Hours Later (Day 2 Follow-Up)</option>
                 <option value="24">⏱️ 1 Day Later (Daily Follow-Up)</option>
                 <option value="48">⏱️ 2 Days Later (48h)</option>
@@ -589,10 +589,10 @@
           <div style="width: 240px;">
             <select id="bookings-filter-followup" style="margin: 0;">
               <option value="all">All Follow-Up Stages &amp; Timers</option>
-              <option value="auto_day1">⚡ Stage 1: Day 1 Auto (4h → 6h)</option>
+              <option value="auto_day1">⚡ Stage 1: Day 1 Auto (2h → 4h)</option>
               <option value="day2_12h">⏳ Stage 2: Day 2 (12h)</option>
               <option value="days3_7_daily">📆 Stage 3: Days 3–7 (Daily)</option>
-              <option value="days7_21_daily">🎯 Stage 4: Days 7–21 (Daily → Fake)</option>
+              <option value="days7_21_daily">🎯 Stage 4: Days 7–21 (Daily → Stop after 15 Follow-Ups)</option>
               <option value="client_date">📅 Client Choice Date</option>
               <option value="custom_timer">⏱️ Custom Management Timer</option>
               <option value="call_reminder">🔔 Booked Call 30m Reminder</option>
@@ -629,10 +629,10 @@
           <div class="studio-subpanel" style="margin: 12px 0 8px;">
             <label style="margin: 0; font-size: 12.5px; font-weight: 600;">Follow-Up Stage / Strategy:
               <select id="modal-followup-type" style="margin-top: 6px;">
-                <option value="auto_day1">⚡ Stage 1: Day 1 Auto Follow-Up (4h → every 6h)</option>
+                <option value="auto_day1">⚡ Stage 1: Day 1 Auto Follow-Up (2h → every 4h)</option>
                 <option value="day2_12h">⏳ Stage 2: Day 2 Follow-Up (Every 12h)</option>
                 <option value="days3_7_daily">📆 Stage 3: Days 3–7 Follow-Up (Daily / 24h)</option>
-                <option value="days7_21_daily">🎯 Stage 4: Days 7–21 Follow-Up (Daily → Fake Lead after 21d)</option>
+                <option value="days7_21_daily">🎯 Stage 4: Days 7–21 Follow-Up (Daily → Stop after 15 Follow-Ups)</option>
                 <option value="client_date">📅 Client Choice Date (Follow up on exact day/time client asked)</option>
                 <option value="custom_timer">⏱️ Custom Management Timer (2h, 4h, 12h, 1d, 2d later...)</option>
                 <option value="call_reminder">🔔 Booked Call 30-Min Meeting Reminder (No sales follow-up)</option>
@@ -654,9 +654,9 @@
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
               <button type="button" class="ghost small timer-preset-btn" data-hours="0.5">30m</button>
-              <button type="button" class="ghost small timer-preset-btn" data-hours="2">2h</button>
-              <button type="button" class="ghost small timer-preset-btn" data-hours="4">4h (Day 1 1st)</button>
-              <button type="button" class="ghost small timer-preset-btn" data-hours="6">6h (Day 1 Subseq)</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="2">2h (Day 1 1st)</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="4">4h (Day 1 Subseq)</button>
+              <button type="button" class="ghost small timer-preset-btn" data-hours="6">6h</button>
               <button type="button" class="ghost small timer-preset-btn" data-hours="12">12h (Day 2)</button>
               <button type="button" class="ghost small timer-preset-btn" data-hours="24">1 Day (Daily)</button>
               <button type="button" class="ghost small timer-preset-btn" data-hours="48">2 Days</button>

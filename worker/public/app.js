@@ -2582,10 +2582,10 @@ const STATUS_LABELS = {
 };
 
 const FOLLOWUP_LABELS = {
-  auto_day1: "⚡ Day 1 Auto (4h → 6h)",
+  auto_day1: "⚡ Day 1 Auto (2h → 4h)",
   day2_12h: "⏳ Day 2 Follow-Up (12h)",
   days3_7_daily: "📆 Days 3–7 Follow-Up (Daily)",
-  days7_21_daily: "🎯 Days 7–21 Follow-Up (Daily → Fake)",
+  days7_21_daily: "🎯 Days 7–21 Follow-Up (Daily → Stop after 15)",
   no_reply_3d: "📆 Days 3–7 (Daily)",
   long_term_30d: "🎯 Days 7–21 (Daily → Fake)",
   client_date: "📅 Client Choice Date",
@@ -2845,7 +2845,7 @@ function renderBookings() {
         statusGuidance = el(
           "div",
           "booking-notes-box",
-          "🕵️ FAKE LEAD (30 Days No Reply): Client did not reply for 30 days across all follow-up stages. Automatically marked as Fake Lead and all follow-ups stopped."
+          "🕵️ FAKE LEAD: Client did not reply after 15 follow-ups. Automatically marked as Fake Lead and all follow-ups stopped."
         );
         statusGuidance.style.borderLeftColor = "#e11d48";
         statusGuidance.style.background = "rgba(225, 29, 72, 0.08)";
@@ -2868,7 +2868,7 @@ function renderBookings() {
         statusGuidance = el(
           "div",
           "booking-notes-box",
-          "⚡ Stage 1 (Day 1 Auto Follow-Up): 1st follow-up after 4h, subsequent follow-ups every 6h. Advances to Day 2 (12h) after 24h without reply."
+          "⚡ Stage 1 (Day 1 Auto Follow-Up): 1st follow-up after 2h, subsequent follow-ups every 4h. Advances to Day 2 (12h) after 24h without reply."
         );
         statusGuidance.style.borderLeftColor = "#a855f7";
       } else if (fType === "day2_12h") {
@@ -2889,7 +2889,7 @@ function renderBookings() {
         statusGuidance = el(
           "div",
           "booking-notes-box",
-          "🎯 Stage 4 (Days 7–21 Daily Follow-Up): Following up daily (24h) with turnaround guarantees, video audits, and respectful closing sequence. Converts automatically to 🕵️ Fake Lead after Day 21."
+          "🎯 Stage 4 (Days 7–21 Daily Follow-Up): Following up daily (24h) with turnaround guarantees, video audits, and respectful closing sequence. Stops automatically after 15 follow-ups without reply."
         );
         statusGuidance.style.borderLeftColor = "#ec4899";
       } else if (fType === "client_date") {
@@ -3065,9 +3065,9 @@ function renderBookings() {
       [
         { val: "", label: "⏱️ Set Follow-Up Timer…" },
         { val: "0.5", label: "⏱️ Send 30 Min Later" },
-        { val: "2", label: "⏱️ Send 2 Hours Later" },
-        { val: "4", label: "⚡ Send 4h Later (Day 1 1st)" },
-        { val: "6", label: "⚡ Send 6h Later (Day 1 Subseq)" },
+        { val: "2", label: "⚡ Send 2h Later (Day 1 1st)" },
+        { val: "4", label: "⚡ Send 4h Later (Day 1 Subseq)" },
+        { val: "6", label: "⏱️ Send 6h Later" },
         { val: "12", label: "⏳ Send 12h Later (Day 2)" },
         { val: "24", label: "📆 Send 1 Day Later (Daily)" },
         { val: "48", label: "📆 Send 2 Days Later (48h)" },
@@ -3082,7 +3082,7 @@ function renderBookings() {
       timerSelect.addEventListener("change", async () => {
         const hours = Number(timerSelect.value);
         if (!hours) return;
-        const nextType = hours === 4 || hours === 6 ? "auto_day1" : hours === 12 ? "day2_12h" : hours === 24 ? "days3_7_daily" : "custom_timer";
+        const nextType = hours === 2 || hours === 4 ? "auto_day1" : hours === 12 ? "day2_12h" : hours === 24 ? "days3_7_daily" : "custom_timer";
         const res = await api("PATCH", "/api/bookings", {
           id: b.id,
           delayHours: hours,
@@ -3101,7 +3101,7 @@ function renderBookings() {
       followupSelect.style.width = "auto";
       followupSelect.style.margin = "0";
       [
-        { val: "auto_day1", label: "Stage: ⚡ Day 1 Auto (4h → 6h)" },
+        { val: "auto_day1", label: "Stage: ⚡ Day 1 Auto (2h → 4h)" },
         { val: "day2_12h", label: "Stage: ⏳ Day 2 (12h)" },
         { val: "days3_7_daily", label: "Stage: 📆 Days 3–7 (Daily)" },
         { val: "days7_21_daily", label: "Stage: 🎯 Days 7–21 (Daily)" },
@@ -3283,7 +3283,7 @@ function updateModalAlert(b) {
   const fType = b.followup_type || "auto";
   const isCall = fType === "call_reminder" || (fType === "auto" && (b.status === "booked" || b.status === "confirmed"));
   if (b.status === "fake_lead") {
-    alertBox.textContent = "🕵️ Fake Lead (21 days no reply). Automated follow-ups are stopped.";
+    alertBox.textContent = "🕵️ Fake Lead (15 follow-ups sent with no reply). Automated follow-ups are stopped.";
     alertBox.style.background = "#e11d4822";
     alertBox.style.color = "#fda4af";
   } else if (fType === "rejected" || b.status === "not_interested") {
@@ -3295,7 +3295,7 @@ function updateModalAlert(b) {
     alertBox.style.background = "#eab30822";
     alertBox.style.color = "#facc15";
   } else if (fType === "auto_day1") {
-    alertBox.textContent = "⚡ Stage 1 (Day 1 Auto): 1st follow-up after 4h, then every 6h until a call is booked or 24h elapses.";
+    alertBox.textContent = "⚡ Stage 1 (Day 1 Auto): 1st follow-up after 2h, then every 4h until a call is booked or 24h elapses.";
     alertBox.style.background = "#8b5cf622";
     alertBox.style.color = "#c4b5fd";
   } else if (fType === "day2_12h") {
@@ -3347,7 +3347,7 @@ document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
     if (!currentFollowupBookingId) return;
     const hours = Number(btn.dataset.hours);
     if (!hours) return;
-    const nextType = hours === 4 || hours === 6 ? "auto_day1" : hours === 12 ? "day2_12h" : hours === 24 ? "days3_7_daily" : "custom_timer";
+    const nextType = hours === 2 || hours === 4 ? "auto_day1" : hours === 12 ? "day2_12h" : hours === 24 ? "days3_7_daily" : "custom_timer";
     try {
       const res = await api("PATCH", "/api/bookings", {
         id: currentFollowupBookingId,

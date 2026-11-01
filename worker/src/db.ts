@@ -451,7 +451,7 @@ export async function upsertBookingTodo(
       taskTitle = `🎯 Days 7–21 (Daily) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     } else {
-      taskTitle = `⚡ Day 1 (4h/6h) Follow-Up: ${clientLabel}`;
+      taskTitle = `⚡ Day 1 (2h/4h) Follow-Up: ${clientLabel}`;
       taskType = "client_followup";
     }
 
