@@ -2541,7 +2541,7 @@ function updateBookingStats() {
   const activeLeads = bookings.filter(
     (b) =>
       b.status === "lead" ||
-      ["auto_day1", "day2_12h", "days3_7_daily", "days7_21_daily", "no_reply_3d", "long_term_30d", "client_date", "custom_timer"].includes(b.followup_type)
+      ["auto", "auto_day1", "day2_12h", "days3_7_daily", "days7_21_daily", "no_reply_3d", "long_term_30d", "client_date", "custom_timer"].includes(b.followup_type)
   ).length;
   const booked = bookings.filter((b) => b.status === "booked").length;
   const confirmed = bookings.filter((b) => b.status === "confirmed").length;
@@ -2582,16 +2582,16 @@ const STATUS_LABELS = {
 };
 
 const FOLLOWUP_LABELS = {
-  auto_day1: "⚡ Day 1 Auto (2h → 4h)",
-  day2_12h: "⏳ Day 2 Follow-Up (12h)",
-  days3_7_daily: "📆 Days 3–7 Follow-Up (Daily)",
-  days7_21_daily: "🎯 Days 7–21 Follow-Up (Daily → Stop after 15)",
-  no_reply_3d: "📆 Days 3–7 (Daily)",
-  long_term_30d: "🎯 Days 7–21 (Daily → Fake)",
+  auto: "🤖 Auto (2h → 12h → Daily for 21d)",
+  auto_day1: "⚡ 1st Follow-Up (2h)",
+  day2_12h: "⏳ 2nd Follow-Up (12h)",
+  days3_7_daily: "📆 Daily Follow-Up (24h)",
+  days7_21_daily: "🎯 Daily Follow-Up (24h for 21d)",
+  no_reply_3d: "📆 Daily Follow-Up (24h)",
+  long_term_30d: "🎯 Daily Follow-Up (24h for 21d)",
   client_date: "📅 Client Choice Date",
   custom_timer: "⏱️ Custom Timer",
   call_reminder: "🔔 30m Call Reminder",
-  auto: "🤖 Smart AI Auto",
   rejected: "🛑 Rejected (No Follow-Up)",
   on_hold: "⏸️ On Hold",
   not_attended: "⚠️ Missed Call Reschedule",
@@ -2845,7 +2845,7 @@ function renderBookings() {
         statusGuidance = el(
           "div",
           "booking-notes-box",
-          "🕵️ FAKE LEAD: Client did not reply after 15 follow-ups. Automatically marked as Fake Lead and all follow-ups stopped."
+          "🕵️ FAKE LEAD (21 Days No Reply): Client did not reply across 21 days of follow-ups. All automated follow-ups are stopped."
         );
         statusGuidance.style.borderLeftColor = "#e11d48";
         statusGuidance.style.background = "rgba(225, 29, 72, 0.08)";
@@ -2864,39 +2864,24 @@ function renderBookings() {
           "🔔 CALL BOOKED: Nyra will NOT send sales follow-ups. She only sends a 30-minute meeting reminder before the call (and auto-updates the timer if the client reschedules)."
         );
         statusGuidance.style.borderLeftColor = "#eab308";
-      } else if (fType === "auto_day1") {
+      } else if (
+        fType === "auto" ||
+        fType === "auto_day1" ||
+        fType === "day2_12h" ||
+        fType === "days3_7_daily" ||
+        fType === "days7_21_daily"
+      ) {
         statusGuidance = el(
           "div",
           "booking-notes-box",
-          "⚡ Stage 1 (Day 1 Auto Follow-Up): 1st follow-up after 2h, subsequent follow-ups every 4h. Advances to Day 2 (12h) after 24h without reply."
+          "🤖 Auto Follow-Up Engine: 1st follow-up after 2h → 2nd follow-up after 12h → Daily (24h) for next 21 days (stops automatically). If client addresses any time, timer fixes to that exact time."
         );
         statusGuidance.style.borderLeftColor = "#a855f7";
-      } else if (fType === "day2_12h") {
-        statusGuidance = el(
-          "div",
-          "booking-notes-box",
-          "⏳ Stage 2 (Day 2 Follow-Up): Following up every 12 hours with portfolio proof and $29 Kickstart Trial. Advances to Days 3–7 Daily after 48h."
-        );
-        statusGuidance.style.borderLeftColor = "#f59e0b";
-      } else if (fType === "days3_7_daily" || fType === "no_reply_3d") {
-        statusGuidance = el(
-          "div",
-          "booking-notes-box",
-          "📆 Stage 3 (Days 3–7 Daily Follow-Up): Following up daily (24h) with transparent pricing ($330 Growth, $630 Content Engine, $1,060 Advance, $50 Websites) and flexible budget negotiation."
-        );
-        statusGuidance.style.borderLeftColor = "#06b6d4";
-      } else if (fType === "days7_21_daily" || fType === "long_term_30d") {
-        statusGuidance = el(
-          "div",
-          "booking-notes-box",
-          "🎯 Stage 4 (Days 7–21 Daily Follow-Up): Following up daily (24h) with turnaround guarantees, video audits, and respectful closing sequence. Stops automatically after 15 follow-ups without reply."
-        );
-        statusGuidance.style.borderLeftColor = "#ec4899";
       } else if (fType === "client_date") {
         statusGuidance = el(
           "div",
           "booking-notes-box",
-          `📅 Type 4 (Client Choice Date): Client asked to be contacted on ${b.scheduled_at || "their chosen date"}. Nyra will follow up on that day.`
+          `📅 Client Choice Date: Client addressed a specific time (${b.scheduled_at || "set time"}). Follow-up is fixed for that exact time.`
         );
         statusGuidance.style.borderLeftColor = "#06b6d4";
       } else if (fType === "custom_timer") {
@@ -3065,10 +3050,8 @@ function renderBookings() {
       [
         { val: "", label: "⏱️ Set Follow-Up Timer…" },
         { val: "0.5", label: "⏱️ Send 30 Min Later" },
-        { val: "2", label: "⚡ Send 2h Later (Day 1 1st)" },
-        { val: "4", label: "⚡ Send 4h Later (Day 1 Subseq)" },
-        { val: "6", label: "⏱️ Send 6h Later" },
-        { val: "12", label: "⏳ Send 12h Later (Day 2)" },
+        { val: "2", label: "⚡ Send 2h Later (1st Follow-Up)" },
+        { val: "12", label: "⏳ Send 12h Later (2nd Follow-Up)" },
         { val: "24", label: "📆 Send 1 Day Later (Daily)" },
         { val: "48", label: "📆 Send 2 Days Later (48h)" },
         { val: "72", label: "📆 Send 3 Days Later (72h)" },
@@ -3082,7 +3065,7 @@ function renderBookings() {
       timerSelect.addEventListener("change", async () => {
         const hours = Number(timerSelect.value);
         if (!hours) return;
-        const nextType = hours === 2 || hours === 4 ? "auto_day1" : hours === 12 ? "day2_12h" : hours === 24 ? "days3_7_daily" : "custom_timer";
+        const nextType = hours === 2 || hours === 12 || hours === 24 ? "auto" : "custom_timer";
         const res = await api("PATCH", "/api/bookings", {
           id: b.id,
           delayHours: hours,
@@ -3101,10 +3084,7 @@ function renderBookings() {
       followupSelect.style.width = "auto";
       followupSelect.style.margin = "0";
       [
-        { val: "auto_day1", label: "Stage: ⚡ Day 1 Auto (2h → 4h)" },
-        { val: "day2_12h", label: "Stage: ⏳ Day 2 (12h)" },
-        { val: "days3_7_daily", label: "Stage: 📆 Days 3–7 (Daily)" },
-        { val: "days7_21_daily", label: "Stage: 🎯 Days 7–21 (Daily)" },
+        { val: "auto", label: "Stage: 🤖 Auto (2h → 12h → Daily for 21d)" },
         { val: "client_date", label: "Stage: 📅 Client Choice Date" },
         { val: "custom_timer", label: "Stage: ⏱️ Custom Timer" },
         { val: "call_reminder", label: "Stage: 🔔 30m Call Reminder" },
@@ -3113,7 +3093,6 @@ function renderBookings() {
         { val: "not_attended", label: "Stage: ⚠️ Missed Call" },
         { val: "buy_soon", label: "Stage: ⏳ Buy in Few Days" },
         { val: "nurture", label: "Stage: 💡 Nurture (Portfolio)" },
-        { val: "auto", label: "Stage: 🤖 Smart AI Auto" },
       ].forEach((opt) => {
         const o = document.createElement("option");
         o.value = opt.val;
@@ -3294,26 +3273,20 @@ function updateModalAlert(b) {
     alertBox.textContent = "🔔 Call is Booked! Sales follow-ups are OFF. Nyra only sends a 30-minute meeting reminder before the call (auto-updates if rescheduled).";
     alertBox.style.background = "#eab30822";
     alertBox.style.color = "#facc15";
-  } else if (fType === "auto_day1") {
-    alertBox.textContent = "⚡ Stage 1 (Day 1 Auto): 1st follow-up after 2h, then every 4h until a call is booked or 24h elapses.";
+  } else if (fType === "client_date") {
+    alertBox.textContent = `📅 Client Choice Date: Follow-up is fixed for the client's addressed time (${b.scheduled_at || "set date"}).`;
+    alertBox.style.background = "#06b6d422";
+    alertBox.style.color = "#22d3ee";
+  } else if (
+    fType === "auto" ||
+    fType === "auto_day1" ||
+    fType === "day2_12h" ||
+    fType === "days3_7_daily" ||
+    fType === "days7_21_daily"
+  ) {
+    alertBox.textContent = "🤖 Simple Auto Follow-Up: 1st follow-up after 2h → 2nd follow-up after 12h → Daily (24h) for next 21 days (stops automatically). If client addresses any time, timer fixes to that exact time.";
     alertBox.style.background = "#8b5cf622";
     alertBox.style.color = "#c4b5fd";
-  } else if (fType === "day2_12h") {
-    alertBox.textContent = "⏳ Stage 2 (Day 2 Follow-Up): Sends follow-up every 12 hours with portfolio proof and $29 Kickstart Trial.";
-    alertBox.style.background = "#f59e0b22";
-    alertBox.style.color = "#fbbf24";
-  } else if (fType === "days3_7_daily" || fType === "no_reply_3d") {
-    alertBox.textContent = "📆 Stage 3 (Days 3–7 Follow-Up): Sends follow-up daily (24h) with transparent pricing and custom packages.";
-    alertBox.style.background = "#06b6d422";
-    alertBox.style.color = "#22d3ee";
-  } else if (fType === "days7_21_daily" || fType === "long_term_30d") {
-    alertBox.textContent = "🎯 Stage 4 (Days 7–21 Follow-Up): Sends follow-up daily (24h) with turnaround guarantees and respectful closing sequence until Day 21.";
-    alertBox.style.background = "#ec489922";
-    alertBox.style.color = "#f472b6";
-  } else if (fType === "client_date") {
-    alertBox.textContent = `📅 Type 4 (Client Choice Date): Scheduled for client's requested date (${b.scheduled_at || "set date"}).`;
-    alertBox.style.background = "#06b6d422";
-    alertBox.style.color = "#22d3ee";
   } else if (fType === "custom_timer") {
     alertBox.textContent = "⏱️ Custom Management Timer active.";
     alertBox.style.background = "#10b98122";
@@ -3347,7 +3320,7 @@ document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
     if (!currentFollowupBookingId) return;
     const hours = Number(btn.dataset.hours);
     if (!hours) return;
-    const nextType = hours === 2 || hours === 4 ? "auto_day1" : hours === 12 ? "day2_12h" : hours === 24 ? "days3_7_daily" : "custom_timer";
+    const nextType = hours === 2 || hours === 12 || hours === 24 ? "auto" : "custom_timer";
     try {
       const res = await api("PATCH", "/api/bookings", {
         id: currentFollowupBookingId,
@@ -3735,7 +3708,7 @@ $("#new-booking-form")?.addEventListener("submit", async (e) => {
   const dealValueRaw = $("#booking-deal-value")?.value.trim() || "";
   const packageRaw = $("#booking-package")?.value.trim() || "";
   const status = $("#booking-status").value;
-  const followupType = $("#booking-followup-type")?.value || "auto_day1";
+  const followupType = $("#booking-followup-type")?.value || "auto";
   const delayVal = $("#booking-delay-hours")?.value;
   const delayHours = delayVal ? Number(delayVal) : undefined;
   const notes = $("#booking-notes").value.trim();

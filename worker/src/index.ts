@@ -734,12 +734,12 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         const b = await env.DB.prepare("SELECT * FROM bookings WHERE id = ?").bind(t.booking_id).first<Booking>();
         if (b) {
           const nextCount = (b.followup_count || 0) + 1;
-          let nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 4;
+          let nextInterval = nextCount === 1 ? 12 : 24;
           let nextFollowupAt: number | null = Math.round(now + nextInterval * 3600 * 1000);
           let nextStatus: BookingStatus = b.status;
           let nextType: FollowupType = b.followup_type;
 
-          if (nextCount >= 15) {
+          if (nextCount >= 22) {
             nextFollowupAt = null;
             nextInterval = 0;
             nextStatus = "fake_lead";
@@ -747,6 +747,8 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
           } else if (b.followup_type === "call_reminder") {
             nextFollowupAt = null;
             nextInterval = 0;
+          } else {
+            nextType = "auto";
           }
 
           const updatedB = await updateBooking(env, b.id, {
@@ -816,7 +818,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       };
       const now = Date.now();
       const status: BookingStatus = body.status || "booked";
-      const rawType: FollowupType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto_day1");
+      const rawType: FollowupType = body.followupType || body.followup_type || (status === "booked" ? "call_reminder" : "auto");
       const effTz = body.timezone || detectTimezoneFromPhone(body.phone || body.chatId)?.code || "BD";
       const callTimeMs = body.scheduledAt ? parseScheduledTimeToMs(body.scheduledAt, effTz, now, body.phone || body.chatId) : null;
       const formattedScheduledAt = callTimeMs ? formatTimeInTimezone(callTimeMs, effTz, body.phone || body.chatId, now) : body.scheduledAt;
@@ -990,19 +992,18 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
             patch.next_followup_at = null;
           }
           patch.followup_interval_hours = 0;
-        } else if (nextType === "auto_day1" || nextType === "auto") {
-          const isFirst = !existing.followup_count || existing.followup_count === 0;
-          patch.followup_interval_hours = isFirst ? 2 : 4;
-          patch.next_followup_at = Math.round(now + (isFirst ? 2 : 4) * 3600 * 1000);
-        } else if (nextType === "day2_12h") {
-          patch.followup_interval_hours = 12;
-          patch.next_followup_at = Math.round(now + 12 * 3600 * 1000);
-        } else if (nextType === "days3_7_daily" || nextType === "no_reply_3d") {
-          patch.followup_interval_hours = 24;
-          patch.next_followup_at = Math.round(now + 24 * 3600 * 1000);
-        } else if (nextType === "days7_21_daily" || nextType === "long_term_30d") {
-          patch.followup_interval_hours = 24;
-          patch.next_followup_at = Math.round(now + 24 * 3600 * 1000);
+        } else if (
+          nextType === "auto" ||
+          nextType === "auto_day1" ||
+          nextType === "day2_12h" ||
+          nextType === "days3_7_daily" ||
+          nextType === "days7_21_daily"
+        ) {
+          const count = existing.followup_count || 0;
+          const interval = count === 0 ? 2 : count === 1 ? 12 : 24;
+          patch.followup_interval_hours = interval;
+          patch.next_followup_at = Math.round(now + interval * 3600 * 1000);
+          patch.followup_type = "auto";
         } else if (nextType === "on_hold" || nextType === "nurture") {
           patch.followup_interval_hours = 48;
           patch.next_followup_at = Math.round(now + 48 * 3600 * 1000);
@@ -1123,12 +1124,12 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
 
       if (body.markSent || body.sendViaGateway) {
         const nextCount = (b.followup_count || 0) + 1;
-        let nextInterval = body.delayHours ?? (b.followup_type === "auto_day1" ? 4 : (b.followup_interval_hours ?? 4));
+        let nextInterval = body.delayHours ?? (nextCount === 1 ? 12 : 24);
         let nextFollowupAt: number | null = null;
         let nextType: FollowupType = b.followup_type;
         let nextStatus: BookingStatus = b.status;
 
-        if (nextCount >= 15) {
+        if (nextCount >= 22) {
           nextFollowupAt = null;
           nextInterval = 0;
           nextStatus = "fake_lead";
@@ -1136,8 +1137,11 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         } else if (b.followup_type === "call_reminder") {
           nextFollowupAt = null;
           nextInterval = 0;
-        } else if (nextInterval > 0) {
-          nextFollowupAt = Math.round(now + nextInterval * 3600 * 1000);
+        } else {
+          nextType = "auto";
+          if (nextInterval > 0) {
+            nextFollowupAt = Math.round(now + nextInterval * 3600 * 1000);
+          }
         }
 
         const patched = await updateBooking(env, b.id, {

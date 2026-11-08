@@ -210,7 +210,7 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
             phone: cleanPhone || null,
             timezone: detectedTz?.code || "BD",
             status: "lead",
-            followupType: "auto_day1",
+            followupType: "auto",
             nextFollowupAt: nowMs + 2 * 3600 * 1000,
             followupIntervalHours: 2,
             lastClientReplyAt: nowMs,
@@ -221,7 +221,7 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
         } else {
           const updated = await updateBooking(env, existingBooking.id, {
             status: "lead",
-            followup_type: "auto_day1",
+            followup_type: "auto",
             next_followup_at: nowMs + 2 * 3600 * 1000,
             followup_interval_hours: 2,
             followup_count: 0,
@@ -783,23 +783,14 @@ export function computeNextFollowupState(
     };
   }
 
-  // 5. Dynamic Unanswered Lead Progression:
-  // Day 1 (2h, then 4h) -> Day 2 (12h) -> Days 3–7 (Daily) -> Days 7–21 (Daily) -> 15 Follow-Ups Max -> Stop / Fake Lead
+  // 5. Unanswered Lead Progression:
+  // 1st follow-up after 2h -> 2nd follow-up after 12h -> Subsequent every 24h for 21 days -> Stop (Fake Lead)
   const lastReplyMs = b.last_client_reply_at || b.created_at || nowMs;
   const elapsedHours = (nowMs - lastReplyMs) / (3600 * 1000);
+  const count = b.followup_count || 0;
 
-  // If 15 or more follow-ups have been sent without client reply -> stop sending further follow-ups automatically!
-  if ((b.followup_count || 0) >= 15) {
-    return {
-      status: "fake_lead",
-      followup_type: "rejected",
-      next_followup_at: null,
-      followup_interval_hours: 0,
-    };
-  }
-
-  // Over 21 days (504 hours) with no reply -> Mark as Fake Lead and stop follow-ups
-  if (elapsedHours >= 24 * 21) {
+  // Over 21 days (504 hours) with no reply OR 22+ follow-ups sent -> Mark as Fake Lead and stop follow-ups
+  if (elapsedHours >= 24 * 21 || count >= 22) {
     return {
       status: "fake_lead",
       followup_type: "rejected",
@@ -830,44 +821,24 @@ export function computeNextFollowupState(
     };
   }
 
-  // Days 7 to 21 (168h to 504h) -> Follow up every 24h (Daily)
-  if (elapsedHours >= 24 * 7) {
-    return {
-      status: curStatus,
-      followup_type: "days7_21_daily",
-      next_followup_at: nowMs + 24 * 3600 * 1000,
-      followup_interval_hours: 24,
-    };
+  // Auto Follow-Up Schedule:
+  // 1st follow-up: 2h
+  // 2nd follow-up: 12h
+  // 3rd onwards: 24h (Daily) for next 21 days
+  let intervalHours = 24;
+  if (count === 0) {
+    intervalHours = 2;
+  } else if (count === 1) {
+    intervalHours = 12;
+  } else {
+    intervalHours = 24;
   }
 
-  // Days 3 to 7 (48h to 168h) -> Follow up every 24h (Daily)
-  if (elapsedHours >= 24 * 2) {
-    return {
-      status: curStatus,
-      followup_type: "days3_7_daily",
-      next_followup_at: nowMs + 24 * 3600 * 1000,
-      followup_interval_hours: 24,
-    };
-  }
-
-  // Day 2 (24h to 48h) -> Follow up every 12 hours
-  if (elapsedHours >= 24) {
-    return {
-      status: curStatus,
-      followup_type: "day2_12h",
-      next_followup_at: nowMs + 12 * 3600 * 1000,
-      followup_interval_hours: 12,
-    };
-  }
-
-  // Day 1 (0h to 24h): 1st follow-up after 2h, subsequent follow-ups every 4h
-  const isFirstFollowup = !b.followup_count || b.followup_count === 0;
-  const day1Interval = isFirstFollowup ? 2 : 4;
   return {
     status: curStatus,
-    followup_type: "auto_day1",
-    next_followup_at: nowMs + day1Interval * 3600 * 1000,
-    followup_interval_hours: day1Interval,
+    followup_type: "auto",
+    next_followup_at: nowMs + intervalHours * 3600 * 1000,
+    followup_interval_hours: intervalHours,
   };
 }
 
@@ -942,10 +913,14 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
   inferredStatus: BookingStatus | null;
   inferredFollowupType: FollowupType | null;
 } {
-  // Normalize spaces around time colons ("1: 30 pm" -> "1:30 pm") and "latter" -> "later"
+  // Normalize spaces around time colons ("1: 30 pm" -> "1:30 pm"), common typos, and Banglish time expressions
   const normalizedText = text
     .replace(/\blatter\b/gi, "later")
-    .replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2");
+    .replace(/(\d{1,2})\s*:\s*(\d{2})/g, "$1:$2")
+    .replace(/\b(\d+)\s*(?:ghonta|ghanta|gonta)\s*(?:por|pore)?\b/gi, "$1 hours later")
+    .replace(/\b(\d+)\s*(?:minute|min)\s*(?:por|pore)\b/gi, "$1 minutes later")
+    .replace(/\b(kal|kaal|kalke)\b/gi, "tomorrow")
+    .replace(/\bporso\b/gi, "day after tomorrow");
 
   const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
   const emailMatch = normalizedText.match(emailRegex);
@@ -1026,15 +1001,9 @@ function extractBookingDetails(text: string, history: StoredMessage[]): {
     /\b\d+(?:\.\d+)?\s*(?:minute|min|hour|hr|day|week)s?\s+later\b/i.test(lower) ||
     /\b(?:in|after)\s+\d+(?:\.\d+)?\s*(?:minute|min|hour|hr)s?\b/i.test(lower);
 
-  // Client says when they are free or wants Nyra to knock/message them later
-  // ("no 5 min latter knock me", "i msg you 2 hour later", "i am free at 2 pm", "busy now talk in 2 hours")
-  const isClientChoiceFollowup =
-    Boolean(time) &&
-    !email &&
-    (hasFollowupKnockCue ||
-      (isRelativeDelayPhrase && !hasExplicitCallWord) ||
-      (!hasExplicitCallWord &&
-        /\b(free|available|contact|busy|talk|chat|later|after)\b/i.test(lower)));
+  // Client addresses any time/date for follow-up or when to connect ("tomorrow 4pm", "in 2 hours", "friday", "knock me", "kal", "21 tarik")
+  // If no calendar email is provided, any time mentioned by the client is fixed as their client-choice follow-up time!
+  const isClientChoiceFollowup = Boolean(time) && !email;
 
   const isRescheduleRequest =
     !isClientChoiceFollowup &&
@@ -1292,8 +1261,8 @@ export function generateFollowupText(b: {
   const type = b.followup_type || "auto_day1";
   const count = b.followup_count || 0;
 
-  // If rejected, not interested, or fake lead, or 15+ followups sent without reply -> strictly NO follow-up
-  if (count >= 15 || type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
+  // If rejected, not interested, or fake lead, or 22+ followups sent without reply -> strictly NO follow-up
+  if (count >= 22 || type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
   }
 
@@ -1374,86 +1343,61 @@ export function generateFollowupText(b: {
     return `${opener} Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
   }
 
-  // Stage 1: Day 1 Auto Follow-Up (1st after 2h, then every 4h: 2h, 6h, 10h, 14h, 18h, 22h)
-  if (type === "auto_day1" || type === "auto") {
-    const day1Templates = [
-      // 0 (2h) - uses name if available
+  // Simple Auto Follow-Up (1st: 2h, 2nd: 12h, 3rd to 22nd: Daily for 21 days)
+  if (
+    type === "auto" ||
+    type === "auto_day1" ||
+    type === "day2_12h" ||
+    type === "days3_7_daily" ||
+    type === "days7_21_daily"
+  ) {
+    const autoTemplates = [
+      // 0 (1st follow-up / 2h later) - even: uses name
       `${greetHey} Just following up on my earlier message — curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
-      // 1 (6h) - odd: NO name!
+      // 1 (2nd follow-up / 12h later) - odd: NO name
       `Quick question — how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
-      // 2 (10h) - even: uses name if available
-      `${greetHi} In case you'd prefer to talk through your video editing or website needs directly, our CSO Armaan has a few slots open: https://calendly.com/armaan-gineus/30min`,
-      // 3 (14h) - odd: NO name!
-      `No rush at all! Just wanted to make sure my message didn't get buried. Whenever you have a minute, happy to look at your content and share relevant editing samples.`,
-      // 4 (18h) - even: uses name if available
-      `${greetHey} Hope your day is going well! Just checking in to see if you had a chance to review our packages or if you have any questions on how our dedicated editor works?`,
-      // 5 (22h) - odd: NO name!
-      `Just following up before wrapping up for the day — let me know if you'd like us to share a couple of sample edits in your niche!`,
-    ];
-    return day1Templates[count % day1Templates.length];
-  }
-
-  // Stage 2: Day 2 Follow-Up (every 12 hours) — Portfolio Proof & $29 Risk-Free Trial
-  if (type === "day2_12h") {
-    const day2Templates = [
-      // 0 (Day 2 morning / 12h) - even: uses name
-      `${greetHey} Wanted to share a quick peek at some recent video edits we produced (talking-head, Alex Hormozi captions, motion graphics, and clean B-roll pacing): https://vidmox.pages.dev/portfolio. We can replicate any style your brand needs!`,
-      // 1 (Day 2 evening / 12h) - odd: NO name!
+      // 2 (3rd follow-up / Day 2 / 24h later) - even: uses name
+      `${greetHi} Wanted to share a quick peek at some recent video edits we produced (https://vidmox.pages.dev/portfolio). We can replicate any style your brand needs!`,
+      // 3 (4th follow-up / Day 3 / 24h later) - odd: NO name
       `If you want to test our editing quality completely risk-free, we offer a $29 Kickstart Trial — we'll edit 1 full Reel/Short with custom hooks, animated captions, sound design & 24h turnaround. Would you like to try that for your next video?`,
-    ];
-    return day2Templates[count % day2Templates.length];
-  }
-
-  // Stage 3: Days 3–7 Follow-Up (every 1 day / 24 hours) — Live Site Pricing & Custom Budget Flexibility
-  if (type === "days3_7_daily" || type === "no_reply_3d") {
-    const days3to7Templates = [
-      // Day 3 (even count): live package pricing (flat packages, NOT monthly)
+      // 4 (5th follow-up / Day 4 / 24h later) - even: uses name
       `${greetHey} In case you're exploring editing packages, here is our transparent package pricing from the site:\n• Growth Package: $330 (30 short-form videos & fast turnaround)\n• Content Engine (Scale): $630 (high-volume short-form + long-form)\n• Advance Package: $1,060 (full-scale dedicated production)\n• Websites: starting from $50\nWe can also customize any package to fit your exact video count and budget. Does one of these match what you had in mind?`,
-      // Day 4 (odd count): workflow & speed
+      // 5 (6th follow-up / Day 5 / 24h later) - odd: NO name
       `Quick note on workflow — with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24–48 hours with unlimited revisions.`,
-      // Day 5 (even count): negotiation & budget flexibility
-      `${greetHi} Just checking in — are you still deciding which editing package would fit your workflow best? If you have a specific target budget or video count in mind, let me know. We're very flexible and happy to build a custom package!`,
-      // Day 6 (odd count): CSO call
-      `Would 10–15 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
-      // Day 7 (even count): 1-week check-in
-      `${greetHey} It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
+      // 6 (7th follow-up / Day 6 / 24h later) - even: uses name
+      `${greetHi} Would 10–15 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
+      // 7 (8th follow-up / Day 7 / 24h later) - odd: NO name
+      `It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
+      // 8 (9th follow-up / Day 8 / 24h later) - even: uses name
+      `${greetHey} One thing our clients love is our unlimited revisions policy — we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
+      // 9 (10th follow-up / Day 9 / 24h later) - odd: NO name
+      `Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website ($50), our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
+      // 10 (11th follow-up / Day 10 / 24h later) - even: uses name
+      `${greetHi} If you have a raw video clip ready, feel free to drop a link right here — we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
+      // 11 (12th follow-up / Day 11 / 24h later) - odd: NO name
+      `Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
+      // 12 (13th follow-up / Day 12 / 24h later) - even: uses name
+      `${greetHey} Still here to help whenever you're ready to ramp up your content engine! You can also check out our pricing tiers anytime at https://vidmox.pages.dev/pricing`,
+      // 13 (14th follow-up / Day 13 / 24h later) - odd: NO name
+      `Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
+      // 14 (15th follow-up / Day 14 / 24h later) - even: uses name
+      `${greetHi} 2-week check-in — if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
+      // 15 (16th follow-up / Day 15 / 24h later) - odd: NO name
+      `I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
+      // 16 (17th follow-up / Day 16 / 24h later) - even: uses name
+      `${greetHey} If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
+      // 17 (18th follow-up / Day 17 / 24h later) - odd: NO name
+      `Leaving our $29 Kickstart Trial link handy in case you want to test our editing quality on an upcoming shoot: https://vidmox.pages.dev`,
+      // 18 (19th follow-up / Day 18 / 24h later) - even: uses name
+      `${greetHi} Quick question — if our current packages weren't a fit, was it due to pricing, turnaround time, or editing style? Would love your honest feedback so we can do better!`,
+      // 19 (20th follow-up / Day 19 / 24h later) - odd: NO name
+      `CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
+      // 20 (21st follow-up / Day 20 / 24h later) - even: uses name
+      `${greetHey} I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
+      // 21 (22nd follow-up / Day 21 / 24h later - final breakup) - odd: NO name
+      `Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`,
     ];
-    return days3to7Templates[count % days3to7Templates.length];
-  }
-
-  // Stage 4: Days 7–21 Follow-Up (every 1 day / 24 hours) — Objections, Niche Samples & Respectful Breakup Sequence
-  if (type === "days7_21_daily" || type === "long_term_30d") {
-    const days7to21Templates = [
-      // Day 8 (odd count)
-      `One thing our clients love is our unlimited revisions policy — we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
-      // Day 9 (even count)
-      `${greetHi} Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website ($50), our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
-      // Day 10 (odd count)
-      `If you have a raw video clip ready, feel free to drop a link right here — we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
-      // Day 11 (even count)
-      `${greetHey} Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
-      // Day 12 (odd count)
-      `Still here to help whenever you're ready to ramp up your content engine! You can also check out our pricing tiers anytime at https://vidmox.pages.dev/pricing`,
-      // Day 13 (even count)
-      `${greetHi} Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
-      // Day 14 (odd count)
-      `2-week check-in — if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
-      // Day 15 (even count)
-      `${greetHey} I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
-      // Day 16 (odd count)
-      `If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
-      // Day 17 (even count)
-      `${greetHi} Leaving our $29 Kickstart Trial link handy in case you want to test our editing quality on an upcoming shoot: https://vidmox.pages.dev`,
-      // Day 18 (odd count)
-      `Quick question — if our current packages weren't a fit, was it due to pricing, turnaround time, or editing style? Would love your honest feedback so we can do better!`,
-      // Day 19 (even count)
-      `${greetHey} CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
-      // Day 20 (odd count)
-      `I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
-      // Day 21 (even count - final breakup)
-      `${greetHi} Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`,
-    ];
-    return days7to21Templates[count % days7to21Templates.length];
+    return autoTemplates[Math.min(count, autoTemplates.length - 1)];
   }
 
   if (b.status === "completed") {
@@ -1555,8 +1499,8 @@ export async function processDueFollowups(
     let nextInterval = b.followup_interval_hours ?? 2;
     let nextStatus: BookingStatus = b.status;
 
-    // If 15 follow-ups have been reached without client reply -> stop sending further follow-ups automatically!
-    if (nextCount >= 15) {
+    // Stop after 21 days or 22 follow-ups
+    if (nextCount >= 22 || elapsedHours >= 24 * 21) {
       nextStatus = "fake_lead";
       nextType = "rejected";
       nextFollowupAt = null;
@@ -1565,11 +1509,6 @@ export async function processDueFollowups(
       // 30-min call reminder is one-shot for this meeting time
       nextFollowupAt = null;
       nextType = "call_reminder";
-      nextInterval = 0;
-    } else if (elapsedHours >= 24 * 21) {
-      nextStatus = "fake_lead";
-      nextType = "rejected";
-      nextFollowupAt = null;
       nextInterval = 0;
     } else if (b.followup_type === "on_hold" || b.followup_type === "nurture") {
       nextType = b.followup_type;
@@ -1583,26 +1522,18 @@ export async function processDueFollowups(
       nextType = "buy_soon";
       nextInterval = b.followup_interval_hours && b.followup_interval_hours > 0 ? b.followup_interval_hours : 24;
       nextFollowupAt = now + nextInterval * 3600 * 1000;
-    } else if (elapsedHours >= 24 * 7) {
-      // Days 7 to 21: every 24h (Daily)
-      nextType = "days7_21_daily";
-      nextInterval = 24;
-      nextFollowupAt = now + 24 * 3600 * 1000;
-    } else if (elapsedHours >= 24 * 2) {
-      // Days 3 to 7: every 24h (Daily)
-      nextType = "days3_7_daily";
-      nextInterval = 24;
-      nextFollowupAt = now + 24 * 3600 * 1000;
-    } else if (elapsedHours >= 24) {
-      // Day 2: every 12h
-      nextType = "day2_12h";
-      nextInterval = 12;
-      nextFollowupAt = now + 12 * 3600 * 1000;
     } else {
-      // Day 1 (Subsequent follow-ups after 1st 2h): every 4h
-      nextType = "auto_day1";
-      nextInterval = 4;
-      nextFollowupAt = now + 4 * 3600 * 1000;
+      // Simple Auto Follow-Up progression:
+      // Lead created: 1st follow-up after 2h (currentCount: 0)
+      // 1st follow-up sent (nextCount === 1): 2nd follow-up after 12h!
+      // 2nd follow-up sent (nextCount === 2) and beyond: every 24h (Daily) for next 21 days!
+      if (nextCount === 1) {
+        nextInterval = 12;
+      } else {
+        nextInterval = 24;
+      }
+      nextType = "auto";
+      nextFollowupAt = now + nextInterval * 3600 * 1000;
     }
 
     const updatedBooking = await updateBooking(env, b.id, {
@@ -2020,7 +1951,7 @@ async function generateReply(
             nextInterval = existing.followup_interval_hours || 24;
             nextFollowupAt = nowMs + nextInterval * 3600 * 1000;
           } else {
-            nextFollowupType = "auto_day1";
+            nextFollowupType = "auto";
             nextFollowupAt = nowMs + 2 * 3600 * 1000;
             nextInterval = 2;
           }
@@ -2044,7 +1975,7 @@ async function generateReply(
           const isStopped = bookingInfo.inferredFollowupType === "rejected" || nextStatus === "not_interested";
           const nextFollowupType: FollowupType = isStopped
             ? "rejected"
-            : bookingInfo.inferredFollowupType || "auto_day1";
+            : bookingInfo.inferredFollowupType || "auto";
           const nextInterval = isStopped ? 0 : bookingInfo.inferredFollowupType ? 24 : 2;
 
           const saved = await createBooking(env, {
