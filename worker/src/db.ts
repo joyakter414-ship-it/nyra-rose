@@ -232,7 +232,7 @@ export async function getTodos(env: AppEnv, chatId?: string, onlyPending = false
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 200";
+  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 3000";
 
   const { results } = await env.DB.prepare(query).bind(...params).all<Todo>();
   return results;
@@ -441,12 +441,6 @@ export async function upsertBookingTodo(
     } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
       taskTitle = `⏳ Closing Follow-Up (Buying Soon): ${clientLabel}`;
       taskType = "client_followup";
-    } else if (b.followup_type === "client_date") {
-      taskTitle = `📅 Client Choice Follow-Up: ${clientLabel}`;
-      taskType = "client_followup";
-    } else if (b.followup_type === "custom_timer") {
-      taskTitle = `⏱️ Custom Timer Follow-Up: ${clientLabel}`;
-      taskType = "client_followup";
     } else {
       const count = b.followup_count || 0;
       if (count === 0) {
@@ -569,7 +563,7 @@ export async function getBookings(env: AppEnv, status?: string, followupType?: s
     query += " WHERE " + clauses.join(" AND ");
   }
 
-  query += " ORDER BY created_at DESC LIMIT 200";
+  query += " ORDER BY created_at DESC LIMIT 3000";
   const { results } = await env.DB.prepare(query).bind(...params).all<Booking>();
   return results;
 }
@@ -577,8 +571,10 @@ export async function getBookings(env: AppEnv, status?: string, followupType?: s
 export async function createBooking(
   env: AppEnv,
   b: {
-    chat_id: string;
+    chat_id?: string;
+    chatId?: string;
     client_name?: string | null;
+    clientName?: string | null;
     phone?: string | null;
     email?: string | null;
     scheduled_at?: string | null;
@@ -587,10 +583,14 @@ export async function createBooking(
     requirements?: string | null;
     status?: BookingStatus;
     followup_type?: FollowupType;
+    followupType?: FollowupType;
     next_followup_at?: number | null;
+    nextFollowupAt?: number | null;
     call_time_ms?: number | null;
     last_client_reply_at?: number | null;
+    lastClientReplyAt?: number | null;
     followup_interval_hours?: number | null;
+    followupIntervalHours?: number | null;
     source?: string;
     notes?: string | null;
     custom_followup_msg?: string | null;
@@ -598,11 +598,16 @@ export async function createBooking(
 ): Promise<Booking> {
   const id = `book_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
-  const status: BookingStatus = b.status || "booked";
-  const followup_type: FollowupType = b.followup_type || "auto";
+  const cleanPhone = (b.phone || "").replace(/\D/g, "");
+  const rawChatId = b.chat_id || b.chatId || (cleanPhone.length >= 7 ? `${cleanPhone}@s.whatsapp.net` : "dashboard");
+  const chat_id = (rawChatId || "dashboard").trim();
+  const client_name = (b.client_name ?? b.clientName ?? null)?.trim() ?? null;
+  const status: BookingStatus = b.status || "lead";
+  const followup_type: FollowupType = b.followup_type || b.followupType || "auto";
   const source = b.source || "whatsapp";
-  const followup_interval_hours = b.followup_interval_hours ?? 3.5;
-  const last_client_reply_at = b.last_client_reply_at ?? created_at;
+  const followup_interval_hours = b.followup_interval_hours ?? b.followupIntervalHours ?? 2;
+  const last_client_reply_at = b.last_client_reply_at ?? b.lastClientReplyAt ?? created_at;
+  const next_followup_at = b.next_followup_at ?? b.nextFollowupAt ?? null;
 
   await env.DB.prepare(
     `INSERT INTO bookings (
@@ -614,8 +619,8 @@ export async function createBooking(
   )
     .bind(
       id,
-      b.chat_id,
-      b.client_name?.trim() ?? null,
+      chat_id,
+      client_name,
       b.phone?.trim() ?? null,
       b.email?.trim() ?? null,
       b.scheduled_at?.trim() ?? null,
@@ -624,7 +629,7 @@ export async function createBooking(
       b.requirements?.trim() ?? null,
       status,
       followup_type,
-      b.next_followup_at ?? null,
+      next_followup_at,
       b.call_time_ms ?? null,
       last_client_reply_at,
       followup_interval_hours,
@@ -637,8 +642,8 @@ export async function createBooking(
 
   return {
     id,
-    chat_id: b.chat_id,
-    client_name: b.client_name?.trim() ?? null,
+    chat_id,
+    client_name,
     phone: b.phone?.trim() ?? null,
     email: b.email?.trim() ?? null,
     scheduled_at: b.scheduled_at?.trim() ?? null,
@@ -647,7 +652,7 @@ export async function createBooking(
     requirements: b.requirements?.trim() ?? null,
     status,
     followup_type,
-    next_followup_at: b.next_followup_at ?? null,
+    next_followup_at,
     call_time_ms: b.call_time_ms ?? null,
     last_client_reply_at,
     followup_interval_hours,
@@ -727,7 +732,7 @@ export async function getDueFollowups(env: AppEnv, now: number): Promise<Booking
        AND status NOT IN ('fake_lead', 'not_interested', 'completed', 'cancelled')
        AND followup_type != 'rejected'
      ORDER BY next_followup_at ASC
-     LIMIT 5`
+     LIMIT 25`
   )
     .bind(now)
     .all<Booking>();
@@ -740,10 +745,31 @@ export async function deleteBooking(env: AppEnv, id: string): Promise<boolean> {
   return (res.meta.changes ?? 0) > 0;
 }
 
-export async function findLatestBookingForChat(env: AppEnv, chatId: string): Promise<Booking | null> {
+export async function findLatestBookingForChat(
+  env: AppEnv,
+  chatId: string,
+  senderPhone?: string | null,
+): Promise<Booking | null> {
+  const cleanChat = (chatId || "").trim();
+  const cleanDigits = (senderPhone || (cleanChat.includes("@") ? cleanChat.split("@")[0] : cleanChat)).replace(/\D/g, "");
+  if (cleanDigits.length >= 7) {
+    const res = await env.DB.prepare(
+      `SELECT * FROM bookings
+       WHERE chat_id = ?
+          OR phone = ?
+          OR phone = ?
+          OR (length(phone) >= 7 AND phone LIKE ?)
+       ORDER BY created_at DESC LIMIT 1`
+    )
+      .bind(cleanChat, cleanDigits, `+${cleanDigits}`, `%${cleanDigits.slice(-8)}%`)
+      .first<Booking>()
+      .catch(() => null);
+    if (res) return res;
+  }
   return await env.DB.prepare("SELECT * FROM bookings WHERE chat_id = ? ORDER BY created_at DESC LIMIT 1")
-    .bind(chatId)
-    .first<Booking>();
+    .bind(cleanChat)
+    .first<Booking>()
+    .catch(() => null);
 }
 
 // ── Budget & Vault Management (Income, Expense, Stock) ─────────────────────────

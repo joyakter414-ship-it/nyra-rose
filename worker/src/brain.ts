@@ -156,7 +156,48 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
   });
   if (!isNew) return { action: "ignore", reason: "duplicate delivery" };
 
-  // 2. First contact welcome sequence for new leads reaching out on WhatsApp
+  // 2. Ensure WhatsApp 1-on-1 leads are ALWAYS logged and updated in the CRM
+  if (!m.isGroup) {
+    try {
+      const existingBooking = await findLatestBookingForChat(env, m.chatId, m.senderPhone).catch(() => null);
+      const isAlreadyBooked = existingBooking && (existingBooking.status === "booked" || existingBooking.status === "confirmed");
+      const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
+      const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
+      const nowMs = Date.now();
+      const clientName = m.chatName || m.senderName || "New Lead";
+
+      if (!existingBooking) {
+        const newBooking = await createBooking(env, {
+          chat_id: m.chatId,
+          client_name: clientName,
+          phone: cleanPhone || null,
+          timezone: detectedTz?.code || "BD",
+          status: "lead",
+          followup_type: "auto",
+          next_followup_at: nowMs + 2 * 3600 * 1000,
+          followup_interval_hours: 2,
+          last_client_reply_at: nowMs,
+          source: "whatsapp",
+          notes: "New lead reached out via WhatsApp.",
+        });
+        await syncBookingToTodo(env, newBooking, nowMs);
+      } else if (!isAlreadyBooked) {
+        const updated = await updateBooking(env, existingBooking.id, {
+          status: existingBooking.status === "fake_lead" ? "lead" : existingBooking.status,
+          last_client_reply_at: nowMs,
+          followup_count: 0,
+          next_followup_at: nowMs + 2 * 3600 * 1000,
+          followup_interval_hours: 2,
+          followup_type: existingBooking.followup_type === "rejected" ? "auto" : existingBooking.followup_type,
+        });
+        await syncBookingToTodo(env, updated, nowMs);
+      }
+    } catch (err) {
+      console.warn("Failed ensuring lead booking in CRM:", err);
+    }
+  }
+
+  // 3. First contact welcome sequence for new leads reaching out on WhatsApp
   if (!m.isGroup && !instantPaused) {
     const priorAssistant = await env.DB.prepare(
       "SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = ? AND role = 'assistant'"
@@ -166,12 +207,11 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
 
     const isFirstContact = !priorAssistant || priorAssistant.cnt === 0;
     if (isFirstContact) {
-      const existingBooking = await findLatestBookingForChat(env, m.chatId).catch(() => null);
+      const existingBooking = await findLatestBookingForChat(env, m.chatId, m.senderPhone).catch(() => null);
       const isAlreadyBooked = existingBooking && (existingBooking.status === "booked" || existingBooking.status === "confirmed");
 
       if (!isAlreadyBooked) {
         const nowMs = Date.now();
-        const clientName = m.chatName || m.senderName || "New Lead";
         const msg1 = buildFirstContactMsg1(m.senderName || m.chatName);
 
         await insertMessage(env, {
@@ -199,36 +239,6 @@ export async function handleIncoming(env: AppEnv, m: IncomingMessage): Promise<D
           neurons: 0,
           created_at: nowMs + 1000,
         });
-
-        const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
-        const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
-
-        if (!existingBooking) {
-          const newBooking = await createBooking(env, {
-            chatId: m.chatId,
-            clientName,
-            phone: cleanPhone || null,
-            timezone: detectedTz?.code || "BD",
-            status: "lead",
-            followupType: "auto",
-            nextFollowupAt: nowMs + 2 * 3600 * 1000,
-            followupIntervalHours: 2,
-            lastClientReplyAt: nowMs,
-            source: "whatsapp",
-            notes: "New lead reached out. Sent CSO Calendly link & niche discovery question.",
-          });
-          await syncBookingToTodo(env, newBooking, nowMs);
-        } else {
-          const updated = await updateBooking(env, existingBooking.id, {
-            status: "lead",
-            followup_type: "auto",
-            next_followup_at: nowMs + 2 * 3600 * 1000,
-            followup_interval_hours: 2,
-            followup_count: 0,
-            last_client_reply_at: nowMs,
-          });
-          await syncBookingToTodo(env, updated, nowMs);
-        }
 
         return {
           action: "reply",
@@ -1247,7 +1257,7 @@ function analyzeConversationMemory(params: {
     .join("\n");
 }
 
-export function generateFollowupText(b: {
+export function getNaturalFallbackFollowupText(b: {
   client_name?: string | null;
   scheduled_at?: string | null;
   call_time_ms?: number | null;
@@ -1258,7 +1268,7 @@ export function generateFollowupText(b: {
   notes?: string | null;
   custom_followup_msg?: string | null;
 }): string | null {
-  const type = b.followup_type || "auto_day1";
+  const type = b.followup_type || "auto";
   const count = b.followup_count || 0;
 
   // If rejected, not interested, or fake lead, or 22+ followups sent without reply -> strictly NO follow-up
@@ -1283,16 +1293,16 @@ export function generateFollowupText(b: {
   const greetHi = useName ? `Hi ${firstName}!` : `Hi!`;
   const greetHey = useName ? `Hey ${firstName}!` : `Hey!`;
 
-  // Stage 4: Client Choice Time / Date Follow-Up ("i msg you 2 hour later", "5 min later knock me", "i am free at 2 pm")
+  // Stage: Client Choice Time / Date Follow-Up
   if (type === "client_date") {
     const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
     if (useName) {
-      return `Hi ${firstName}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
+      return `Hi ${firstName}! Hope you're doing well. You mentioned checking in around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a good time to chat about ${reqTopic}?`;
     }
-    return `Hope you're doing well! Following up as you mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
+    return `Hope you're doing well! Following up as you mentioned checking in around now${cleanTime ? ` (${cleanTime})` : ""} — would now be a good time to chat about ${reqTopic}?`;
   }
 
-  // Stage 5: Custom Management Timer Follow-Up
+  // Custom Management Timer Follow-Up
   if (type === "custom_timer" || type === "custom") {
     if (b.notes?.trim()) {
       if (useName) {
@@ -1321,13 +1331,13 @@ export function generateFollowupText(b: {
   }
   if (type === "buy_soon" || b.status === "buy_soon") {
     if (useName) {
-      return `Hey ${firstName}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
+      return `Hey ${firstName}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow before getting started? Happy to help whenever you're ready!`;
     }
-    return `Hope your week is going great! Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
+    return `Hope your week is going great! Just wanted to follow up and see if you had any questions on our editing workflow before getting started? Happy to help whenever you're ready!`;
   }
   if (type === "nurture") {
     if (useName) {
-      return `Hey ${firstName}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+      return `Hey ${firstName}! Wanted to share a few recent video edits we produced for creators in your niche: https://vidmox.pages.dev/portfolio. Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
     }
     return `Wanted to share a few recent video edits we produced for creators in your niche: https://vidmox.pages.dev/portfolio. Let me know if you'd like to test a sample edit or jump on a quick 15-minute call!`;
   }
@@ -1343,74 +1353,196 @@ export function generateFollowupText(b: {
     return `${opener} Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
   }
 
-  // Simple Auto Follow-Up (1st: 2h, 2nd: 12h, 3rd to 22nd: Daily for 21 days)
+  // Simple Auto Follow-Up — ULTRA-HUMAN, CONVERSATIONAL (Zero repetitive price reciting!)
+  const autoTemplates = [
+    // 0 (1st follow-up / 2h later) - even: uses name
+    `${greetHey} Just following up on my earlier message — curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
+    // 1 (2nd follow-up / 12h later) - odd: NO name
+    `Quick question — how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
+    // 2 (3rd follow-up / Day 2 / 24h later) - even: uses name
+    `${greetHi} Wanted to share a quick peek at some recent video edits we produced (https://vidmox.pages.dev/portfolio). We can replicate any style your brand needs!`,
+    // 3 (4th follow-up / Day 3 / 24h later) - odd: NO name
+    `If you have a quick raw video clip ready, we'd be happy to edit a sample video for you so you can see our editing quality and turnaround firsthand. Let me know if you'd like to test that!`,
+    // 4 (5th follow-up / Day 4 / 24h later) - even: uses name
+    `${greetHey} Hope your week is going smoothly! Just checking in — are you still looking to outsource your video editing this month, or did you already get that taken care of?`,
+    // 5 (6th follow-up / Day 5 / 24h later) - odd: NO name
+    `Quick note on workflow — with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24–48 hours with unlimited revisions.`,
+    // 6 (7th follow-up / Day 6 / 24h later) - even: uses name
+    `${greetHi} Would 10–15 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
+    // 7 (8th follow-up / Day 7 / 24h later) - odd: NO name
+    `It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
+    // 8 (9th follow-up / Day 8 / 24h later) - even: uses name
+    `${greetHey} One thing our clients love is our unlimited revisions policy — we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
+    // 9 (10th follow-up / Day 9 / 24h later) - odd: NO name
+    `Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website, our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
+    // 10 (11th follow-up / Day 10 / 24h later) - even: uses name
+    `${greetHi} If you have a raw video clip ready, feel free to drop a link right here — we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
+    // 11 (12th follow-up / Day 11 / 24h later) - odd: NO name
+    `Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
+    // 12 (13th follow-up / Day 12 / 24h later) - even: uses name
+    `${greetHey} Still here to help whenever you're ready to ramp up your content engine! Feel free to ping back anytime.`,
+    // 13 (14th follow-up / Day 13 / 24h later) - odd: NO name
+    `Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
+    // 14 (15th follow-up / Day 14 / 24h later) - even: uses name
+    `${greetHi} 2-week check-in — if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
+    // 15 (16th follow-up / Day 15 / 24h later) - odd: NO name
+    `I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
+    // 16 (17th follow-up / Day 16 / 24h later) - even: uses name
+    `${greetHey} If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
+    // 17 (18th follow-up / Day 17 / 24h later) - odd: NO name
+    `Leaving our portfolio link handy in case you want to check out our recent edits for inspiration: https://vidmox.pages.dev/portfolio`,
+    // 18 (19th follow-up / Day 18 / 24h later) - even: uses name
+    `${greetHi} Quick question — if you decided to hold off on editing for now, was it due to turnaround time, editing style, or budget? Would love your honest thoughts so we can improve!`,
+    // 19 (20th follow-up / Day 19 / 24h later) - odd: NO name
+    `CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
+    // 20 (21st follow-up / Day 20 / 24h later) - even: uses name
+    `${greetHey} I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
+    // 21 (22nd follow-up / Day 21 / 24h later - final breakup) - odd: NO name
+    `Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`,
+  ];
+  return autoTemplates[Math.min(count, autoTemplates.length - 1)];
+}
+
+/**
+ * Synchronous backward-compatible alias.
+ */
+export function generateFollowupText(b: {
+  client_name?: string | null;
+  scheduled_at?: string | null;
+  call_time_ms?: number | null;
+  status: string;
+  followup_type?: string | null;
+  followup_count?: number;
+  requirements?: string | null;
+  notes?: string | null;
+  custom_followup_msg?: string | null;
+}): string | null {
+  return getNaturalFallbackFollowupText(b);
+}
+
+/**
+ * Generates an ultra-human, conversational follow-up message by analyzing up to 20 past inbox messages.
+ * Prevents robotic price dumping and tailors the follow-up directly to what the client actually discussed.
+ */
+export async function generateSmartFollowupMessage(
+  env: AppEnv,
+  b: Booking | {
+    id?: string;
+    chat_id?: string;
+    client_name?: string | null;
+    phone?: string | null;
+    scheduled_at?: string | null;
+    call_time_ms?: number | null;
+    status: string;
+    followup_type?: string | null;
+    followup_count?: number;
+    requirements?: string | null;
+    notes?: string | null;
+    custom_followup_msg?: string | null;
+  },
+  nowMs: number = Date.now(),
+): Promise<string | null> {
+  const count = b.followup_count || 0;
+  const type = b.followup_type || "auto";
+
+  // If rejected, fake lead, or completed/cancelled -> strictly no follow-up
   if (
-    type === "auto" ||
-    type === "auto_day1" ||
-    type === "day2_12h" ||
-    type === "days3_7_daily" ||
-    type === "days7_21_daily"
+    count >= 22 ||
+    type === "rejected" ||
+    b.status === "not_interested" ||
+    b.status === "fake_lead" ||
+    b.status === "completed" ||
+    b.status === "cancelled"
   ) {
-    const autoTemplates = [
-      // 0 (1st follow-up / 2h later) - even: uses name
-      `${greetHey} Just following up on my earlier message — curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
-      // 1 (2nd follow-up / 12h later) - odd: NO name
-      `Quick question — how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
-      // 2 (3rd follow-up / Day 2 / 24h later) - even: uses name
-      `${greetHi} Wanted to share a quick peek at some recent video edits we produced (https://vidmox.pages.dev/portfolio). We can replicate any style your brand needs!`,
-      // 3 (4th follow-up / Day 3 / 24h later) - odd: NO name
-      `If you want to test our editing quality completely risk-free, we offer a $29 Kickstart Trial — we'll edit 1 full Reel/Short with custom hooks, animated captions, sound design & 24h turnaround. Would you like to try that for your next video?`,
-      // 4 (5th follow-up / Day 4 / 24h later) - even: uses name
-      `${greetHey} In case you're exploring editing packages, here is our transparent package pricing from the site:\n• Growth Package: $330 (30 short-form videos & fast turnaround)\n• Content Engine (Scale): $630 (high-volume short-form + long-form)\n• Advance Package: $1,060 (full-scale dedicated production)\n• Websites: starting from $50\nWe can also customize any package to fit your exact video count and budget. Does one of these match what you had in mind?`,
-      // 5 (6th follow-up / Day 5 / 24h later) - odd: NO name
-      `Quick note on workflow — with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24–48 hours with unlimited revisions.`,
-      // 6 (7th follow-up / Day 6 / 24h later) - even: uses name
-      `${greetHi} Would 10–15 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
-      // 7 (8th follow-up / Day 7 / 24h later) - odd: NO name
-      `It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
-      // 8 (9th follow-up / Day 8 / 24h later) - even: uses name
-      `${greetHey} One thing our clients love is our unlimited revisions policy — we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
-      // 9 (10th follow-up / Day 9 / 24h later) - odd: NO name
-      `Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website ($50), our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
-      // 10 (11th follow-up / Day 10 / 24h later) - even: uses name
-      `${greetHi} If you have a raw video clip ready, feel free to drop a link right here — we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
-      // 11 (12th follow-up / Day 11 / 24h later) - odd: NO name
-      `Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
-      // 12 (13th follow-up / Day 12 / 24h later) - even: uses name
-      `${greetHey} Still here to help whenever you're ready to ramp up your content engine! You can also check out our pricing tiers anytime at https://vidmox.pages.dev/pricing`,
-      // 13 (14th follow-up / Day 13 / 24h later) - odd: NO name
-      `Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
-      // 14 (15th follow-up / Day 14 / 24h later) - even: uses name
-      `${greetHi} 2-week check-in — if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
-      // 15 (16th follow-up / Day 15 / 24h later) - odd: NO name
-      `I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
-      // 16 (17th follow-up / Day 16 / 24h later) - even: uses name
-      `${greetHey} If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
-      // 17 (18th follow-up / Day 17 / 24h later) - odd: NO name
-      `Leaving our $29 Kickstart Trial link handy in case you want to test our editing quality on an upcoming shoot: https://vidmox.pages.dev`,
-      // 18 (19th follow-up / Day 18 / 24h later) - even: uses name
-      `${greetHi} Quick question — if our current packages weren't a fit, was it due to pricing, turnaround time, or editing style? Would love your honest feedback so we can do better!`,
-      // 19 (20th follow-up / Day 19 / 24h later) - odd: NO name
-      `CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
-      // 20 (21st follow-up / Day 20 / 24h later) - even: uses name
-      `${greetHey} I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
-      // 21 (22nd follow-up / Day 21 / 24h later - final breakup) - odd: NO name
-      `Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`,
-    ];
-    return autoTemplates[Math.min(count, autoTemplates.length - 1)];
+    return null;
   }
 
-  if (b.status === "completed") {
-    if (useName) {
-      return `Hi ${firstName}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+  // 1. If admin manually typed a custom message for this follow-up, use it!
+  if (b.custom_followup_msg && b.custom_followup_msg.trim()) {
+    return b.custom_followup_msg.trim();
+  }
+
+  // 2. Booked call 30-min meeting reminder
+  if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+    return getNaturalFallbackFollowupText(b);
+  }
+
+  // 3. Client Choice Date follow-up ("knock me tomorrow at 4pm", "in 2 hours", etc.)
+  if (type === "client_date") {
+    return getNaturalFallbackFollowupText(b);
+  }
+
+  // 4. Fetch up to the last 20 messages from the inbox/chat history
+  const targetChatId = b.chat_id || (b.phone ? `${b.phone.replace(/\D/g, "")}@s.whatsapp.net` : null);
+  let history: Array<{ role: string; content: string; sender_name?: string | null }> = [];
+  if (targetChatId) {
+    try {
+      const rows = await env.DB.prepare(
+        "SELECT role, content, sender_name FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 20"
+      )
+        .bind(targetChatId)
+        .all<{ role: string; content: string; sender_name?: string | null }>();
+      history = (rows.results || []).reverse();
+    } catch (err) {
+      console.warn("Failed fetching last 20 messages for smart follow-up:", err);
     }
-    return `Great speaking with you on the call! Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
   }
 
-  if (useName) {
-    return `Hey ${firstName}! Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
+  // If there are real messages in the chat history, use AI to generate a contextual, ultra-human follow-up!
+  const hasClientMessages = history.some((m) => m.role === "user" && m.content.trim().length > 0);
+  if (hasClientMessages) {
+    try {
+      const s = await getSettings(env);
+      const provider = getProvider(s.provider);
+      const firstName = extractFirstName(b.client_name) || "";
+
+      const systemPrompt = `You are Nyra Rose, a friendly, ultra-human and warm client onboarding specialist at VIDMOX (a premium video editing agency).
+Your task is to write a single, natural WhatsApp follow-up message to this client based on the actual conversation history.
+
+CRITICAL INSTRUCTIONS:
+1. READ THE LAST 20 INBOX MESSAGES CAREFULLY. Notice what the client asked, their content format (Reels, TikToks, Shorts, YouTube, podcasts, ads), their tone, and where the conversation paused.
+2. ABSOLUTELY DO NOT REPEATEDLY RECITE OR DUMP PRICES/PACKAGES ("ki bar bar price koia koia flow up dei"). Do NOT give lists of dollar amounts ($330, $630, etc.) unless the client's last unanswered question was explicitly asking for pricing.
+3. SOUND 100% HUMAN, WARM, AND CONVERSATIONAL. Write like a real person following up on WhatsApp, not an automated drip campaign, corporate blast, or pushy salesperson.
+4. Keep it SHORT: 1 to 2 sentences (maximum 3 sentences).
+5. Follow-Up Stage:
+   - 1st follow-up (2h later, count ${count}): Natural, friendly check-in on their video goals or recent question.
+   - 2nd follow-up (12h later, count ${count}): Warm touchpoint offering to share a couple of relevant sample edits from their niche (https://vidmox.pages.dev/portfolio) or a risk-free sample edit.
+   - Daily follow-ups (count 2 to 20): Thoughtful, value-driven check-ins, asking about raw footage, turnaround time, or checking if they need a quick chat with our CSO Armaan (https://calendly.com/armaan-gineus/30min).
+   - Final breakup (count 21): Respectful, friendly goodbye letting them know you're closing out the active thread and wishing them success with their content.
+6. Return ONLY the final WhatsApp message text. No quotation marks around the message, no markdown headers, no preamble.`;
+
+      const userPrompt = `Client Name: ${b.client_name || "Client"}
+Client Phone: ${b.phone || targetChatId || "N/A"}
+Follow-Up Count: ${count}
+Niche / Notes: ${b.requirements || b.notes || "Video editing inquiry"}
+
+--- INBOX HISTORY (LAST 20 MESSAGES) ---
+${history.map((m) => `${m.role === "assistant" ? "Nyra" : (b.client_name || "Client")}: ${m.content}`).join("\n")}
+---------------------------------------
+
+Generate the natural, human follow-up message to send right now:`;
+
+      const aiOut = await provider.generate(env, {
+        model: s.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        maxTokens: 120,
+        temperature: 0.6,
+      });
+
+      const cleaned = (aiOut.text || "").trim().replace(/^["']|["']$/g, "").trim();
+      if (cleaned.length >= 15) {
+        return cleaned;
+      }
+    } catch (err) {
+      console.warn("AI smart follow-up generation failed, falling back to natural template:", err);
+    }
   }
-  return `Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
+
+  // Fallback: Ultra-human natural templates that DO NOT repeat prices over and over
+  return getNaturalFallbackFollowupText(b);
 }
 
 /**
@@ -1475,7 +1607,7 @@ export async function processDueFollowups(
       continue;
     }
 
-    const message = generateFollowupText(b);
+    const message = await generateSmartFollowupMessage(env, b, now);
     if (!message) {
       const cleared = await updateBooking(env, b.id, { next_followup_at: null });
       await syncBookingToTodo(env, cleared, now);

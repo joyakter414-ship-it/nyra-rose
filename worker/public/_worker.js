@@ -124,7 +124,7 @@ async function getTodos(env, chatId, onlyPending = false) {
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 200";
+  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 3000";
   const { results } = await env.DB.prepare(query).bind(...params).all();
   return results;
 }
@@ -279,12 +279,6 @@ async function upsertBookingTodo(env, b, formattedDueDate, defaultAiMessage) {
     } else if (b.followup_type === "buy_soon" || b.status === "buy_soon") {
       taskTitle = `\u23F3 Closing Follow-Up (Buying Soon): ${clientLabel}`;
       taskType = "client_followup";
-    } else if (b.followup_type === "client_date") {
-      taskTitle = `\u{1F4C5} Client Choice Follow-Up: ${clientLabel}`;
-      taskType = "client_followup";
-    } else if (b.followup_type === "custom_timer") {
-      taskTitle = `\u23F1\uFE0F Custom Timer Follow-Up: ${clientLabel}`;
-      taskType = "client_followup";
     } else {
       const count = b.followup_count || 0;
       if (count === 0) {
@@ -345,18 +339,23 @@ async function getBookings(env, status, followupType) {
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY created_at DESC LIMIT 200";
+  query += " ORDER BY created_at DESC LIMIT 3000";
   const { results } = await env.DB.prepare(query).bind(...params).all();
   return results;
 }
 async function createBooking(env, b) {
   const id = `book_${crypto.randomUUID().slice(0, 8)}`;
   const created_at = Date.now();
-  const status = b.status || "booked";
-  const followup_type = b.followup_type || "auto";
+  const cleanPhone = (b.phone || "").replace(/\D/g, "");
+  const rawChatId = b.chat_id || b.chatId || (cleanPhone.length >= 7 ? `${cleanPhone}@s.whatsapp.net` : "dashboard");
+  const chat_id = (rawChatId || "dashboard").trim();
+  const client_name = (b.client_name ?? b.clientName ?? null)?.trim() ?? null;
+  const status = b.status || "lead";
+  const followup_type = b.followup_type || b.followupType || "auto";
   const source = b.source || "whatsapp";
-  const followup_interval_hours = b.followup_interval_hours ?? 3.5;
-  const last_client_reply_at = b.last_client_reply_at ?? created_at;
+  const followup_interval_hours = b.followup_interval_hours ?? b.followupIntervalHours ?? 2;
+  const last_client_reply_at = b.last_client_reply_at ?? b.lastClientReplyAt ?? created_at;
+  const next_followup_at = b.next_followup_at ?? b.nextFollowupAt ?? null;
   await env.DB.prepare(
     `INSERT INTO bookings (
        id, chat_id, client_name, phone, email, scheduled_at, timezone,
@@ -366,8 +365,8 @@ async function createBooking(env, b) {
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0, ?)`
   ).bind(
     id,
-    b.chat_id,
-    b.client_name?.trim() ?? null,
+    chat_id,
+    client_name,
     b.phone?.trim() ?? null,
     b.email?.trim() ?? null,
     b.scheduled_at?.trim() ?? null,
@@ -376,7 +375,7 @@ async function createBooking(env, b) {
     b.requirements?.trim() ?? null,
     status,
     followup_type,
-    b.next_followup_at ?? null,
+    next_followup_at,
     b.call_time_ms ?? null,
     last_client_reply_at,
     followup_interval_hours,
@@ -387,8 +386,8 @@ async function createBooking(env, b) {
   ).run();
   return {
     id,
-    chat_id: b.chat_id,
-    client_name: b.client_name?.trim() ?? null,
+    chat_id,
+    client_name,
     phone: b.phone?.trim() ?? null,
     email: b.email?.trim() ?? null,
     scheduled_at: b.scheduled_at?.trim() ?? null,
@@ -397,7 +396,7 @@ async function createBooking(env, b) {
     requirements: b.requirements?.trim() ?? null,
     status,
     followup_type,
-    next_followup_at: b.next_followup_at ?? null,
+    next_followup_at,
     call_time_ms: b.call_time_ms ?? null,
     last_client_reply_at,
     followup_interval_hours,
@@ -466,7 +465,7 @@ async function getDueFollowups(env, now) {
        AND status NOT IN ('fake_lead', 'not_interested', 'completed', 'cancelled')
        AND followup_type != 'rejected'
      ORDER BY next_followup_at ASC
-     LIMIT 5`
+     LIMIT 25`
   ).bind(now).all();
   return results;
 }
@@ -476,8 +475,21 @@ async function deleteBooking(env, id) {
   const res = await env.DB.prepare("DELETE FROM bookings WHERE id = ?").bind(id).run();
   return (res.meta.changes ?? 0) > 0;
 }
-async function findLatestBookingForChat(env, chatId) {
-  return await env.DB.prepare("SELECT * FROM bookings WHERE chat_id = ? ORDER BY created_at DESC LIMIT 1").bind(chatId).first();
+async function findLatestBookingForChat(env, chatId, senderPhone) {
+  const cleanChat = (chatId || "").trim();
+  const cleanDigits = (senderPhone || (cleanChat.includes("@") ? cleanChat.split("@")[0] : cleanChat)).replace(/\D/g, "");
+  if (cleanDigits.length >= 7) {
+    const res = await env.DB.prepare(
+      `SELECT * FROM bookings
+       WHERE chat_id = ?
+          OR phone = ?
+          OR phone = ?
+          OR (length(phone) >= 7 AND phone LIKE ?)
+       ORDER BY created_at DESC LIMIT 1`
+    ).bind(cleanChat, cleanDigits, `+${cleanDigits}`, `%${cleanDigits.slice(-8)}%`).first().catch(() => null);
+    if (res) return res;
+  }
+  return await env.DB.prepare("SELECT * FROM bookings WHERE chat_id = ? ORDER BY created_at DESC LIMIT 1").bind(cleanChat).first().catch(() => null);
 }
 async function ensureBudgetTable(env) {
   await env.DB.prepare(`
@@ -1169,17 +1181,54 @@ async function handleIncoming(env, m) {
     created_at: m.timestamp ?? Date.now()
   });
   if (!isNew) return { action: "ignore", reason: "duplicate delivery" };
+  if (!m.isGroup) {
+    try {
+      const existingBooking = await findLatestBookingForChat(env, m.chatId, m.senderPhone).catch(() => null);
+      const isAlreadyBooked = existingBooking && (existingBooking.status === "booked" || existingBooking.status === "confirmed");
+      const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
+      const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
+      const nowMs = Date.now();
+      const clientName = m.chatName || m.senderName || "New Lead";
+      if (!existingBooking) {
+        const newBooking = await createBooking(env, {
+          chat_id: m.chatId,
+          client_name: clientName,
+          phone: cleanPhone || null,
+          timezone: detectedTz?.code || "BD",
+          status: "lead",
+          followup_type: "auto",
+          next_followup_at: nowMs + 2 * 3600 * 1e3,
+          followup_interval_hours: 2,
+          last_client_reply_at: nowMs,
+          source: "whatsapp",
+          notes: "New lead reached out via WhatsApp."
+        });
+        await syncBookingToTodo(env, newBooking, nowMs);
+      } else if (!isAlreadyBooked) {
+        const updated = await updateBooking(env, existingBooking.id, {
+          status: existingBooking.status === "fake_lead" ? "lead" : existingBooking.status,
+          last_client_reply_at: nowMs,
+          followup_count: 0,
+          next_followup_at: nowMs + 2 * 3600 * 1e3,
+          followup_interval_hours: 2,
+          followup_type: existingBooking.followup_type === "rejected" ? "auto" : existingBooking.followup_type
+        });
+        await syncBookingToTodo(env, updated, nowMs);
+      }
+    } catch (err) {
+      console.warn("Failed ensuring lead booking in CRM:", err);
+    }
+  }
   if (!m.isGroup && !instantPaused) {
     const priorAssistant = await env.DB.prepare(
       "SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = ? AND role = 'assistant'"
     ).bind(m.chatId).first();
     const isFirstContact = !priorAssistant || priorAssistant.cnt === 0;
     if (isFirstContact) {
-      const existingBooking = await findLatestBookingForChat(env, m.chatId).catch(() => null);
+      const existingBooking = await findLatestBookingForChat(env, m.chatId, m.senderPhone).catch(() => null);
       const isAlreadyBooked = existingBooking && (existingBooking.status === "booked" || existingBooking.status === "confirmed");
       if (!isAlreadyBooked) {
         const nowMs = Date.now();
-        const clientName = m.chatName || m.senderName || "New Lead";
         const msg1 = buildFirstContactMsg1(m.senderName || m.chatName);
         await insertMessage(env, {
           id: `welcome:1:${crypto.randomUUID()}`,
@@ -1205,34 +1254,6 @@ async function handleIncoming(env, m) {
           neurons: 0,
           created_at: nowMs + 1e3
         });
-        const cleanPhone = (m.senderPhone || (m.chatId.includes("@") ? m.chatId.split("@")[0] : "")).replace(/[^0-9]/g, "");
-        const detectedTz = detectTimezoneFromPhone(cleanPhone || m.chatId);
-        if (!existingBooking) {
-          const newBooking = await createBooking(env, {
-            chatId: m.chatId,
-            clientName,
-            phone: cleanPhone || null,
-            timezone: detectedTz?.code || "BD",
-            status: "lead",
-            followupType: "auto",
-            nextFollowupAt: nowMs + 2 * 3600 * 1e3,
-            followupIntervalHours: 2,
-            lastClientReplyAt: nowMs,
-            source: "whatsapp",
-            notes: "New lead reached out. Sent CSO Calendly link & niche discovery question."
-          });
-          await syncBookingToTodo(env, newBooking, nowMs);
-        } else {
-          const updated = await updateBooking(env, existingBooking.id, {
-            status: "lead",
-            followup_type: "auto",
-            next_followup_at: nowMs + 2 * 3600 * 1e3,
-            followup_interval_hours: 2,
-            followup_count: 0,
-            last_client_reply_at: nowMs
-          });
-          await syncBookingToTodo(env, updated, nowMs);
-        }
         return {
           action: "reply",
           reply: msg1,
@@ -2025,8 +2046,8 @@ function analyzeConversationMemory(params) {
     `\u2022 WHAT TO TALK ABOUT RIGHT NOW: ${nextSalesObjective}`
   ].filter(Boolean).join("\n");
 }
-function generateFollowupText(b) {
-  const type = b.followup_type || "auto_day1";
+function getNaturalFallbackFollowupText(b) {
+  const type = b.followup_type || "auto";
   const count = b.followup_count || 0;
   if (count >= 22 || type === "rejected" || b.status === "not_interested" || b.status === "fake_lead") {
     return null;
@@ -2043,9 +2064,9 @@ function generateFollowupText(b) {
   if (type === "client_date") {
     const cleanTime = b.scheduled_at ? b.scheduled_at.replace(/^Follow-up:\s*/i, "") : "";
     if (useName) {
-      return `Hi ${firstName}! Hope you're doing well. You mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
+      return `Hi ${firstName}! Hope you're doing well. You mentioned checking in around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a good time to chat about ${reqTopic}?`;
     }
-    return `Hope you're doing well! Following up as you mentioned you'd be free around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a convenient time to chat or arrange a quick call about ${reqTopic}?`;
+    return `Hope you're doing well! Following up as you mentioned checking in around now${cleanTime ? ` (${cleanTime})` : ""} \u2014 would now be a good time to chat about ${reqTopic}?`;
   }
   if (type === "custom_timer" || type === "custom") {
     if (b.notes?.trim()) {
@@ -2073,13 +2094,13 @@ function generateFollowupText(b) {
   }
   if (type === "buy_soon" || b.status === "buy_soon") {
     if (useName) {
-      return `Hey ${firstName}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
+      return `Hey ${firstName}! Hope you're having a great week. Just wanted to follow up and see if you had any questions on our editing workflow before getting started? Happy to help whenever you're ready!`;
     }
-    return `Hope your week is going great! Just wanted to follow up and see if you had any questions on our editing workflow or packages for ${reqTopic} before getting started? Happy to help whenever you're ready to roll!`;
+    return `Hope your week is going great! Just wanted to follow up and see if you had any questions on our editing workflow before getting started? Happy to help whenever you're ready!`;
   }
   if (type === "nurture") {
     if (useName) {
-      return `Hey ${firstName}! Wanted to share a few recent video edits we did for creators in your niche (https://vidmox.pages.dev/portfolio). Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
+      return `Hey ${firstName}! Wanted to share a few recent video edits we produced for creators in your niche: https://vidmox.pages.dev/portfolio. Let me know if you'd like us to create a sample for your content or jump on a quick 15-minute call!`;
     }
     return `Wanted to share a few recent video edits we produced for creators in your niche: https://vidmox.pages.dev/portfolio. Let me know if you'd like to test a sample edit or jump on a quick 15-minute call!`;
   }
@@ -2092,70 +2113,132 @@ function generateFollowupText(b) {
     const opener = firstName ? `Hi ${firstName}!` : `Hi!`;
     return `${opener} Just a quick reminder that you have your video strategy meeting with our team in ${minsText}${b.scheduled_at ? ` (${b.scheduled_at})` : ""}. Looking forward to speaking with you!`;
   }
-  if (type === "auto" || type === "auto_day1" || type === "day2_12h" || type === "days3_7_daily" || type === "days7_21_daily") {
-    const autoTemplates = [
-      // 0 (1st follow-up / 2h later) - even: uses name
-      `${greetHey} Just following up on my earlier message \u2014 curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
-      // 1 (2nd follow-up / 12h later) - odd: NO name
-      `Quick question \u2014 how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
-      // 2 (3rd follow-up / Day 2 / 24h later) - even: uses name
-      `${greetHi} Wanted to share a quick peek at some recent video edits we produced (https://vidmox.pages.dev/portfolio). We can replicate any style your brand needs!`,
-      // 3 (4th follow-up / Day 3 / 24h later) - odd: NO name
-      `If you want to test our editing quality completely risk-free, we offer a $29 Kickstart Trial \u2014 we'll edit 1 full Reel/Short with custom hooks, animated captions, sound design & 24h turnaround. Would you like to try that for your next video?`,
-      // 4 (5th follow-up / Day 4 / 24h later) - even: uses name
-      `${greetHey} In case you're exploring editing packages, here is our transparent package pricing from the site:
-\u2022 Growth Package: $330 (30 short-form videos & fast turnaround)
-\u2022 Content Engine (Scale): $630 (high-volume short-form + long-form)
-\u2022 Advance Package: $1,060 (full-scale dedicated production)
-\u2022 Websites: starting from $50
-We can also customize any package to fit your exact video count and budget. Does one of these match what you had in mind?`,
-      // 5 (6th follow-up / Day 5 / 24h later) - odd: NO name
-      `Quick note on workflow \u2014 with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24\u201348 hours with unlimited revisions.`,
-      // 6 (7th follow-up / Day 6 / 24h later) - even: uses name
-      `${greetHi} Would 10\u201315 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
-      // 7 (8th follow-up / Day 7 / 24h later) - odd: NO name
-      `It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
-      // 8 (9th follow-up / Day 8 / 24h later) - even: uses name
-      `${greetHey} One thing our clients love is our unlimited revisions policy \u2014 we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
-      // 9 (10th follow-up / Day 9 / 24h later) - odd: NO name
-      `Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website ($50), our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
-      // 10 (11th follow-up / Day 10 / 24h later) - even: uses name
-      `${greetHi} If you have a raw video clip ready, feel free to drop a link right here \u2014 we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
-      // 11 (12th follow-up / Day 11 / 24h later) - odd: NO name
-      `Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
-      // 12 (13th follow-up / Day 12 / 24h later) - even: uses name
-      `${greetHey} Still here to help whenever you're ready to ramp up your content engine! You can also check out our pricing tiers anytime at https://vidmox.pages.dev/pricing`,
-      // 13 (14th follow-up / Day 13 / 24h later) - odd: NO name
-      `Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
-      // 14 (15th follow-up / Day 14 / 24h later) - even: uses name
-      `${greetHi} 2-week check-in \u2014 if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
-      // 15 (16th follow-up / Day 15 / 24h later) - odd: NO name
-      `I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
-      // 16 (17th follow-up / Day 16 / 24h later) - even: uses name
-      `${greetHey} If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
-      // 17 (18th follow-up / Day 17 / 24h later) - odd: NO name
-      `Leaving our $29 Kickstart Trial link handy in case you want to test our editing quality on an upcoming shoot: https://vidmox.pages.dev`,
-      // 18 (19th follow-up / Day 18 / 24h later) - even: uses name
-      `${greetHi} Quick question \u2014 if our current packages weren't a fit, was it due to pricing, turnaround time, or editing style? Would love your honest feedback so we can do better!`,
-      // 19 (20th follow-up / Day 19 / 24h later) - odd: NO name
-      `CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
-      // 20 (21st follow-up / Day 20 / 24h later) - even: uses name
-      `${greetHey} I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
-      // 21 (22nd follow-up / Day 21 / 24h later - final breakup) - odd: NO name
-      `Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`
-    ];
-    return autoTemplates[Math.min(count, autoTemplates.length - 1)];
+  const autoTemplates = [
+    // 0 (1st follow-up / 2h later) - even: uses name
+    `${greetHey} Just following up on my earlier message \u2014 curious if you're currently focused on short-form (Reels/TikTok/Shorts) or YouTube long-form content right now?`,
+    // 1 (2nd follow-up / 12h later) - odd: NO name
+    `Quick question \u2014 how many videos are you looking to produce each month? Most creators and brands we work with were spending 15+ hours a week editing before handing it over to our team.`,
+    // 2 (3rd follow-up / Day 2 / 24h later) - even: uses name
+    `${greetHi} Wanted to share a quick peek at some recent video edits we produced (https://vidmox.pages.dev/portfolio). We can replicate any style your brand needs!`,
+    // 3 (4th follow-up / Day 3 / 24h later) - odd: NO name
+    `If you have a quick raw video clip ready, we'd be happy to edit a sample video for you so you can see our editing quality and turnaround firsthand. Let me know if you'd like to test that!`,
+    // 4 (5th follow-up / Day 4 / 24h later) - even: uses name
+    `${greetHey} Hope your week is going smoothly! Just checking in \u2014 are you still looking to outsource your video editing this month, or did you already get that taken care of?`,
+    // 5 (6th follow-up / Day 5 / 24h later) - odd: NO name
+    `Quick note on workflow \u2014 with our setup, you get a dedicated editor and project manager right on WhatsApp or Slack. You just drop your raw clips into Google Drive or Dropbox and get polished, ready-to-post edits back in 24\u201348 hours with unlimited revisions.`,
+    // 6 (7th follow-up / Day 6 / 24h later) - even: uses name
+    `${greetHi} Would 10\u201315 minutes on a quick call with our CSO Armaan help map out the best strategy for your videos? You can grab a time that fits your schedule: https://calendly.com/armaan-gineus/30min`,
+    // 7 (8th follow-up / Day 7 / 24h later) - odd: NO name
+    `It's been a week since you reached out. Just wanted to see if video editing is still on your radar, or if you've already got another solution in place?`,
+    // 8 (9th follow-up / Day 8 / 24h later) - even: uses name
+    `${greetHey} One thing our clients love is our unlimited revisions policy \u2014 we keep refining your video until it's 100% on-brand and ready to publish. No extra fees or hourly charges.`,
+    // 9 (10th follow-up / Day 9 / 24h later) - odd: NO name
+    `Whether you need Reels, YouTube long-form, VSLs, podcast cutdowns, or a clean creator website, our team has handled 500+ edits across tech, finance, fitness, and coaching. Let me know if you'd like to see samples from your exact niche!`,
+    // 10 (11th follow-up / Day 10 / 24h later) - even: uses name
+    `${greetHi} If you have a raw video clip ready, feel free to drop a link right here \u2014 we can do a quick video audit and give you feedback on hooks, pacing, and retention improvements for free.`,
+    // 11 (12th follow-up / Day 11 / 24h later) - odd: NO name
+    `Hope business is running smoothly. Just a gentle nudge in case you're still looking to outsource your video editing and get back 15+ hours each week.`,
+    // 12 (13th follow-up / Day 12 / 24h later) - even: uses name
+    `${greetHey} Still here to help whenever you're ready to ramp up your content engine! Feel free to ping back anytime.`,
+    // 13 (14th follow-up / Day 13 / 24h later) - odd: NO name
+    `Following up to see if you have any questions on how our dedicated editor and project manager integrate with your workflow? Happy to jump on a quick call or chat right here.`,
+    // 14 (15th follow-up / Day 14 / 24h later) - even: uses name
+    `${greetHi} 2-week check-in \u2014 if the timing isn't right this month, no worries at all! Just let me know if you'd prefer I follow up next month instead.`,
+    // 15 (16th follow-up / Day 15 / 24h later) - odd: NO name
+    `I know how busy running content and business gets. Should I keep your file active for editing support, or is this not a priority right now?`,
+    // 16 (17th follow-up / Day 16 / 24h later) - even: uses name
+    `${greetHey} If you ever need an overflow editing team for a high-volume launch or rush project (24h turnaround), keep VIDMOX in your back pocket. Always happy to step in on short notice.`,
+    // 17 (18th follow-up / Day 17 / 24h later) - odd: NO name
+    `Leaving our portfolio link handy in case you want to check out our recent edits for inspiration: https://vidmox.pages.dev/portfolio`,
+    // 18 (19th follow-up / Day 18 / 24h later) - even: uses name
+    `${greetHi} Quick question \u2014 if you decided to hold off on editing for now, was it due to turnaround time, editing style, or budget? Would love your honest thoughts so we can improve!`,
+    // 19 (20th follow-up / Day 19 / 24h later) - odd: NO name
+    `CSO Armaan still has a couple of slots open this week if you'd like a quick 10-minute strategy chat: https://calendly.com/armaan-gineus/30min`,
+    // 20 (21st follow-up / Day 20 / 24h later) - even: uses name
+    `${greetHey} I don't want to clutter your WhatsApp inbox, so I'll be closing out our active follow-up thread tomorrow. Just wanted to give you one last heads-up!`,
+    // 21 (22nd follow-up / Day 21 / 24h later - final breakup) - odd: NO name
+    `Closing out your inquiry for now. Wishing you massive success with your content! If you ever need editing support down the road, just text back right here anytime. Cheers!`
+  ];
+  return autoTemplates[Math.min(count, autoTemplates.length - 1)];
+}
+function generateFollowupText(b) {
+  return getNaturalFallbackFollowupText(b);
+}
+async function generateSmartFollowupMessage(env, b, nowMs = Date.now()) {
+  const count = b.followup_count || 0;
+  const type = b.followup_type || "auto";
+  if (count >= 22 || type === "rejected" || b.status === "not_interested" || b.status === "fake_lead" || b.status === "completed" || b.status === "cancelled") {
+    return null;
   }
-  if (b.status === "completed") {
-    if (useName) {
-      return `Hi ${firstName}! Great speaking with you on the call. Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
+  if (b.custom_followup_msg && b.custom_followup_msg.trim()) {
+    return b.custom_followup_msg.trim();
+  }
+  if (type === "call_reminder" || b.status === "booked" || b.status === "confirmed") {
+    return getNaturalFallbackFollowupText(b);
+  }
+  if (type === "client_date") {
+    return getNaturalFallbackFollowupText(b);
+  }
+  const targetChatId = b.chat_id || (b.phone ? `${b.phone.replace(/\D/g, "")}@s.whatsapp.net` : null);
+  let history = [];
+  if (targetChatId) {
+    try {
+      const rows = await env.DB.prepare(
+        "SELECT role, content, sender_name FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 20"
+      ).bind(targetChatId).all();
+      history = (rows.results || []).reverse();
+    } catch (err) {
+      console.warn("Failed fetching last 20 messages for smart follow-up:", err);
     }
-    return `Great speaking with you on the call! Whenever you're ready with your first footage or project brief, you can submit it directly at https://vidmox.pages.dev/intake or send it over right here!`;
   }
-  if (useName) {
-    return `Hey ${firstName}! Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
+  const hasClientMessages = history.some((m) => m.role === "user" && m.content.trim().length > 0);
+  if (hasClientMessages) {
+    try {
+      const s = await getSettings(env);
+      const provider = getProvider(s.provider);
+      const firstName = extractFirstName(b.client_name) || "";
+      const systemPrompt = `You are Nyra Rose, a friendly, ultra-human and warm client onboarding specialist at VIDMOX (a premium video editing agency).
+Your task is to write a single, natural WhatsApp follow-up message to this client based on the actual conversation history.
+
+CRITICAL INSTRUCTIONS:
+1. READ THE LAST 20 INBOX MESSAGES CAREFULLY. Notice what the client asked, their content format (Reels, TikToks, Shorts, YouTube, podcasts, ads), their tone, and where the conversation paused.
+2. ABSOLUTELY DO NOT REPEATEDLY RECITE OR DUMP PRICES/PACKAGES ("ki bar bar price koia koia flow up dei"). Do NOT give lists of dollar amounts ($330, $630, etc.) unless the client's last unanswered question was explicitly asking for pricing.
+3. SOUND 100% HUMAN, WARM, AND CONVERSATIONAL. Write like a real person following up on WhatsApp, not an automated drip campaign, corporate blast, or pushy salesperson.
+4. Keep it SHORT: 1 to 2 sentences (maximum 3 sentences).
+5. Follow-Up Stage:
+   - 1st follow-up (2h later, count ${count}): Natural, friendly check-in on their video goals or recent question.
+   - 2nd follow-up (12h later, count ${count}): Warm touchpoint offering to share a couple of relevant sample edits from their niche (https://vidmox.pages.dev/portfolio) or a risk-free sample edit.
+   - Daily follow-ups (count 2 to 20): Thoughtful, value-driven check-ins, asking about raw footage, turnaround time, or checking if they need a quick chat with our CSO Armaan (https://calendly.com/armaan-gineus/30min).
+   - Final breakup (count 21): Respectful, friendly goodbye letting them know you're closing out the active thread and wishing them success with their content.
+6. Return ONLY the final WhatsApp message text. No quotation marks around the message, no markdown headers, no preamble.`;
+      const userPrompt = `Client Name: ${b.client_name || "Client"}
+Client Phone: ${b.phone || targetChatId || "N/A"}
+Follow-Up Count: ${count}
+Niche / Notes: ${b.requirements || b.notes || "Video editing inquiry"}
+
+--- INBOX HISTORY (LAST 20 MESSAGES) ---
+${history.map((m) => `${m.role === "assistant" ? "Nyra" : b.client_name || "Client"}: ${m.content}`).join("\n")}
+---------------------------------------
+
+Generate the natural, human follow-up message to send right now:`;
+      const aiOut = await provider.generate(env, {
+        model: s.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        maxTokens: 120,
+        temperature: 0.6
+      });
+      const cleaned = (aiOut.text || "").trim().replace(/^["']|["']$/g, "").trim();
+      if (cleaned.length >= 15) {
+        return cleaned;
+      }
+    } catch (err) {
+      console.warn("AI smart follow-up generation failed, falling back to natural template:", err);
+    }
   }
-  return `Just following up to see if you're still looking for video editing support for ${reqTopic}? Happy to help figure out the best next step or arrange a quick call!`;
+  return getNaturalFallbackFollowupText(b);
 }
 async function syncBookingToTodo(env, b, nowMs = Date.now()) {
   if (!b) return;
@@ -2194,7 +2277,7 @@ async function processDueFollowups(env) {
       await syncBookingToTodo(env, stopped, now);
       continue;
     }
-    const message = generateFollowupText(b);
+    const message = await generateSmartFollowupMessage(env, b, now);
     if (!message) {
       const cleared = await updateBooking(env, b.id, { next_followup_at: null });
       await syncBookingToTodo(env, cleared, now);
@@ -2644,6 +2727,9 @@ var index_default = {
       console.error("Unhandled error", { path: url.pathname, error: String(err), stack: err?.stack });
       return json({ error: "Internal error" }, 500);
     }
+  },
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(processDueFollowups(env));
   }
 };
 async function gatewayRoutes(request, env, url) {
@@ -3000,11 +3086,15 @@ async function dashboardRoutes(request, env, url) {
       }
       const clientLabel = body.clientName?.trim() || linkedBooking?.client_name || (cleanPhone ? `+${cleanPhone}` : null);
       const taskTitle = body.task?.trim() || (clientLabel ? `\u26A1 Follow up ${clientLabel}${formattedDue ? ` (${formattedDue})` : ""}` : "Scheduled AI Task");
-      const defaultMsg = body.aiMessage?.trim() || (linkedBooking ? generateFollowupText({
-        ...linkedBooking,
-        client_name: clientLabel || linkedBooking.client_name,
-        scheduled_at: formattedDue || linkedBooking.scheduled_at
-      }) : clientLabel ? `Hey ${clientLabel}! Just following up as promised to see if you had any questions about your video edits or if now is a good time to chat?` : null);
+      const defaultMsg = body.aiMessage?.trim() || (linkedBooking ? await generateSmartFollowupMessage(
+        env,
+        {
+          ...linkedBooking,
+          client_name: clientLabel || linkedBooking.client_name,
+          scheduled_at: formattedDue || linkedBooking.scheduled_at
+        },
+        now
+      ) : clientLabel ? `Hey ${clientLabel}! Just following up as promised to see if you had any questions about your video edits or if now is a good time to chat?` : null);
       if (linkedBooking && (targetMs || body.aiMessage)) {
         const updatedB = await updateBooking(env, linkedBooking.id, {
           client_name: clientLabel || linkedBooking.client_name,
@@ -3417,7 +3507,7 @@ async function dashboardRoutes(request, env, url) {
           400
         );
       }
-      const generated = generateFollowupText(b);
+      const generated = await generateSmartFollowupMessage(env, b, now);
       const message = body.customText?.trim() || generated;
       if (!message) {
         return json(

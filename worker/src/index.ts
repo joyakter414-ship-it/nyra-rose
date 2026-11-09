@@ -5,6 +5,7 @@ import {
   detectTimezoneFromPhone,
   formatTimeInTimezone,
   generateFollowupText,
+  generateSmartFollowupMessage,
   handleDashboardChat,
   handleIncoming,
   parseScheduledTimeToMs,
@@ -74,6 +75,9 @@ export default {
       console.error("Unhandled error", { path: url.pathname, error: String(err), stack: (err as Error)?.stack });
       return json({ error: "Internal error" }, 500);
     }
+  },
+  async scheduled(controller: ScheduledController, env: AppEnv, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(processDueFollowups(env));
   },
 } satisfies ExportedHandler<AppEnv>;
 
@@ -507,11 +511,15 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const defaultMsg =
         body.aiMessage?.trim() ||
         (linkedBooking
-          ? generateFollowupText({
-              ...linkedBooking,
-              client_name: clientLabel || linkedBooking.client_name,
-              scheduled_at: formattedDue || linkedBooking.scheduled_at,
-            })
+          ? await generateSmartFollowupMessage(
+              env,
+              {
+                ...linkedBooking,
+                client_name: clientLabel || linkedBooking.client_name,
+                scheduled_at: formattedDue || linkedBooking.scheduled_at,
+              },
+              now,
+            )
           : clientLabel
           ? `Hey ${clientLabel}! Just following up as promised to see if you had any questions about your video edits or if now is a good time to chat?`
           : null);
@@ -1073,7 +1081,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
         );
       }
 
-      const generated = generateFollowupText(b);
+      const generated = await generateSmartFollowupMessage(env, b, now);
       const message = body.customText?.trim() || generated;
       if (!message) {
         return json(
