@@ -163,7 +163,7 @@ export async function getNotes(env: AppEnv, chatId?: string): Promise<Note[]> {
     return results;
   }
   const { results } = await env.DB.prepare(
-    "SELECT * FROM notes ORDER BY created_at DESC LIMIT 100"
+    "SELECT * FROM notes ORDER BY created_at DESC LIMIT 10000"
   ).all<Note>();
   return results;
 }
@@ -232,7 +232,7 @@ export async function getTodos(env: AppEnv, chatId?: string, onlyPending = false
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 3000";
+  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 10000";
 
   const { results } = await env.DB.prepare(query).bind(...params).all<Todo>();
   return results;
@@ -563,7 +563,7 @@ export async function getBookings(env: AppEnv, status?: string, followupType?: s
     query += " WHERE " + clauses.join(" AND ");
   }
 
-  query += " ORDER BY created_at DESC LIMIT 3000";
+  query += " ORDER BY created_at DESC LIMIT 10000";
   const { results } = await env.DB.prepare(query).bind(...params).all<Booking>();
   return results;
 }
@@ -732,7 +732,7 @@ export async function getDueFollowups(env: AppEnv, now: number): Promise<Booking
        AND status NOT IN ('fake_lead', 'not_interested', 'completed', 'cancelled')
        AND followup_type != 'rejected'
      ORDER BY next_followup_at ASC
-     LIMIT 25`
+     LIMIT 50`
   )
     .bind(now)
     .all<Booking>();

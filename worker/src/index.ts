@@ -302,7 +302,7 @@ async function dashboardRoutes(request: Request, env: AppEnv, url: URL): Promise
       const { results } = await env.DB.prepare(
         `SELECT c.chat_id, c.name, c.is_group, c.muted, c.last_at,
                 (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count
-         FROM chats c ORDER BY c.last_at DESC LIMIT 100`,
+         FROM chats c ORDER BY c.last_at DESC LIMIT 10000`,
       ).all();
       return json({ chats: results });
     }

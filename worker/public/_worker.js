@@ -89,7 +89,7 @@ async function getNotes(env, chatId) {
     return results2;
   }
   const { results } = await env.DB.prepare(
-    "SELECT * FROM notes ORDER BY created_at DESC LIMIT 100"
+    "SELECT * FROM notes ORDER BY created_at DESC LIMIT 10000"
   ).all();
   return results;
 }
@@ -124,7 +124,7 @@ async function getTodos(env, chatId, onlyPending = false) {
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 3000";
+  query += " ORDER BY completed ASC, COALESCE(scheduled_at_ms, 9999999999999) ASC, created_at DESC LIMIT 10000";
   const { results } = await env.DB.prepare(query).bind(...params).all();
   return results;
 }
@@ -339,7 +339,7 @@ async function getBookings(env, status, followupType) {
   if (clauses.length > 0) {
     query += " WHERE " + clauses.join(" AND ");
   }
-  query += " ORDER BY created_at DESC LIMIT 3000";
+  query += " ORDER BY created_at DESC LIMIT 10000";
   const { results } = await env.DB.prepare(query).bind(...params).all();
   return results;
 }
@@ -465,7 +465,7 @@ async function getDueFollowups(env, now) {
        AND status NOT IN ('fake_lead', 'not_interested', 'completed', 'cancelled')
        AND followup_type != 'rejected'
      ORDER BY next_followup_at ASC
-     LIMIT 25`
+     LIMIT 50`
   ).bind(now).all();
   return results;
 }
@@ -2179,46 +2179,69 @@ async function generateSmartFollowupMessage(env, b, nowMs = Date.now()) {
   if (type === "client_date") {
     return getNaturalFallbackFollowupText(b);
   }
-  const targetChatId = b.chat_id || (b.phone ? `${b.phone.replace(/\D/g, "")}@s.whatsapp.net` : null);
+  const rawChat = (b.chat_id || "").trim();
+  const cleanDigits = (b.phone || (rawChat.includes("@") ? rawChat.split("@")[0] : rawChat)).replace(/\D/g, "");
+  const jid = cleanDigits.length >= 7 ? `${cleanDigits}@s.whatsapp.net` : null;
   let history = [];
-  if (targetChatId) {
-    try {
-      const rows = await env.DB.prepare(
-        "SELECT role, content, sender_name FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 20"
-      ).bind(targetChatId).all();
-      history = (rows.results || []).reverse();
-    } catch (err) {
-      console.warn("Failed fetching last 20 messages for smart follow-up:", err);
-    }
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT role, content, sender_name FROM messages
+       WHERE chat_id = ?
+          OR chat_id = ?
+          OR (length(chat_id) >= 7 AND (chat_id LIKE ? OR chat_id LIKE ?))
+       ORDER BY created_at DESC LIMIT 20`
+    ).bind(rawChat, jid || rawChat, `%${cleanDigits}%`, `%${cleanDigits.slice(-8)}%`).all();
+    history = (rows.results || []).reverse();
+  } catch (err) {
+    console.warn("Failed fetching conversation messages for smart follow-up:", err);
   }
-  const hasClientMessages = history.some((m) => m.role === "user" && m.content.trim().length > 0);
-  if (hasClientMessages) {
+  if (history.length > 0) {
     try {
       const s = await getSettings(env);
       const provider = getProvider(s.provider);
       const firstName = extractFirstName(b.client_name) || "";
+      const msgCount = history.length;
       const systemPrompt = `You are Nyra Rose, a friendly, ultra-human and warm client onboarding specialist at VIDMOX (a premium video editing agency).
 Your task is to write a single, natural WhatsApp follow-up message to this client based on the actual conversation history.
 
-CRITICAL INSTRUCTIONS:
-1. READ THE LAST 20 INBOX MESSAGES CAREFULLY. Notice what the client asked, their content format (Reels, TikToks, Shorts, YouTube, podcasts, ads), their tone, and where the conversation paused.
-2. ABSOLUTELY DO NOT REPEATEDLY RECITE OR DUMP PRICES/PACKAGES ("ki bar bar price koia koia flow up dei"). Do NOT give lists of dollar amounts ($330, $630, etc.) unless the client's last unanswered question was explicitly asking for pricing.
-3. SOUND 100% HUMAN, WARM, AND CONVERSATIONAL. Write like a real person following up on WhatsApp, not an automated drip campaign, corporate blast, or pushy salesperson.
-4. Keep it SHORT: 1 to 2 sentences (maximum 3 sentences).
-5. Follow-Up Stage:
-   - 1st follow-up (2h later, count ${count}): Natural, friendly check-in on their video goals or recent question.
-   - 2nd follow-up (12h later, count ${count}): Warm touchpoint offering to share a couple of relevant sample edits from their niche (https://vidmox.pages.dev/portfolio) or a risk-free sample edit.
-   - Daily follow-ups (count 2 to 20): Thoughtful, value-driven check-ins, asking about raw footage, turnaround time, or checking if they need a quick chat with our CSO Armaan (https://calendly.com/armaan-gineus/30min).
-   - Final breakup (count 21): Respectful, friendly goodbye letting them know you're closing out the active thread and wishing them success with their content.
-6. Return ONLY the final WhatsApp message text. No quotation marks around the message, no markdown headers, no preamble.`;
-      const userPrompt = `Client Name: ${b.client_name || "Client"}
-Client Phone: ${b.phone || targetChatId || "N/A"}
-Follow-Up Count: ${count}
-Niche / Notes: ${b.requirements || b.notes || "Video editing inquiry"}
+CONVERSATION CONTEXT & RULES:
+1. BOTH PARTIES CONVERSATION HISTORY (${msgCount} message${msgCount === 1 ? "" : "s"} total):
+   - You are provided with the conversation between BOTH parties (VIDMOX/Nyra and the Client).
+   - If there are only a few messages (e.g. 1 to 7 messages total), adapt and follow up based on exactly what was discussed so far.
+   - If the client asked a question or expressed an interest (e.g. samples, YouTube, Reels, turnaround, raw footage), follow up directly and naturally on that topic.
+   - If VIDMOX sent a welcome/intro message and the client hasn't replied yet, send a gentle, warm check-in without pressure.
 
---- INBOX HISTORY (LAST 20 MESSAGES) ---
-${history.map((m) => `${m.role === "assistant" ? "Nyra" : b.client_name || "Client"}: ${m.content}`).join("\n")}
----------------------------------------
+2. ABSOLUTELY ZERO REPETITIVE PRICE RECITAL:
+   - NEVER repeatedly dump package prices ($330 Growth, $630 Content Engine, $1,060 Advance).
+   - Do NOT list dollar amounts or packages unless the client's immediate last question was explicitly asking for pricing and hasn't been answered.
+
+3. TONE & LENGTH:
+   - 100% human, casual, warm, and conversational \u2014 just like a real person texting on WhatsApp.
+   - Short: 1 to 2 sentences (maximum 3 sentences).
+   - Do NOT use generic robotic openers or signatures.
+
+4. CURRENT FOLLOW-UP STAGE:
+   - Stage count: ${count}
+   - Follow-up #0 (2h after initial contact): Check in casually on their content goals or their last message.
+   - Follow-up #1 (12h later): Offer to share 1-2 relevant portfolio samples (https://vidmox.pages.dev/portfolio) or a quick test edit.
+   - Follow-ups #2 to #20 (Daily 24h intervals): Thoughtful check-ins, offer a quick 10-min strategy call with CSO Armaan (https://calendly.com/armaan-gineus/30min), or discuss workflow/raw footage.
+   - Follow-up #21 (Final breakup): Polite, graceful goodbye wishing them the best with their content.
+
+5. OUTPUT FORMAT:
+   - Return ONLY the exact WhatsApp message text to send. No quotation marks, no markdown headers, no explanations.`;
+      const conversationText = history.map((m, idx) => {
+        const isMe = m.role === "assistant";
+        const speaker = isMe ? "Nyra Rose (VIDMOX)" : b.client_name || m.sender_name || "Client";
+        return `[#${idx + 1}] ${speaker}: ${m.content.trim()}`;
+      }).join("\n");
+      const userPrompt = `Client Name: ${b.client_name || "Client"}
+Client Phone: ${b.phone || cleanDigits || rawChat || "N/A"}
+Follow-Up Count: ${count}
+Notes / Requirements: ${b.requirements || b.notes || "Video editing inquiry"}
+
+--- CONVERSATION HISTORY (${msgCount} message${msgCount === 1 ? "" : "s"} between both Nyra & Client) ---
+${conversationText}
+------------------------------------------------------------------------------------------------
 
 Generate the natural, human follow-up message to send right now:`;
       const aiOut = await provider.generate(env, {
@@ -2926,7 +2949,7 @@ async function dashboardRoutes(request, env, url) {
       const { results } = await env.DB.prepare(
         `SELECT c.chat_id, c.name, c.is_group, c.muted, c.last_at,
                 (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count
-         FROM chats c ORDER BY c.last_at DESC LIMIT 100`
+         FROM chats c ORDER BY c.last_at DESC LIMIT 10000`
       ).all();
       return json({ chats: results });
     }
