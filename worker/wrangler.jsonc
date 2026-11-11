@@ -1,12 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nyra-rose",
-  "main": "src/index.ts",
+  "pages_build_output_dir": "./public",
   "compatibility_date": "2026-09-01",
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS"
-  },
   "ai": {
     "binding": "AI"
   },
@@ -22,8 +18,5 @@
       "binding": "BUCKET",
       "bucket_name": "nyra-rose-store"
     }
-  ],
-  "observability": {
-    "enabled": true
-  }
+  ]
 }

@@ -4983,6 +4983,8 @@ let broadcastAbortRequested = false;
 
 const BROADCAST_TEMPLATES = {
   offer: `Hey {first_name}! 🎬 Arman & Shawon here from VIDMOX studio.\n\nWe have an exclusive video editing package opening this week. Would love to help you scale your views & content with high-retention editing!\n\nCan we hop on a quick 15-min call to discuss? Book directly here:\nhttps://calendly.com/armaan-gineus/30min`,
+  discount: `Hey {first_name}! ⚡ Special announcement from VIDMOX.\n\nWe're offering an exclusive 20% discount on all our monthly editing packages for the next 48 hours only. Includes unlimited revisions & 24h turnaround.\n\nReply 'YES' right here or grab a spot on our calendar: https://calendly.com/armaan-gineus/30min`,
+  sample: `Hey {first_name}! 👋 Quick offer from VIDMOX:\n\nIf you have a raw video clip or podcast recording ready, send over a Drive/Dropbox link and our team will edit 1 FREE sample video for you so you can see our quality firsthand.\n\nInterested in testing that? Let me know right here!`,
   followup: `Hey {first_name}! Just following up to see how your video content is going? Vidmox has some fresh editing slots available for you. Let me know if you'd like to check out some sample edits! 🚀`,
   call: `Hey {first_name}! Thanks for reaching out to VIDMOX. You can book a quick call with our CSO directly using the link below to discuss your video editing needs ☺️:\nhttps://calendly.com/armaan-gineus/30min`,
 };
@@ -5021,6 +5023,8 @@ async function fetchBroadcastLeads() {
   const from = $("#broadcast-from-date")?.value.trim() || "";
   const to = $("#broadcast-to-date")?.value.trim() || "";
   const status = $("#broadcast-status-filter")?.value.trim() || "all";
+  const source = $("#broadcast-source-filter")?.value.trim() || "all";
+  const search = $("#broadcast-search-input")?.value.trim() || "";
 
   const labelEl = $("#broadcast-date-range-label");
   if (labelEl) labelEl.textContent = formatBroadcastDateLabel(from, to);
@@ -5035,6 +5039,8 @@ async function fetchBroadcastLeads() {
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     if (status && status !== "all") params.set("status", status);
+    if (source && source !== "all") params.set("source", source);
+    if (search) params.set("q", search);
 
     const res = await api(`/api/broadcast/leads?${params.toString()}`);
     if (!res || !Array.isArray(res.leads)) {
@@ -5267,6 +5273,62 @@ document.querySelectorAll(".broadcast-preset-btn").forEach((btn) => {
 
 $("#broadcast-fetch-btn")?.addEventListener("click", () => fetchBroadcastLeads());
 $("#broadcast-status-filter")?.addEventListener("change", () => fetchBroadcastLeads());
+$("#broadcast-source-filter")?.addEventListener("change", () => fetchBroadcastLeads());
+
+let broadcastSearchTimer = null;
+$("#broadcast-search-input")?.addEventListener("input", () => {
+  clearTimeout(broadcastSearchTimer);
+  broadcastSearchTimer = setTimeout(() => fetchBroadcastLeads(), 300);
+});
+
+// Paste Custom Phone Numbers Toggle & Handler
+$("#broadcast-paste-toggle-btn")?.addEventListener("click", () => {
+  $("#broadcast-paste-box")?.classList.toggle("hidden");
+  $("#broadcast-pasted-numbers")?.focus();
+});
+$("#broadcast-paste-close-btn")?.addEventListener("click", () => {
+  $("#broadcast-paste-box")?.classList.add("hidden");
+});
+
+$("#broadcast-apply-pasted-btn")?.addEventListener("click", () => {
+  const raw = $("#broadcast-pasted-numbers")?.value.trim() || "";
+  if (!raw) return;
+  const numbers = raw.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+  let added = 0;
+  for (const num of numbers) {
+    const digits = num.replace(/\D/g, "");
+    if (digits.length >= 7) {
+      const cleanPhone = num.startsWith("+") ? num : `+${digits}`;
+      const id = `manual_${digits}`;
+      if (!broadcastLeads.some((l) => l.digits === digits)) {
+        broadcastLeads.unshift({
+          id,
+          name: "Client",
+          firstName: "Client",
+          phone: cleanPhone,
+          digits,
+          jid: `${digits}@s.whatsapp.net`,
+          status: "lead",
+          requirements: "Custom Pasted Number",
+          notes: "Added via Paste Numbers List",
+          formattedDate: "Just Now",
+        });
+        broadcastSelectedIds.add(id);
+        added++;
+      }
+    }
+  }
+  if (added > 0) {
+    alert(`🎉 Successfully added ${added} phone number(s) to the broadcast list!`);
+    $("#broadcast-pasted-numbers").value = "";
+    $("#broadcast-paste-box")?.classList.add("hidden");
+    renderBroadcastLeadsTable();
+    updateBroadcastCounters();
+    updateBroadcastPreview();
+  } else {
+    alert("No valid phone numbers found. Please paste numbers with at least 7 digits.");
+  }
+});
 
 // Select All / Deselect All
 $("#broadcast-select-all-btn")?.addEventListener("click", () => {

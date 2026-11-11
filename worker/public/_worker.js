@@ -2791,9 +2791,16 @@ async function gatewayRoutes(request, env, url) {
         ]);
         if (dueItems.length > 0) outbound.push(...dueItems);
         if (manualQueue && manualQueue.length > 0) {
-          outbound.push(...manualQueue);
-          await kvDelete(env, "gateway_outbound_queue").catch(() => {
-          });
+          const chunk = manualQueue.slice(0, 25);
+          const remainder = manualQueue.slice(25);
+          outbound.push(...chunk);
+          if (remainder.length > 0) {
+            await kvSet(env, "gateway_outbound_queue", remainder).catch(() => {
+            });
+          } else {
+            await kvDelete(env, "gateway_outbound_queue").catch(() => {
+            });
+          }
         }
       }
       return json({ ok: true, command: command?.cmd ?? null, outbound });
@@ -3868,6 +3875,8 @@ async function dashboardRoutes(request, env, url) {
       const fromParam = url.searchParams.get("from")?.trim() || "";
       const toParam = url.searchParams.get("to")?.trim() || "";
       const statusParam = url.searchParams.get("status")?.trim() || "all";
+      const sourceParam = url.searchParams.get("source")?.trim() || "all";
+      const searchParam = url.searchParams.get("q")?.trim().toLowerCase() || "";
       let fromMs = null;
       if (fromParam) {
         const parsed = Date.parse(fromParam.includes("T") ? fromParam : `${fromParam}T00:00:00+06:00`);
@@ -3878,68 +3887,133 @@ async function dashboardRoutes(request, env, url) {
         const parsed = Date.parse(toParam.includes("T") ? toParam : `${toParam}T23:59:59.999+06:00`);
         if (!Number.isNaN(parsed)) toMs = parsed;
       }
-      let sql = `
-        SELECT b.id, b.client_name, b.phone, b.chat_id, b.email, b.status, b.followup_type,
-               b.scheduled_at, b.timezone, b.company_or_website, b.requirements,
-               b.source, b.notes, b.followup_count, b.next_followup_at,
-               b.last_followup_at, b.created_at,
-               c.name AS chat_pushname
-        FROM bookings b
-        LEFT JOIN chats c ON b.chat_id = c.id
-        WHERE (b.phone IS NOT NULL AND b.phone != '')
-           OR (b.chat_id IS NOT NULL AND b.chat_id LIKE '%@s.whatsapp.net')
-      `;
-      const conditions = [];
-      const bindings = [];
-      if (fromMs !== null) {
-        conditions.push("b.created_at >= ?");
-        bindings.push(fromMs);
-      }
-      if (toMs !== null) {
-        conditions.push("b.created_at <= ?");
-        bindings.push(toMs);
-      }
-      if (statusParam && statusParam !== "all") {
-        if (statusParam === "active") {
-          conditions.push("b.status NOT IN ('cancelled', 'completed', 'not_interested', 'fake_lead')");
-        } else {
-          conditions.push("b.status = ?");
-          bindings.push(statusParam);
-        }
-      }
-      if (conditions.length > 0) {
-        sql += " AND " + conditions.join(" AND ");
-      }
-      sql += " ORDER BY b.created_at DESC";
-      const stmt = env.DB.prepare(sql);
-      const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all();
       const seenPhones = /* @__PURE__ */ new Set();
       const leads = [];
-      for (const row of results || []) {
-        const rawPhone = String(row.phone || (typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") ? row.chat_id.replace(/@.*$/, "") : "")).replace(/[^\d+]/g, "");
-        const digits = rawPhone.replace(/\D/g, "");
-        if (digits.length < 7) continue;
-        const cleanPhone = rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
-        if (seenPhones.has(digits)) continue;
-        seenPhones.add(digits);
-        const fullName = String(row.client_name || row.chat_pushname || "Friend").trim();
-        const firstName = fullName.split(/\s+/)[0] || fullName;
-        const leadDateFormatted = row.created_at ? formatTimeInTimezone(Number(row.created_at), "BD", cleanPhone) : "";
-        leads.push({
-          id: String(row.id),
-          name: fullName,
-          firstName,
-          phone: cleanPhone,
-          digits,
-          jid: `${digits}@s.whatsapp.net`,
-          status: String(row.status || "lead"),
-          requirements: String(row.requirements || ""),
-          notes: String(row.notes || ""),
-          createdAt: Number(row.created_at || 0),
-          formattedDate: leadDateFormatted
-        });
+      if (sourceParam !== "chats") {
+        let sql = `
+          SELECT b.id, b.client_name, b.phone, b.chat_id, b.email, b.status, b.followup_type,
+                 b.scheduled_at, b.timezone, b.company_or_website, b.requirements,
+                 b.source, b.notes, b.followup_count, b.next_followup_at,
+                 b.last_followup_at, b.created_at,
+                 c.name AS chat_pushname
+          FROM bookings b
+          LEFT JOIN chats c ON b.chat_id = c.chat_id
+          WHERE (b.phone IS NOT NULL AND b.phone != '')
+             OR (b.chat_id IS NOT NULL AND b.chat_id LIKE '%@s.whatsapp.net')
+        `;
+        const conditions = [];
+        const bindings = [];
+        if (fromMs !== null) {
+          conditions.push("b.created_at >= ?");
+          bindings.push(fromMs);
+        }
+        if (toMs !== null) {
+          conditions.push("b.created_at <= ?");
+          bindings.push(toMs);
+        }
+        if (statusParam && statusParam !== "all") {
+          if (statusParam === "active") {
+            conditions.push("b.status NOT IN ('cancelled', 'completed', 'not_interested', 'fake_lead')");
+          } else {
+            conditions.push("b.status = ?");
+            bindings.push(statusParam);
+          }
+        }
+        if (conditions.length > 0) {
+          sql += " AND " + conditions.join(" AND ");
+        }
+        sql += " ORDER BY b.created_at DESC LIMIT 10000";
+        const stmt = env.DB.prepare(sql);
+        const { results } = await (bindings.length > 0 ? stmt.bind(...bindings) : stmt).all();
+        for (const row of results || []) {
+          const rawPhone = String(row.phone || (typeof row.chat_id === "string" && !row.chat_id.startsWith("manual") ? row.chat_id.replace(/@.*$/, "") : "")).replace(/[^\d+]/g, "");
+          const digits = rawPhone.replace(/\D/g, "");
+          if (digits.length < 7) continue;
+          const cleanPhone = rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
+          if (seenPhones.has(digits)) continue;
+          seenPhones.add(digits);
+          const fullName = String(row.client_name || row.chat_pushname || "Friend").trim();
+          const firstName = fullName.split(/\s+/)[0] || fullName;
+          const leadDateFormatted = row.created_at ? formatTimeInTimezone(Number(row.created_at), "BD", cleanPhone) : "";
+          if (searchParam) {
+            const matchName = fullName.toLowerCase().includes(searchParam);
+            const matchPhone = digits.includes(searchParam.replace(/\D/g, ""));
+            if (!matchName && !matchPhone) continue;
+          }
+          leads.push({
+            id: String(row.id),
+            name: fullName,
+            firstName,
+            phone: cleanPhone,
+            digits,
+            jid: `${digits}@s.whatsapp.net`,
+            status: String(row.status || "lead"),
+            requirements: String(row.requirements || ""),
+            notes: String(row.notes || ""),
+            source: "crm",
+            createdAt: Number(row.created_at || 0),
+            formattedDate: leadDateFormatted
+          });
+        }
       }
-      return json({ leads, count: leads.length, from: fromParam, to: toParam });
+      if (sourceParam !== "bookings") {
+        let chatSql = `
+          SELECT c.chat_id, c.name, c.last_at
+          FROM chats c
+          WHERE c.is_group = 0
+            AND c.chat_id LIKE '%@s.whatsapp.net'
+        `;
+        const chatConditions = [];
+        const chatBindings = [];
+        if (fromMs !== null) {
+          chatConditions.push("c.last_at >= ?");
+          chatBindings.push(fromMs);
+        }
+        if (toMs !== null) {
+          chatConditions.push("c.last_at <= ?");
+          chatBindings.push(toMs);
+        }
+        if (chatConditions.length > 0) {
+          chatSql += " AND " + chatConditions.join(" AND ");
+        }
+        chatSql += " ORDER BY c.last_at DESC LIMIT 10000";
+        const chatStmt = env.DB.prepare(chatSql);
+        const { results: chatResults } = await (chatBindings.length > 0 ? chatStmt.bind(...chatBindings) : chatStmt).all();
+        for (const row of chatResults || []) {
+          const rawChat = String(row.chat_id || "");
+          const digits = rawChat.replace(/@.*$/, "").replace(/\D/g, "");
+          if (digits.length < 7) continue;
+          if (seenPhones.has(digits)) continue;
+          seenPhones.add(digits);
+          const fullName = String(row.name || "Friend").trim();
+          const firstName = fullName.split(/\s+/)[0] || fullName;
+          const cleanPhone = `+${digits}`;
+          const leadDateFormatted = row.last_at ? formatTimeInTimezone(Number(row.last_at), "BD", cleanPhone) : "";
+          if (searchParam) {
+            const matchName = fullName.toLowerCase().includes(searchParam);
+            const matchPhone = digits.includes(searchParam.replace(/\D/g, ""));
+            if (!matchName && !matchPhone) continue;
+          }
+          if (statusParam && statusParam !== "all" && statusParam !== "active" && statusParam !== "lead") {
+            continue;
+          }
+          leads.push({
+            id: `chat_${digits}`,
+            name: fullName,
+            firstName,
+            phone: cleanPhone,
+            digits,
+            jid: `${digits}@s.whatsapp.net`,
+            status: "lead",
+            requirements: "Direct WhatsApp Contact",
+            notes: "Direct 1-on-1 WhatsApp chat",
+            source: "whatsapp",
+            createdAt: Number(row.last_at || 0),
+            formattedDate: leadDateFormatted
+          });
+        }
+      }
+      return json({ leads, count: leads.length, from: fromParam, to: toParam, source: sourceParam });
     }
     case "POST /api/broadcast/dispatch-single": {
       const body = await request.json();

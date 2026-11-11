@@ -769,7 +769,7 @@
 
         <!-- Quick Presets -->
         <div class="broadcast-preset-row" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;">
-          <button type="button" class="broadcast-preset-btn active" data-preset="all">All Time</button>
+          <button type="button" class="broadcast-preset-btn active" data-preset="all">All Numbers (All Time)</button>
           <button type="button" class="broadcast-preset-btn" data-preset="today">Today</button>
           <button type="button" class="broadcast-preset-btn" data-preset="yesterday">Yesterday</button>
           <button type="button" class="broadcast-preset-btn" data-preset="last7">Last 7 Days</button>
@@ -779,30 +779,60 @@
         </div>
 
         <!-- Custom Inputs Row -->
-        <div class="row" style="align-items: flex-end; gap: 14px;">
-          <label style="flex: 1; min-width: 170px;">
-            <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">From Date (Start)</span>
-            <input type="date" id="broadcast-from-date" style="margin-top: 4px;" />
-          </label>
-          <label style="flex: 1; min-width: 170px;">
-            <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">To Date (End)</span>
-            <input type="date" id="broadcast-to-date" style="margin-top: 4px;" />
-          </label>
-          <label style="flex: 1.2; min-width: 200px;">
-            <span style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">Lead Pipeline Status</span>
-            <select id="broadcast-status-filter" style="margin-top: 4px;">
-              <option value="all">All Leads (Any Status)</option>
-              <option value="active">🌱 Active Leads (Excludes Cancelled/Fake)</option>
-              <option value="lead">🌱 New Leads (Not Booked Yet)</option>
-              <option value="booked">📅 Booked Calls</option>
-              <option value="buy_soon">⏳ Buying in Few Days</option>
-              <option value="not_attended">⚠️ Missed Calls (Not Attended)</option>
-              <option value="confirmed">✅ Confirmed Calls</option>
+        <div class="row" style="align-items: flex-end; gap: 12px; flex-wrap: wrap;">
+          <label style="flex: 1.2; min-width: 170px;">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">Audience Source</span>
+            <select id="broadcast-source-filter" style="margin-top: 4px;">
+              <option value="all">📱 All Numbers (CRM + WhatsApp Contacts)</option>
+              <option value="bookings">📁 CRM Leads Only</option>
+              <option value="chats">💬 Direct WhatsApp Chats Only</option>
             </select>
           </label>
-          <button type="button" id="broadcast-fetch-btn" class="small" style="height: 40px; padding: 0 18px; margin-bottom: 2px;">
-            🔍 Filter Leads
-          </button>
+          <label style="flex: 1; min-width: 140px;">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">From Date</span>
+            <input type="date" id="broadcast-from-date" style="margin-top: 4px;" />
+          </label>
+          <label style="flex: 1; min-width: 140px;">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">To Date</span>
+            <input type="date" id="broadcast-to-date" style="margin-top: 4px;" />
+          </label>
+          <label style="flex: 1.1; min-width: 160px;">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">Pipeline Status</span>
+            <select id="broadcast-status-filter" style="margin-top: 4px;">
+              <option value="all">All Statuses (Any Lead)</option>
+              <option value="active">🌱 Active Leads (Excludes Cancelled/Fake)</option>
+              <option value="lead">🌱 New Leads</option>
+              <option value="booked">📅 Booked Calls</option>
+              <option value="buy_soon">⏳ Buying Soon</option>
+              <option value="not_attended">⚠️ Missed Calls</option>
+              <option value="confirmed">✅ Confirmed</option>
+            </select>
+          </label>
+          <label style="flex: 1.3; min-width: 170px;">
+            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">Search Leads</span>
+            <input type="search" id="broadcast-search-input" placeholder="Name or phone digits..." style="margin-top: 4px;" />
+          </label>
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 2px;">
+            <button type="button" id="broadcast-fetch-btn" class="small" style="height: 40px; padding: 0 16px;">
+              🔍 Filter
+            </button>
+            <button type="button" id="broadcast-paste-toggle-btn" class="small ghost" style="height: 40px; padding: 0 12px; border-color: #a78bfa; color: #a78bfa;" title="Paste custom list of numbers">
+              📋 Paste Numbers
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsible Paste Numbers Box -->
+        <div id="broadcast-paste-box" class="hidden" style="margin-top: 14px; padding: 14px 16px; border: 1px dashed #a78bfa; border-radius: 12px; background: rgba(167, 139, 250, 0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong style="font-size: 13px; color: #c4b5fd;">📋 Paste Custom Phone Numbers (one per line, comma or semicolon separated)</strong>
+            <button type="button" id="broadcast-paste-close-btn" class="ghost small" style="padding: 2px 8px; font-size: 11px;">✕ Close</button>
+          </div>
+          <textarea id="broadcast-pasted-numbers" rows="3" placeholder="+8801712345678&#10;+16475551234&#10;+447890123456" style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 12px;"></textarea>
+          <div style="margin-top: 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button type="button" id="broadcast-apply-pasted-btn" class="small btn-tone-violet">+ Add Numbers to Audience</button>
+            <span class="muted small-text">Paste any WhatsApp numbers to include them in the broadcast list immediately.</span>
+          </div>
         </div>
       </div>
 
@@ -824,6 +854,8 @@
           <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;">
             <span class="muted small-text" style="font-weight: 600;">Templates:</span>
             <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="offer">🎁 Special Offer</button>
+            <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="discount">⚡ 20% Discount</button>
+            <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="sample">🎬 1 Free Sample Edit</button>
             <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="followup">👋 Check-In Follow-Up</button>
             <button type="button" class="broadcast-tpl-btn ghost small" data-tpl="call">📅 Book Call Invite</button>
           </div>
